@@ -160,3 +160,35 @@ export class AuthService {
     setCookies(response, auth.session, auth.csrf);
   }
 }
+
+export const can = (role: string, permission: 'account:write' | 'audit:read'): boolean => {
+  if (permission === 'audit:read') return ['owner', 'admin', 'operator', 'viewer'].includes(role);
+  return ['owner', 'admin'].includes(role);
+};
+
+export const recordAudit = (
+  db: Database.Database,
+  input: {
+    accountId: string;
+    actorId?: string;
+    action: string;
+    targetType: string;
+    targetId?: string;
+    correlationId: string;
+    summary: Record<string, unknown>;
+  },
+): void => {
+  db.prepare(
+    'INSERT INTO audit_events (id, account_id, actor_id, action, target_type, target_id, summary_json, correlation_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  ).run(
+    randomUUID(),
+    input.accountId,
+    input.actorId ?? null,
+    input.action,
+    input.targetType,
+    input.targetId ?? null,
+    JSON.stringify(input.summary),
+    input.correlationId,
+    new Date().toISOString(),
+  );
+};

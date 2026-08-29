@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { healthResponseSchema } from '@woo-ops/contracts';
 import { SqliteStore } from '@woo-ops/persistence';
-import { AuthService } from './auth.js';
+import { AuthService, can, recordAudit } from './auth.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const dataDirectory = resolve(process.env.WOO_OPS_DATA_DIR ?? './data');
@@ -70,6 +70,15 @@ app.post('/api/v1/auth/register', (request, response) => {
     );
     const loggedIn = auth.login(String(request.body.email), String(request.body.password));
     auth.setCookies(response, loggedIn);
+    recordAudit(store.db, {
+      accountId: user.accountId,
+      actorId: user.id,
+      action: 'account.registered',
+      targetType: 'account',
+      targetId: user.accountId,
+      correlationId: String(response.getHeader('x-correlation-id')),
+      summary: { role: user.role },
+    });
     response.status(201).json({ user });
   } catch (error) {
     const code =
@@ -134,7 +143,8 @@ app.get('/api/v1/auth/session', (request, response) => {
   response.json({ user });
 });
 app.post('/api/v1/auth/logout', (request, response) => {
-  if (!auth.current(request)) {
+  const currentUser = auth.current(request);
+  if (!currentUser) {
     response.status(204).end();
     return;
   }
@@ -149,7 +159,121 @@ app.post('/api/v1/auth/logout', (request, response) => {
     return;
   }
   auth.logout(request, response);
+  recordAudit(store.db, {
+    accountId: currentUser.accountId,
+    actorId: currentUser.id,
+    action: 'auth.logged_out',
+    targetType: 'user',
+    targetId: currentUser.id,
+    correlationId: String(response.getHeader('x-correlation-id')),
+    summary: {},
+  });
   response.status(204).end();
+});
+app.get('/api/v1/account', (request, response) => {
+  const user = auth.current(request);
+  if (!user) {
+    response.status(401).json({
+      error: {
+        code: 'AUTH_UNAUTHENTICATED',
+        message: 'Authentication required',
+        correlationId: response.getHeader('x-correlation-id'),
+      },
+    });
+    return;
+  }
+  const account = store.db
+    .prepare(
+      'SELECT id, name, locale, direction, timezone, base_currency FROM accounts WHERE id = ?',
+    )
+    .get(user.accountId);
+  response.json({ account, user });
+});
+app.patch('/api/v1/account', (request, response) => {
+  const user = auth.current(request);
+  if (!user) {
+    response.status(401).json({
+      error: {
+        code: 'AUTH_UNAUTHENTICATED',
+        message: 'Authentication required',
+        correlationId: response.getHeader('x-correlation-id'),
+      },
+    });
+    return;
+  }
+  if (!can(user.role, 'account:write') || !auth.csrfValid(request)) {
+    response.status(403).json({
+      error: {
+        code: 'FORBIDDEN',
+        message: 'Permission or CSRF validation failed',
+        correlationId: response.getHeader('x-correlation-id'),
+      },
+    });
+    return;
+  }
+  const allowed = {
+    name: request.body?.name,
+    locale: request.body?.locale,
+    direction: request.body?.direction,
+    timezone: request.body?.timezone,
+    base_currency: request.body?.base_currency,
+  };
+  const current = store.db
+    .prepare('SELECT name, locale, direction, timezone, base_currency FROM accounts WHERE id = ?')
+    .get(user.accountId) as Record<string, string>;
+  const next = {
+    ...current,
+    ...Object.fromEntries(
+      Object.entries(allowed).filter(([, value]) => typeof value === 'string' && value.length > 0),
+    ),
+  };
+  store.db
+    .prepare(
+      'UPDATE accounts SET name = ?, locale = ?, direction = ?, timezone = ?, base_currency = ?, updated_at = ? WHERE id = ?',
+    )
+    .run(
+      next.name,
+      next.locale,
+      next.direction,
+      next.timezone,
+      next.base_currency,
+      new Date().toISOString(),
+      user.accountId,
+    );
+  recordAudit(store.db, {
+    accountId: user.accountId,
+    actorId: user.id,
+    action: 'account.updated',
+    targetType: 'account',
+    targetId: user.accountId,
+    correlationId: String(response.getHeader('x-correlation-id')),
+    summary: {
+      fields: Object.keys(allowed).filter(
+        (key) => allowed[key as keyof typeof allowed] !== undefined,
+      ),
+    },
+  });
+  response.json({ account: next });
+});
+app.get('/api/v1/audit-events', (request, response) => {
+  const user = auth.current(request);
+  if (!user || !can(user.role, 'audit:read')) {
+    response.status(401).json({
+      error: {
+        code: 'AUTH_UNAUTHENTICATED',
+        message: 'Authentication required',
+        correlationId: response.getHeader('x-correlation-id'),
+      },
+    });
+    return;
+  }
+  const limit = Math.min(Math.max(Number(request.query.limit ?? 50), 1), 100);
+  const events = store.db
+    .prepare(
+      'SELECT id, actor_id, action, target_type, target_id, summary_json, correlation_id, created_at FROM audit_events WHERE account_id = ? ORDER BY created_at DESC, id DESC LIMIT ?',
+    )
+    .all(user.accountId, limit);
+  response.json({ items: events, limit });
 });
 app.get('/api/v1/meta', (_request, response) =>
   response.json({ locale: 'ar-EG', direction: 'rtl', readOnlyConnector: true }),
