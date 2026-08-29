@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/task-registry.schema.json",
+  "type": "object",
+  "required": ["schemaVersion", "project", "statuses", "tasks"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "project": { "const": "woo-ops-saas" },
+    "statuses": {
+      "type": "array",
+      "items": { "enum": ["planned", "in-progress", "blocked", "failed", "completed"] },
+      "uniqueItems": true
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "epic", "title", "type", "phase", "priority", "estimate", "parallelGroup", "dependencies", "references", "scope", "acceptance", "validation"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^T[0-9]{4}$" },
+          "epic": { "type": "string", "pattern": "^E[0-9]{2}$" },
+          "title": { "type": "string", "minLength": 5 },
+          "type": { "enum": ["feat", "fix", "chore", "test", "docs", "security", "ops"] },
+          "phase": { "type": "integer", "minimum": 0 },
+          "priority": { "enum": ["P0", "P1", "P2", "P3"] },
+          "estimate": { "enum": ["S", "M", "L", "XL"] },
+          "parallelGroup": { "type": "string" },
+          "dependencies": { "type": "array", "items": { "type": "string", "pattern": "^T[0-9]{4}$" }, "uniqueItems": true },
+          "references": { "type": "array", "items": { "type": "string" }, "minItems": 1, "uniqueItems": true },
+          "scope": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "acceptance": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "validation": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

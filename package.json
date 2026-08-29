@@ -1,0 +1,21 @@
+{
+  "name": "woo-ops-saas",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Agent-driven starter for a multi-tenant WooCommerce order operations SaaS",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "agent:doctor": "node .agentpack/scripts/agentpack.mjs doctor",
+    "agent:validate": "node .agentpack/scripts/agentpack.mjs validate",
+    "task:list": "node .agentpack/scripts/agentpack.mjs task list",
+    "task:next": "node .agentpack/scripts/agentpack.mjs task next",
+    "task:show": "node .agentpack/scripts/agentpack.mjs task show",
+    "task:start": "node .agentpack/scripts/agentpack.mjs task start",
+    "task:complete": "node .agentpack/scripts/agentpack.mjs task complete",
+    "task:fail": "node .agentpack/scripts/agentpack.mjs task fail",
+    "worktree:list": "node .agentpack/scripts/agentpack.mjs worktree list",
+    "worktree:prune": "node .agentpack/scripts/agentpack.mjs worktree prune"
+  }
+}

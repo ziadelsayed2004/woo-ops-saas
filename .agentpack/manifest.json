@@ -1,0 +1,60 @@
+{
+  "$schema": "./schemas/manifest.schema.json",
+  "schemaVersion": 1,
+  "pack": {
+    "id": "woo-ops-saas",
+    "name": "Woo Ops SaaS",
+    "version": "1.0.0",
+    "language": "en",
+    "projectType": "multi-tenant-saas",
+    "stack": "MERN-TypeScript"
+  },
+  "product": {
+    "primaryPlatform": "woocommerce",
+    "connectorDirection": "read-only",
+    "manualOrders": "local-only",
+    "database": "mongodb-atlas",
+    "queue": "bullmq-managed-redis",
+    "objectStorage": "s3-compatible"
+  },
+  "runtime": {
+    "node": ">=22",
+    "packageManager": "pnpm",
+    "apps": ["web", "api", "worker"]
+  },
+  "sourceControl": {
+    "baseBranch": "main",
+    "branchPattern": "{type}/{taskId}-{slug}",
+    "worktreeRoot": "../woo-ops-saas-worktrees",
+    "oneTaskPerWorktree": true,
+    "maxRecommendedParallelTasks": 3
+  },
+  "paths": {
+    "prd": ".agentpack/product/PRD.md",
+    "architecture": ".agentpack/architecture/ARCHITECTURE.md",
+    "tasks": ".agentpack/tasks/registry.json",
+    "taskGuide": ".agentpack/tasks/README.md",
+    "state": ".git/agentpack/state.json",
+    "taskResults": ".agentpack/results"
+  },
+  "commands": {
+    "doctor": "node .agentpack/scripts/agentpack.mjs doctor",
+    "validate": "node .agentpack/scripts/agentpack.mjs validate",
+    "nextTask": "node .agentpack/scripts/agentpack.mjs task next",
+    "showTask": "node .agentpack/scripts/agentpack.mjs task show <TASK_ID>",
+    "startTask": "node .agentpack/scripts/agentpack.mjs task start <TASK_ID>",
+    "completeTask": "node .agentpack/scripts/agentpack.mjs task complete <TASK_ID> --evidence <PATH>"
+  },
+  "qualityGates": [
+    "format",
+    "lint",
+    "typecheck",
+    "unit",
+    "integration",
+    "contract",
+    "e2e-critical",
+    "build",
+    "security",
+    "tenant-isolation"
+  ]
+}

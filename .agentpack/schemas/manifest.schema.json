@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/agentpack-manifest.schema.json",
+  "type": "object",
+  "required": ["schemaVersion", "pack", "product", "runtime", "sourceControl", "paths", "commands", "qualityGates"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "pack": {
+      "type": "object",
+      "required": ["id", "name", "version", "projectType", "stack"]
+    },
+    "product": {
+      "type": "object",
+      "required": ["primaryPlatform", "connectorDirection", "manualOrders", "database"]
+    },
+    "runtime": {
+      "type": "object",
+      "required": ["node", "packageManager", "apps"]
+    },
+    "sourceControl": {
+      "type": "object",
+      "required": ["baseBranch", "branchPattern", "worktreeRoot", "oneTaskPerWorktree"]
+    },
+    "paths": { "type": "object" },
+    "commands": { "type": "object" },
+    "qualityGates": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": true
+}
