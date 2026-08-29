@@ -21,6 +21,8 @@ You are implementing exactly one task in its dedicated Git worktree.
 8. Fill `.agentpack/results/<TASK_ID>.md` from the task-result template.
 9. Review the complete diff for scope, tenant isolation, platform direction, money/time,
    idempotency, PII/secrets, boundedness, compatibility and observability.
+10. Never edit runtime state or registry status to mark completion. The orchestrator runs
+    `task complete --evidence ...` after the commit and verifies the board output.
 
 ## Stop conditions
 

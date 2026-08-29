@@ -28,6 +28,7 @@ function usage() {
   agentpack.mjs doctor
   agentpack.mjs validate
   agentpack.mjs task list
+  agentpack.mjs task board
   agentpack.mjs task next
   agentpack.mjs task show <TASK_ID>
   agentpack.mjs task start <TASK_ID>
@@ -99,6 +100,24 @@ function listTasks() {
   for (const task of tasks) {
     console.log([task.id, displayTaskStatus(task, state).padEnd(11), task.priority, `phase=${task.phase}`, task.title].join("  "));
   }
+}
+
+function taskBoard() {
+  const registry = loadRegistry();
+  const state = loadState();
+  const tasks = [...registry.tasks].sort((a, b) => a.phase - b.phase || priorityRank[a.priority] - priorityRank[b.priority] || a.id.localeCompare(b.id));
+  const counts = { completed: 0, 'in-progress': 0, ready: 0, planned: 0, failed: 0, blocked: 0 };
+  for (const task of tasks) counts[displayTaskStatus(task, state)] = (counts[displayTaskStatus(task, state)] ?? 0) + 1;
+  console.log(`Task board: ${counts.completed}/${tasks.length} completed | ${counts['in-progress']} in-progress | ${counts.ready} ready | ${counts.planned} planned`);
+  console.log('');
+  for (const task of tasks) {
+    const status = displayTaskStatus(task, state);
+    const marker = { completed: '[x]', 'in-progress': '[>]', ready: '[ ]', planned: '[-]', failed: '[!]', blocked: '[?]' }[status] ?? '[ ]';
+    console.log(`${marker} ${task.id}  phase=${task.phase}  ${status.padEnd(11)}  ${task.title}`);
+  }
+  const next = tasks.filter((task) => displayTaskStatus(task, state) === 'ready').sort((a, b) => a.phase - b.phase || priorityRank[a.priority] - priorityRank[b.priority] || a.id.localeCompare(b.id))[0];
+  console.log('');
+  console.log(next ? `NEXT: ${next.id} — ${next.title}` : 'NEXT: none');
 }
 
 function nextTask() {
@@ -195,6 +214,7 @@ function main() {
 
   if (group === "task") {
     if (action === "list") return listTasks();
+    if (action === "board") return taskBoard();
     if (action === "next") return nextTask();
     if (action === "show" && value) return showTask(value);
     if (action === "start" && value) return startTask(value);

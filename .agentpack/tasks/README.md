@@ -19,6 +19,7 @@ stores only explicit starts, blocks, failures, and completions.
 ```bash
 node .agentpack/scripts/agentpack.mjs task show T0001
 node .agentpack/scripts/agentpack.mjs task start T0001
+node .agentpack/scripts/agentpack.mjs task board
 ```
 
 The start command:
@@ -32,6 +33,12 @@ The start command:
 
 Run the implementation agent from that worktree. It must read the task's `references`, stay within
 `scope`, and satisfy every `acceptance` and `validation` entry.
+
+## Standard one-task loop
+
+Use `.agentpack/prompts/run-next-task.md` from the primary repository. The board is derived from the
+registry and shared runtime state. A task is only marked complete by `task complete --evidence`; after
+merging, `task board` must show `[x]` for that task and print the next ready task.
 
 ## Completion evidence
 

@@ -10,6 +10,7 @@
     "agent:doctor": "node .agentpack/scripts/agentpack.mjs doctor",
     "agent:validate": "node .agentpack/scripts/agentpack.mjs validate",
     "task:list": "node .agentpack/scripts/agentpack.mjs task list",
+    "task:board": "node .agentpack/scripts/agentpack.mjs task board",
     "task:next": "node .agentpack/scripts/agentpack.mjs task next",
     "task:show": "node .agentpack/scripts/agentpack.mjs task show",
     "task:start": "node .agentpack/scripts/agentpack.mjs task start",
