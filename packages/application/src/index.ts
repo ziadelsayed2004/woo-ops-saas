@@ -1,4 +1,9 @@
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'dead-lettered';
+export type AccountContext = Readonly<{
+  accountId: string;
+  actorId?: string;
+  correlationId: string;
+}>;
 export type DurableJob = {
   id: string;
   type: string;
@@ -7,6 +12,6 @@ export type DurableJob = {
   attempts: number;
 };
 export interface JobRepository {
-  claimNext(): Promise<DurableJob | null>;
-  complete(id: string): Promise<void>;
+  claimNext(context: AccountContext): Promise<DurableJob | null>;
+  complete(context: AccountContext, id: string): Promise<void>;
 }

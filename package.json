@@ -19,7 +19,7 @@
     "worktree:prune": "node .agentpack/scripts/agentpack.mjs worktree prune",
     "dev": "pnpm --parallel --filter @woo-ops/api --filter @woo-ops/web dev",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm -r build && pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "format:check": "prettier --check \"apps/**/*.{ts,tsx,json,html}\" \"packages/**/*.{ts,json}\" \"tools/**/*.mjs\" package.json tsconfig.base.json README.md .github/workflows/ci.yml",
     "test:unit": "pnpm -r test:unit",

@@ -1,15 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist",
-    "esModuleInterop": true,
-    "baseUrl": "../..",
-    "paths": {
-      "@woo-ops/contracts": ["packages/contracts/src/index.ts"],
-      "@woo-ops/persistence": ["packages/persistence/src/index.ts"]
-    }
-  },
-  "include": ["src"],
-  "references": [{ "path": "../../packages/contracts" }, { "path": "../../packages/persistence" }]
+  "compilerOptions": { "rootDir": "src", "outDir": "dist", "esModuleInterop": true },
+  "include": ["src"]
 }
