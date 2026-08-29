@@ -23,7 +23,9 @@
     "typecheck": "pnpm -r build && pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "format:check": "prettier --check \"apps/**/*.{ts,tsx,json,html}\" \"packages/**/*.{ts,json}\" \"tools/**/*.mjs\" package.json tsconfig.base.json README.md .github/workflows/ci.yml",
-    "test:unit": "pnpm -r test:unit",
+    "test:unit": "node tools/run-tests.mjs unit",
+    "test:integration": "node tools/run-tests.mjs integration",
+    "test:chaos": "node tools/run-tests.mjs chaos",
     "db:migrate": "pnpm --filter @woo-ops/api db:migrate",
     "db:backup": "pnpm --filter @woo-ops/api db:backup"
   },

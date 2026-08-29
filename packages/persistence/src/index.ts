@@ -9,7 +9,27 @@ type DurableJob = {
   attempts: number;
 };
 
-export const schemaVersion = 4;
+const isJsonValue = (value: unknown, depth = 0): boolean => {
+  if (depth > 8) return false;
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every((item) => isJsonValue(item, depth + 1));
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).every((item) =>
+      isJsonValue(item, depth + 1),
+    );
+  }
+  return false;
+};
+
+const serializeJobPayload = (payload: unknown): string => {
+  if (!isJsonValue(payload)) throw new Error('JOB_PAYLOAD_INVALID');
+  const serialized = JSON.stringify(payload);
+  if (serialized.length > 64 * 1024) throw new Error('JOB_PAYLOAD_TOO_LARGE');
+  return serialized;
+};
+
+export const schemaVersion = 5;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -79,6 +99,28 @@ const migrations: readonly Migration[] = [
       store_url TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, created_at TEXT NOT NULL
     ); CREATE INDEX authorization_states_expiry ON authorization_states(expires_at, used_at);`,
   },
+  {
+    version: 5,
+    name: 'durable-job-and-webhook-state',
+    sql: `
+      ALTER TABLE jobs ADD COLUMN payload_json TEXT NOT NULL DEFAULT '{}';
+      ALTER TABLE jobs ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 3;
+      ALTER TABLE jobs ADD COLUMN available_at TEXT NOT NULL DEFAULT '';
+      ALTER TABLE jobs ADD COLUMN lease_until TEXT;
+      ALTER TABLE jobs ADD COLUMN last_error TEXT;
+      ALTER TABLE jobs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE jobs ADD COLUMN progress INTEGER NOT NULL DEFAULT 0;
+      CREATE INDEX jobs_claimable ON jobs(account_id, status, available_at, created_at);
+      CREATE TABLE webhook_inbox (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), connection_id TEXT NOT NULL REFERENCES connections(id),
+        delivery_key TEXT NOT NULL, topic TEXT NOT NULL, body_checksum TEXT NOT NULL, raw_body BLOB NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('accepted', 'processing', 'processed', 'failed', 'dead-lettered')),
+        attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, received_at TEXT NOT NULL, processed_at TEXT,
+        UNIQUE (account_id, connection_id, delivery_key)
+      );
+      CREATE INDEX webhook_inbox_account_status ON webhook_inbox(account_id, status, received_at);
+    `,
+  },
 ];
 
 export class SqliteStore {
@@ -111,33 +153,6 @@ export class SqliteStore {
     })();
   }
 
-  claimNext(context: AccountContext): Promise<DurableJob | null> {
-    const row = this.db
-      .prepare(
-        "SELECT id, type, idempotency_key, status, attempts FROM jobs WHERE account_id = ? AND status = 'queued' ORDER BY created_at LIMIT 1",
-      )
-      .get(context.accountId) as
-      | {
-          id: string;
-          type: string;
-          idempotency_key: string;
-          status: DurableJob['status'];
-          attempts: number;
-        }
-      | undefined;
-    return Promise.resolve(
-      row
-        ? {
-            id: row.id,
-            type: row.type,
-            idempotencyKey: row.idempotency_key,
-            status: row.status,
-            attempts: row.attempts,
-          }
-        : null,
-    );
-  }
-
   complete(context: AccountContext, id: string): Promise<void> {
     this.db
       .prepare(
@@ -145,5 +160,170 @@ export class SqliteStore {
       )
       .run(new Date().toISOString(), context.accountId, id);
     return Promise.resolve();
+  }
+
+  enqueueJob(
+    context: AccountContext,
+    input: {
+      id: string;
+      type: string;
+      idempotencyKey: string;
+      payload: unknown;
+      maxAttempts?: number;
+    },
+  ): DurableJob {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO jobs (id, account_id, type, idempotency_key, status, attempts, created_at, updated_at, payload_json, max_attempts, available_at)
+      VALUES (?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?) ON CONFLICT(account_id, type, idempotency_key) DO NOTHING`,
+      )
+      .run(
+        input.id,
+        context.accountId,
+        input.type,
+        input.idempotencyKey,
+        now,
+        now,
+        serializeJobPayload(input.payload),
+        input.maxAttempts ?? 3,
+        now,
+      );
+    const row = this.db
+      .prepare(
+        'SELECT id, type, idempotency_key, status, attempts FROM jobs WHERE account_id = ? AND type = ? AND idempotency_key = ?',
+      )
+      .get(context.accountId, input.type, input.idempotencyKey) as {
+      id: string;
+      type: string;
+      idempotency_key: string;
+      status: DurableJob['status'];
+      attempts: number;
+    };
+    return {
+      id: row.id,
+      type: row.type,
+      idempotencyKey: row.idempotency_key,
+      status: row.status,
+      attempts: row.attempts,
+    };
+  }
+
+  claimNext(context: AccountContext, leaseSeconds = 60): DurableJob | null {
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const id = this.db.transaction(() => {
+      const candidate = this.db
+        .prepare(
+          `SELECT id FROM jobs WHERE account_id = ? AND status = 'queued' AND available_at <= ? AND cancel_requested = 0 ORDER BY created_at LIMIT 1`,
+        )
+        .get(context.accountId, nowIso) as { id: string } | undefined;
+      if (!candidate) return null;
+      const result = this.db
+        .prepare(
+          `UPDATE jobs SET status = 'running', attempts = attempts + 1, lease_until = ?, updated_at = ? WHERE account_id = ? AND id = ? AND status = 'queued'`,
+        )
+        .run(
+          new Date(now.getTime() + leaseSeconds * 1000).toISOString(),
+          nowIso,
+          context.accountId,
+          candidate.id,
+        );
+      return result.changes === 1 ? candidate.id : null;
+    })();
+    if (!id) return null;
+    const job = this.db
+      .prepare(
+        'SELECT id, type, idempotency_key, status, attempts FROM jobs WHERE account_id = ? AND id = ?',
+      )
+      .get(context.accountId, id) as {
+      id: string;
+      type: string;
+      idempotency_key: string;
+      status: DurableJob['status'];
+      attempts: number;
+    };
+    return {
+      id: job.id,
+      type: job.type,
+      idempotencyKey: job.idempotency_key,
+      status: job.status,
+      attempts: job.attempts,
+    };
+  }
+
+  recoverExpiredJobs(context: AccountContext): number {
+    const now = new Date().toISOString();
+    return this.db
+      .prepare(
+        `UPDATE jobs SET status = CASE WHEN cancel_requested = 1 THEN 'failed' ELSE 'queued' END, lease_until = NULL, available_at = ?, updated_at = ? WHERE account_id = ? AND status = 'running' AND lease_until <= ?`,
+      )
+      .run(now, now, context.accountId, now).changes;
+  }
+
+  updateJobProgress(context: AccountContext, id: string, progress: number): void {
+    if (!Number.isInteger(progress) || progress < 0 || progress > 100) {
+      throw new Error('JOB_PROGRESS_INVALID');
+    }
+    this.db
+      .prepare(
+        `UPDATE jobs SET progress = ?, updated_at = ? WHERE account_id = ? AND id = ? AND status = 'running'`,
+      )
+      .run(progress, new Date().toISOString(), context.accountId, id);
+  }
+
+  failJob(context: AccountContext, id: string, error: string): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `UPDATE jobs SET status = CASE WHEN attempts >= max_attempts THEN 'dead-lettered' ELSE 'queued' END, available_at = CASE WHEN attempts >= max_attempts THEN available_at ELSE ? END, lease_until = NULL, last_error = ?, updated_at = ? WHERE account_id = ? AND id = ? AND status = 'running'`,
+      )
+      .run(
+        new Date(Date.now() + 2000).toISOString(),
+        error.slice(0, 500),
+        now,
+        context.accountId,
+        id,
+      );
+  }
+
+  cancelJob(context: AccountContext, id: string): void {
+    this.db
+      .prepare(
+        `UPDATE jobs SET cancel_requested = 1, status = CASE WHEN status = 'queued' THEN 'failed' ELSE status END, updated_at = ? WHERE account_id = ? AND id = ? AND status IN ('queued', 'running')`,
+      )
+      .run(new Date().toISOString(), context.accountId, id);
+  }
+
+  acceptWebhook(input: {
+    id: string;
+    accountId: string;
+    connectionId: string;
+    deliveryKey: string;
+    topic: string;
+    body: Uint8Array;
+    checksum: string;
+  }): { accepted: boolean; inboxId: string } {
+    const result = this.db
+      .prepare(
+        `INSERT INTO webhook_inbox (id, account_id, connection_id, delivery_key, topic, body_checksum, raw_body, status, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'accepted', ?) ON CONFLICT(account_id, connection_id, delivery_key) DO NOTHING`,
+      )
+      .run(
+        input.id,
+        input.accountId,
+        input.connectionId,
+        input.deliveryKey,
+        input.topic,
+        input.checksum,
+        Buffer.from(input.body),
+        new Date().toISOString(),
+      );
+    if (result.changes === 1) return { accepted: true, inboxId: input.id };
+    const existing = this.db
+      .prepare(
+        'SELECT id FROM webhook_inbox WHERE account_id = ? AND connection_id = ? AND delivery_key = ?',
+      )
+      .get(input.accountId, input.connectionId, input.deliveryKey) as { id: string };
+    return { accepted: false, inboxId: existing.id };
   }
 }

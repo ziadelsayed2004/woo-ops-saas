@@ -1,5 +1,5 @@
-import express, { type Express } from 'express';
-import { randomUUID } from 'node:crypto';
+import express, { type Express, type Request } from 'express';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { healthResponseSchema } from '@woo-ops/contracts';
@@ -11,6 +11,7 @@ import {
 } from '@woo-ops/connectors';
 import { createHmac, randomBytes } from 'node:crypto';
 import { AuthService, can, recordAudit } from './auth.js';
+import { verifyWebhookSignature } from '@woo-ops/connectors';
 
 const port = Number(process.env.PORT ?? 3000);
 const dataDirectory = resolve(process.env.WOO_OPS_DATA_DIR ?? './data');
@@ -32,7 +33,14 @@ const readState = (state: string): string | null => {
 };
 
 app.disable('x-powered-by');
-app.use(express.json({ limit: '256kb' }));
+app.use(
+  express.json({
+    limit: '256kb',
+    verify: (request, _response, buffer) => {
+      (request as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+    },
+  }),
+);
 app.use((request, response, next) => {
   const origin = request.header('origin');
   const expectedOrigin = process.env.WEB_PUBLIC_URL ?? 'http://localhost:5173';
@@ -64,6 +72,59 @@ app.get('/health', (_request, response) => {
     version: '0.1.0',
   });
   response.json(body);
+});
+app.post('/api/v1/webhooks/woocommerce/:connectionId', (request, response) => {
+  const rawBody = (request as Request & { rawBody?: Buffer }).rawBody;
+  const connectionId = request.params.connectionId;
+  const connection = store.db
+    .prepare('SELECT id, account_id FROM connections WHERE id = ? AND platform = ?')
+    .get(connectionId, 'woocommerce') as { id: string; account_id: string } | undefined;
+  const secret = process.env.WOOCOMMERCE_WEBHOOK_SECRET;
+  const signature = request.header('x-wc-webhook-signature');
+  if (
+    !connection ||
+    !rawBody ||
+    !secret ||
+    !signature ||
+    !verifyWebhookSignature(rawBody, signature, secret)
+  ) {
+    response.status(401).json({
+      error: {
+        code: 'WEBHOOK_INVALID',
+        message: 'Webhook verification failed',
+        correlationId: response.getHeader('x-correlation-id'),
+      },
+    });
+    return;
+  }
+  const checksum = createHash('sha256').update(rawBody).digest('hex');
+  const deliveryKey =
+    request.header('x-wc-webhook-delivery-id') ??
+    `${request.header('x-wc-webhook-topic') ?? 'unknown'}:${checksum}`;
+  const accepted = store.acceptWebhook({
+    id: randomUUID(),
+    accountId: connection.account_id,
+    connectionId: connection.id,
+    deliveryKey,
+    topic: request.header('x-wc-webhook-topic') ?? 'unknown',
+    body: rawBody,
+    checksum,
+  });
+  if (accepted.accepted) {
+    store.enqueueJob(
+      { accountId: connection.account_id, correlationId: randomUUID() },
+      {
+        id: randomUUID(),
+        type: 'webhook.process',
+        idempotencyKey: deliveryKey,
+        payload: { inboxId: accepted.inboxId },
+        maxAttempts: 5,
+      },
+    );
+  }
+  response
+    .status(accepted.accepted ? 202 : 200)
+    .json({ accepted: true, duplicate: !accepted.accepted, inboxId: accepted.inboxId });
 });
 app.post('/api/v1/connections/woocommerce/authorize', (request, response) => {
   const user = auth.current(request);
