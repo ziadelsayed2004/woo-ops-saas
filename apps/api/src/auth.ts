@@ -161,8 +161,12 @@ export class AuthService {
   }
 }
 
-export const can = (role: string, permission: 'account:write' | 'audit:read'): boolean => {
+export const can = (
+  role: string,
+  permission: 'account:write' | 'audit:read' | 'operations:write',
+): boolean => {
   if (permission === 'audit:read') return ['owner', 'admin', 'operator', 'viewer'].includes(role);
+  if (permission === 'operations:write') return ['owner', 'admin', 'operator'].includes(role);
   return ['owner', 'admin'].includes(role);
 };
 
