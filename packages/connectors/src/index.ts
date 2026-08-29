@@ -12,9 +12,18 @@ export interface ReadOnlyCommerceConnector {
 }
 
 export {
+  catalogIdentity,
+  normalizeCatalogRecord,
+  toCatalogItems,
   WooCommerceConnector,
   canonicalizeStoreUrl,
   createAuthorizationUrl,
   encryptCredentialEnvelope,
   verifyWebhookSignature,
+} from './woocommerce.js';
+export type {
+  NormalizedCatalogItem,
+  WooCatalogKind,
+  WooCatalogPage,
+  WooCredentials,
 } from './woocommerce.js';

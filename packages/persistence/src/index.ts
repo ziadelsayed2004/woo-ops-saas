@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { createHash } from 'node:crypto';
 
 type AccountContext = Readonly<{ accountId: string; actorId?: string; correlationId: string }>;
 type DurableJob = {
@@ -7,6 +8,15 @@ type DurableJob = {
   idempotencyKey: string;
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'dead-lettered';
   attempts: number;
+};
+export type CatalogItem = {
+  identity: string;
+  kind: 'product' | 'variation' | 'category' | 'tag' | 'shipping_class';
+  externalId: string;
+  parentExternalId: string | null;
+  name: string;
+  sku: string | null;
+  sourceJson: string;
 };
 
 const isJsonValue = (value: unknown, depth = 0): boolean => {
@@ -29,7 +39,9 @@ const serializeJobPayload = (payload: unknown): string => {
   return serialized;
 };
 
-export const schemaVersion = 5;
+const requireHash = (value: string): string => createHash('sha256').update(value).digest('hex');
+
+export const schemaVersion = 6;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -119,6 +131,33 @@ const migrations: readonly Migration[] = [
         UNIQUE (account_id, connection_id, delivery_key)
       );
       CREATE INDEX webhook_inbox_account_status ON webhook_inbox(account_id, status, received_at);
+    `,
+  },
+  {
+    version: 6,
+    name: 'catalog-sync-state',
+    sql: `
+      ALTER TABLE connections ADD COLUMN catalog_cursor TEXT;
+      ALTER TABLE connections ADD COLUMN catalog_status TEXT NOT NULL DEFAULT 'idle';
+      ALTER TABLE connections ADD COLUMN catalog_last_error TEXT;
+      ALTER TABLE connections ADD COLUMN catalog_last_success TEXT;
+      ALTER TABLE connections ADD COLUMN catalog_deleted_count INTEGER NOT NULL DEFAULT 0;
+      CREATE TABLE catalog_items (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), connection_id TEXT NOT NULL REFERENCES connections(id),
+        kind TEXT NOT NULL CHECK (kind IN ('product', 'variation', 'category', 'tag', 'shipping_class')),
+        external_id TEXT NOT NULL, parent_external_id TEXT, name TEXT NOT NULL, sku TEXT,
+        source_json TEXT NOT NULL, source_hash TEXT NOT NULL, remote_modified_at TEXT,
+        remote_deleted_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE (account_id, connection_id, kind, external_id)
+      );
+      CREATE INDEX catalog_items_account_connection ON catalog_items(account_id, connection_id, kind, remote_deleted_at);
+      CREATE TABLE catalog_sync_runs (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), connection_id TEXT NOT NULL REFERENCES connections(id),
+        cursor TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('running', 'succeeded', 'failed')),
+        pages INTEGER NOT NULL DEFAULT 0, items INTEGER NOT NULL DEFAULT 0, deleted INTEGER NOT NULL DEFAULT 0,
+        error_code TEXT, started_at TEXT NOT NULL, completed_at TEXT
+      );
+      CREATE INDEX catalog_sync_runs_account ON catalog_sync_runs(account_id, connection_id, started_at);
     `,
   },
 ];
@@ -270,6 +309,95 @@ export class SqliteStore {
         `UPDATE jobs SET progress = ?, updated_at = ? WHERE account_id = ? AND id = ? AND status = 'running'`,
       )
       .run(progress, new Date().toISOString(), context.accountId, id);
+  }
+
+  upsertCatalogPage(
+    context: AccountContext,
+    input: {
+      connectionId: string;
+      cursor: string;
+      items: readonly CatalogItem[];
+      pages: number;
+    },
+  ): { insertedOrUpdated: number } {
+    const now = new Date().toISOString();
+    const statement = this.db.prepare(
+      `INSERT INTO catalog_items (id, account_id, connection_id, kind, external_id, parent_external_id, name, sku, source_json, source_hash, remote_modified_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(account_id, connection_id, kind, external_id) DO UPDATE SET parent_external_id = excluded.parent_external_id, name = excluded.name, sku = excluded.sku, source_json = excluded.source_json, source_hash = excluded.source_hash, remote_modified_at = excluded.remote_modified_at, remote_deleted_at = NULL, updated_at = excluded.updated_at`,
+    );
+    const run = this.db.transaction(() => {
+      let count = 0;
+      for (const item of input.items) {
+        if (item.sourceJson.length > 256 * 1024) throw new Error('CATALOG_SOURCE_TOO_LARGE');
+        statement.run(
+          `${context.accountId}:${input.connectionId}:${item.identity}`,
+          context.accountId,
+          input.connectionId,
+          item.kind,
+          item.externalId,
+          item.parentExternalId,
+          item.name,
+          item.sku,
+          item.sourceJson,
+          requireHash(item.sourceJson),
+          null,
+          now,
+          now,
+        );
+        count += 1;
+      }
+      this.db
+        .prepare(
+          `UPDATE connections SET catalog_cursor = ?, catalog_status = 'running', catalog_last_error = NULL, updated_at = ? WHERE id = ? AND account_id = ?`,
+        )
+        .run(input.cursor, now, input.connectionId, context.accountId);
+      return count;
+    })();
+    return { insertedOrUpdated: run };
+  }
+
+  markCatalogDeleted(
+    context: AccountContext,
+    connectionId: string,
+    identities: readonly string[],
+  ): number {
+    if (identities.length === 0) return 0;
+    const now = new Date().toISOString();
+    const placeholders = identities.map(() => '?').join(',');
+    const result = this.db
+      .prepare(
+        `UPDATE catalog_items SET remote_deleted_at = ?, updated_at = ? WHERE account_id = ? AND connection_id = ? AND id IN (${placeholders}) AND remote_deleted_at IS NULL`,
+      )
+      .run(now, now, context.accountId, connectionId, ...identities);
+    this.db
+      .prepare(
+        `UPDATE connections SET catalog_deleted_count = catalog_deleted_count + ?, updated_at = ? WHERE id = ? AND account_id = ?`,
+      )
+      .run(result.changes, now, connectionId, context.accountId);
+    return result.changes;
+  }
+
+  completeCatalogSync(
+    context: AccountContext,
+    connectionId: string,
+    success: boolean,
+    errorCode?: string,
+  ): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `UPDATE connections SET catalog_status = ?, catalog_last_error = ?, catalog_last_success = CASE WHEN ? = 'succeeded' THEN ? ELSE catalog_last_success END, updated_at = ? WHERE id = ? AND account_id = ?`,
+      )
+      .run(
+        success ? 'idle' : 'failed',
+        errorCode ?? null,
+        success ? 'succeeded' : 'failed',
+        now,
+        now,
+        connectionId,
+        context.accountId,
+      );
   }
 
   failJob(context: AccountContext, id: string, error: string): void {

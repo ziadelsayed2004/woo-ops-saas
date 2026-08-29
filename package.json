@@ -26,6 +26,7 @@
     "test:unit": "node tools/run-tests.mjs unit",
     "test:integration": "node tools/run-tests.mjs integration",
     "test:chaos": "node tools/run-tests.mjs chaos",
+    "test:contract": "node tools/run-tests.mjs contract",
     "db:migrate": "pnpm --filter @woo-ops/api db:migrate",
     "db:backup": "pnpm --filter @woo-ops/api db:backup"
   },

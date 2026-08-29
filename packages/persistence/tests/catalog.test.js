@@ -1,0 +1,75 @@
+import assert from 'node:assert/strict';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import { SqliteStore } from '../dist/index.js';
+
+const directory = mkdtempSync(join(tmpdir(), 'woo-catalog-'));
+const store = new SqliteStore(join(directory, 'catalog.sqlite'));
+const accountId = randomUUID();
+const connectionId = randomUUID();
+const now = new Date().toISOString();
+store.db
+  .prepare('INSERT INTO accounts (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)')
+  .run(accountId, 'Test', now, now);
+store.db
+  .prepare(
+    'INSERT INTO connections (id, account_id, platform, store_url, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  )
+  .run(connectionId, accountId, 'woocommerce', 'https://shop.example.com', 'active', now, now);
+const context = { accountId, correlationId: randomUUID() };
+
+test('catalog pages upsert idempotently, persist cursor, and mark remote deletion', () => {
+  const sourceJson = JSON.stringify({ id: 10, name: 'Shoe' });
+  const item = {
+    identity: 'product:10:variation:base',
+    kind: 'product',
+    externalId: '10',
+    parentExternalId: null,
+    name: 'Shoe',
+    sku: 'S-10',
+    sourceJson,
+  };
+  assert.deepEqual(
+    store.upsertCatalogPage(context, {
+      connectionId,
+      cursor: 'products:2',
+      items: [item],
+      pages: 1,
+    }),
+    { insertedOrUpdated: 1 },
+  );
+  assert.deepEqual(
+    store.upsertCatalogPage(context, {
+      connectionId,
+      cursor: 'products:2',
+      items: [item],
+      pages: 1,
+    }),
+    { insertedOrUpdated: 1 },
+  );
+  assert.equal(store.db.prepare('SELECT COUNT(*) AS count FROM catalog_items').get().count, 1);
+  assert.equal(
+    store.db.prepare('SELECT catalog_cursor FROM connections WHERE id = ?').get(connectionId)
+      .catalog_cursor,
+    'products:2',
+  );
+  assert.equal(
+    store.markCatalogDeleted(context, connectionId, [
+      `${accountId}:${connectionId}:${item.identity}`,
+    ]),
+    1,
+  );
+  assert.notEqual(
+    store.db.prepare('SELECT remote_deleted_at FROM catalog_items').get().remote_deleted_at,
+    null,
+  );
+  assert.equal(createHash('sha256').update(sourceJson).digest('hex').length, 64);
+});
+
+test.after(() => {
+  store.db.close();
+  rmSync(directory, { recursive: true, force: true });
+});

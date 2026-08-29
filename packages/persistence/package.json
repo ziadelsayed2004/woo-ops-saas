@@ -15,7 +15,8 @@
     "lint": "tsc -p tsconfig.json --noEmit",
     "test:unit": "node --test tests/*.test.js",
     "test:integration": "node --test tests/*.test.js",
-    "test:chaos": "node --test tests/*.test.js"
+    "test:chaos": "node --test tests/*.test.js",
+    "test:contract": "node --test tests/*.test.js"
   },
   "dependencies": {
     "@woo-ops/application": "workspace:*",
