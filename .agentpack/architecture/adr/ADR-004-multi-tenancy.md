@@ -1,22 +1,11 @@
-# ADR-004: Shared database with mandatory tenant-scoped repositories
+# ADR-004: Single-installation account boundary
 
 - Status: accepted
-- Date: 2026-08-27
+- Date: 2026-08-29
 
-## Context
+The supported deployment represents one merchant account and its connected WooCommerce stores. Records
+still carry an internal account boundary, and repositories/use cases receive server-side authenticated
+context. The browser cannot provide account authority. Roles are owner, admin, operator and viewer.
 
-The first customer may use one organization, but the product is SaaS and must support many merchants.
-
-## Decision
-
-Use a shared MongoDB deployment and shared collections with `organizationId` on every tenant-owned
-record. HTTP controllers and job handlers access data only through repositories requiring a
-server-created `TenantContext`. Cache, files, search, locks, idempotency, and audit use the same
-scope.
-
-## Consequences
-
-- Efficient early SaaS operation and migrations.
-- Isolation relies on systemic application controls and exhaustive negative tests.
-- Enterprise database-per-tenant can be added behind repository routing later without changing the
-  domain contract.
+This avoids hosted billing and cross-organization complexity while preserving a future migration path:
+hosted multi-tenancy can be added through repository/storage routing without rewriting order modules.

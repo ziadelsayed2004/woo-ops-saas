@@ -1,0 +1,12 @@
+{
+  "name": "@woo-ops/analytics",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "node --test"
+  }
+}

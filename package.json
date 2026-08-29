@@ -2,7 +2,7 @@
   "name": "woo-ops-saas",
   "version": "0.0.0",
   "private": true,
-  "description": "Agent-driven starter for a multi-tenant WooCommerce order operations SaaS",
+  "description": "Woo Ops: a deployable WooCommerce order operations application",
   "engines": {
     "node": ">=22"
   },
@@ -16,6 +16,19 @@
     "task:complete": "node .agentpack/scripts/agentpack.mjs task complete",
     "task:fail": "node .agentpack/scripts/agentpack.mjs task fail",
     "worktree:list": "node .agentpack/scripts/agentpack.mjs worktree list",
-    "worktree:prune": "node .agentpack/scripts/agentpack.mjs worktree prune"
-  }
+    "worktree:prune": "node .agentpack/scripts/agentpack.mjs worktree prune",
+    "dev": "pnpm --parallel --filter @woo-ops/api --filter @woo-ops/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "format:check": "prettier --check \"apps/**/*.{ts,tsx,json,html}\" \"packages/**/*.{ts,json}\" package.json tsconfig.base.json",
+    "test:unit": "pnpm -r test:unit",
+    "db:migrate": "pnpm --filter @woo-ops/api db:migrate",
+    "db:backup": "pnpm --filter @woo-ops/api db:backup"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2"
+  },
+  "packageManager": "pnpm@10.15.0"
 }

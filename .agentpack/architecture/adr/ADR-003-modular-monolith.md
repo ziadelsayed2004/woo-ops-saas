@@ -1,23 +1,13 @@
-# ADR-003: Modular monolith with separate API and worker processes
+# ADR-003: Single-process modular monolith
 
 - Status: accepted
-- Date: 2026-08-27
-
-## Context
-
-The domain is broad, but premature microservices would multiply deployment, contracts, observability,
-and consistency work. Sync, exports, and PDF rendering cannot live safely inside normal HTTP request
-lifetimes.
+- Date: 2026-08-29
 
 ## Decision
 
-Build one TypeScript monorepo with domain-enforced modules and three deployables: web, API, worker.
-Use Redis/BullMQ between API and worker. Split a module into a service only after measured scaling or
-ownership boundaries justify it.
+Build one TypeScript monorepo with a Vite React web app and an Express Node app. The API and an
+in-process durable job runner share application/domain packages. Jobs use SQLite leases, retries and
+dead-letter status. Hostinger Cron may invoke a protected maintenance endpoint or CLI command.
 
-## Consequences
-
-- Simple local development and atomic refactoring.
-- API and workers scale independently.
-- Package dependency boundaries and lint rules are required to prevent a distributed-monolith-in-one-
-  repo.
+Long work never runs inside a request; requests create durable jobs and return job IDs. A future worker
+can consume the same job port without changing domain modules.

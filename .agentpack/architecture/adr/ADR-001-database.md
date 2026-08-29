@@ -1,37 +1,22 @@
-# ADR-001: MongoDB Atlas, not SQLite, for production orders
+# ADR-001: SQLite as the deployment database
 
 - Status: accepted
-- Date: 2026-08-27
-
-## Context
-
-The product is a multi-tenant SaaS with concurrent webhooks, polling, manual order edits, exports,
-PDF jobs, analytics rebuilds, sessions, and audit events. It must run without a self-managed VPS.
-
-SQLite is operationally attractive but allows one writer at a time. A single local database file is
-also a poor boundary for independently scaled API and worker containers, failover, managed backups,
-and multi-instance deployments.
+- Date: 2026-08-29
 
 ## Decision
 
-Use managed MongoDB Atlas as the production database and Mongoose behind tenant-scoped repository
-ports. Use Free for development/proof of concept, Flex for a monitored low-throughput pilot, and
-Dedicated when production requirements demand it.
+Each installation uses one SQLite database file under a configurable private data directory. SQLite
+runs in WAL mode with foreign keys enabled. Versioned idempotent migrations manage schema changes.
+Durable jobs in SQLite allow sync, exports, documents, analytics and backups to survive restarts.
 
-SQLite is permitted only for isolated local tooling metadata or tests that do not claim production
-database parity. The application domain must not implement a second SQLite persistence layer.
+## Constraints
+
+The supported profile is single-installation/single-account and is not horizontally scaled. Persistence
+ports remain replaceable so a future hosted edition can add another adapter. Generated files live outside
+the public web root and are included in backups.
 
 ## Consequences
 
-- MERN remains literal and the document model fits varying remote metadata and embedded line
-  snapshots.
-- No VPS is needed for the database.
-- Atlas networking, connection pooling, tier limits, indexes, and backups are deployment concerns.
-- Correct denormalization and bounded document design remain mandatory.
-- Production readiness cannot be claimed on a free proof-of-concept tier.
-
-## References
-
-- https://sqlite.org/whentouse.html
-- https://www.mongodb.com/docs/atlas/create-database-deployment/
-- https://www.mongodb.com/docs/atlas/manage-flex-clusters/
+- Local and Hostinger deployments share the same database behavior.
+- WAL, busy timeouts, bounded jobs and scheduled backups are mandatory.
+- Horizontal multi-instance deployment is out of scope for this profile.

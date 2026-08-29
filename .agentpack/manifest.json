@@ -6,21 +6,21 @@
     "name": "Woo Ops SaaS",
     "version": "1.0.0",
     "language": "en",
-    "projectType": "multi-tenant-saas",
-    "stack": "MERN-TypeScript"
+    "projectType": "single-tenant-deployable-product",
+    "stack": "React-Vite-Express-SQLite-TypeScript"
   },
   "product": {
     "primaryPlatform": "woocommerce",
     "connectorDirection": "read-only",
     "manualOrders": "local-only",
-    "database": "mongodb-atlas",
-    "queue": "bullmq-managed-redis",
-    "objectStorage": "s3-compatible"
+    "database": "sqlite-file",
+    "queue": "sqlite-durable-jobs",
+    "objectStorage": "local-filesystem-with-backup"
   },
   "runtime": {
     "node": ">=22",
     "packageManager": "pnpm",
-    "apps": ["web", "api", "worker"]
+    "apps": ["web", "api"]
   },
   "sourceControl": {
     "baseBranch": "main",

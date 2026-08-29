@@ -25,3 +25,4 @@ tmp/
 apps/**/.vite/
 apps/**/.next/
 apps/**/.cache/
+*.tsbuildinfo
