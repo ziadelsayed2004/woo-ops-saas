@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { healthResponseSchema } from '@woo-ops/contracts';
-import { SqliteStore } from '@woo-ops/persistence';
+import { SqliteStore, type OrderQueryInput } from '@woo-ops/persistence';
 import {
   canonicalizeStoreUrl,
   createAuthorizationUrl,
@@ -72,6 +72,42 @@ app.get('/health', (_request, response) => {
     version: '0.1.0',
   });
   response.json(body);
+});
+app.post('/api/v1/orders/query', (request, response) => {
+  const user = auth.current(request);
+  if (!user) {
+    response.status(401).json({
+      error: {
+        code: 'AUTH_UNAUTHENTICATED',
+        message: 'Authentication required',
+        correlationId: String(response.getHeader('x-correlation-id')),
+      },
+    });
+    return;
+  }
+  try {
+    const result = store.queryOrders(
+      {
+        accountId: user.accountId,
+        actorId: user.id,
+        correlationId: String(response.getHeader('x-correlation-id')),
+      },
+      request.body as OrderQueryInput,
+    );
+    response.json(result);
+  } catch (error) {
+    const code =
+      error instanceof Error && error.message.startsWith('ORDER_')
+        ? error.message
+        : 'ORDER_QUERY_INVALID';
+    response.status(400).json({
+      error: {
+        code,
+        message: 'Invalid order query',
+        correlationId: String(response.getHeader('x-correlation-id')),
+      },
+    });
+  }
 });
 app.post('/api/v1/webhooks/woocommerce/:connectionId', (request, response) => {
   const rawBody = (request as Request & { rawBody?: Buffer }).rawBody;
