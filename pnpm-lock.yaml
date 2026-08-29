@@ -23,6 +23,9 @@ importers:
       '@woo-ops/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
+      better-sqlite3:
+        specifier: ^12.4.1
+        version: 12.11.1
       express:
         specifier: ^5.1.0
         version: 5.2.1
@@ -30,6 +33,9 @@ importers:
         specifier: ^4.1.5
         version: 4.5.4
     devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
       '@types/express':
         specifier: ^5.0.3
         version: 5.0.6

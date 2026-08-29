@@ -16,10 +16,12 @@
   "dependencies": {
     "@woo-ops/contracts": "workspace:*",
     "@woo-ops/persistence": "workspace:*",
+    "better-sqlite3": "^12.4.1",
     "express": "^5.1.0",
     "zod": "^4.1.5"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.3",
     "tsx": "^4.20.5"
   }

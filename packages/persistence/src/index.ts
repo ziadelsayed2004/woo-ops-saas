@@ -9,7 +9,7 @@ type DurableJob = {
   attempts: number;
 };
 
-export const schemaVersion = 2;
+export const schemaVersion = 3;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -56,6 +56,19 @@ const migrations: readonly Migration[] = [
         actor_id TEXT, action TEXT NOT NULL, target_type TEXT NOT NULL, target_id TEXT,
         summary_json TEXT NOT NULL, correlation_id TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE INDEX audit_account_created ON audit_events(account_id, created_at, id);
+    `,
+  },
+  {
+    version: 3,
+    name: 'secure-sessions',
+    sql: `
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), account_id TEXT NOT NULL REFERENCES accounts(id),
+        token_hash TEXT NOT NULL UNIQUE, csrf_hash TEXT NOT NULL, expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL, last_seen_at TEXT NOT NULL, revoked_at TEXT
+      );
+      CREATE INDEX sessions_user_active ON sessions(user_id, revoked_at, expires_at);
+      CREATE INDEX sessions_account_active ON sessions(account_id, revoked_at, expires_at);
     `,
   },
 ];
