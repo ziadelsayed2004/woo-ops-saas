@@ -34,6 +34,35 @@ export type NormalizedOrderInput = {
   sourceJson: string;
   sourceHash: string;
 };
+export type OrderFilter =
+  | { op: 'and' | 'or'; children: readonly OrderFilter[] }
+  | { field: OrderFilterField; operator: string; value?: unknown };
+export type OrderFilterField =
+  | 'orderNumber'
+  | 'externalOrderId'
+  | 'remoteStatus'
+  | 'localStatus'
+  | 'exportState'
+  | 'origin'
+  | 'currency'
+  | 'connectionId'
+  | 'remoteCreatedAt'
+  | 'grandTotalMinor';
+export type OrderQueryInput = {
+  search?: string;
+  filter?: OrderFilter;
+  cursor?: string | null;
+  limit?: number;
+  sort?: {
+    field: 'remoteCreatedAt' | 'updatedAt' | 'orderNumber' | 'grandTotalMinor' | 'id';
+    direction: 'asc' | 'desc';
+  };
+};
+export type OrderQueryResult = {
+  items: readonly Record<string, unknown>[];
+  nextCursor: string | null;
+  hasMore: boolean;
+};
 
 const isJsonValue = (value: unknown, depth = 0): boolean => {
   if (depth > 8) return false;
@@ -56,6 +85,140 @@ const serializeJobPayload = (payload: unknown): string => {
 };
 
 const requireHash = (value: string): string => createHash('sha256').update(value).digest('hex');
+
+const filterColumns: Record<OrderFilterField, string> = {
+  orderNumber: 'o.order_number',
+  externalOrderId: 'o.external_order_id',
+  remoteStatus: 'o.remote_status',
+  localStatus: 'o.local_status',
+  exportState: 'o.export_state',
+  origin: 'o.origin',
+  currency: 'o.currency',
+  connectionId: 'o.connection_id',
+  remoteCreatedAt: 'o.remote_modified_at',
+  grandTotalMinor: 'o.grand_total_minor',
+};
+const allowedOperators: Record<OrderFilterField, readonly string[]> = {
+  orderNumber: [
+    'equals',
+    'not-equals',
+    'contains',
+    'starts-with',
+    'is-empty',
+    'is-not-empty',
+    'in',
+  ],
+  externalOrderId: [
+    'equals',
+    'not-equals',
+    'contains',
+    'starts-with',
+    'is-empty',
+    'is-not-empty',
+    'in',
+  ],
+  remoteStatus: ['equals', 'not-equals', 'is-any-of', 'is-empty', 'is-not-empty'],
+  localStatus: ['equals', 'not-equals', 'is-any-of', 'is-empty', 'is-not-empty'],
+  exportState: ['equals', 'not-equals', 'is-any-of', 'is-empty', 'is-not-empty'],
+  origin: ['equals', 'is-any-of'],
+  currency: ['equals', 'is-any-of'],
+  connectionId: ['equals', 'is-any-of'],
+  remoteCreatedAt: [
+    'equals',
+    'greater-than',
+    'greater-or-equal',
+    'less-than',
+    'less-or-equal',
+    'between',
+    'is-empty',
+    'is-not-empty',
+  ],
+  grandTotalMinor: [
+    'equals',
+    'greater-than',
+    'greater-or-equal',
+    'less-than',
+    'less-or-equal',
+    'between',
+  ],
+};
+const encodedCursor = (value: unknown): string =>
+  Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+const decodedCursor = (value: string): { sortValue: string; id: string } => {
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as Record<
+      string,
+      unknown
+    >;
+    if (typeof parsed.sortValue !== 'string' || typeof parsed.id !== 'string') throw new Error();
+    return { sortValue: parsed.sortValue, id: parsed.id };
+  } catch {
+    throw new Error('ORDER_CURSOR_INVALID');
+  }
+};
+
+const compileFilter = (filter: OrderFilter): { sql: string; params: (string | number)[] } => {
+  if (!filter || typeof filter !== 'object') throw new Error('ORDER_FILTER_INVALID');
+  if ('op' in filter) {
+    if (filter.children.length === 0) throw new Error('ORDER_FILTER_EMPTY_GROUP');
+    const children = filter.children.map(compileFilter);
+    return {
+      sql: `(${children.map((child) => child.sql).join(` ${filter.op.toUpperCase()} `)})`,
+      params: children.flatMap((child) => child.params),
+    };
+  }
+  if (
+    !Object.hasOwn(filterColumns, filter.field) ||
+    !allowedOperators[filter.field].includes(filter.operator)
+  ) {
+    throw new Error('ORDER_FILTER_NOT_ALLOWED');
+  }
+  const column = filterColumns[filter.field];
+  const operator = filter.operator;
+  if (operator === 'is-empty') return { sql: `(${column} IS NULL OR ${column} = '')`, params: [] };
+  if (operator === 'is-not-empty')
+    return { sql: `(${column} IS NOT NULL AND ${column} <> '')`, params: [] };
+  const values = Array.isArray(filter.value) ? filter.value : [filter.value];
+  if (operator === 'in' || operator === 'is-any-of') {
+    if (
+      values.length === 0 ||
+      values.some((value) => typeof value !== 'string' && typeof value !== 'number')
+    )
+      throw new Error('ORDER_FILTER_VALUE_INVALID');
+    return {
+      sql: `${column} IN (${values.map(() => '?').join(',')})`,
+      params: values as (string | number)[],
+    };
+  }
+  if (operator === 'between') {
+    if (
+      values.length !== 2 ||
+      values.some((value) => typeof value !== 'string' && typeof value !== 'number')
+    )
+      throw new Error('ORDER_FILTER_VALUE_INVALID');
+    return { sql: `${column} BETWEEN ? AND ?`, params: values as (string | number)[] };
+  }
+  if (typeof filter.value !== 'string' && typeof filter.value !== 'number')
+    throw new Error('ORDER_FILTER_VALUE_INVALID');
+  if (operator === 'contains' || operator === 'starts-with') {
+    const value = String(filter.value);
+    return {
+      sql: `${column} LIKE ?`,
+      params: [operator === 'contains' ? `%${value}%` : `${value}%`],
+    };
+  }
+  const operators: Record<string, string> = {
+    equals: '=',
+    'not-equals': '<>',
+    'greater-than': '>',
+    'greater-or-equal': '>=',
+    'less-than': '<',
+    'less-or-equal': '<=',
+  };
+  const sqlOperator = operators[operator];
+  if (!sqlOperator) throw new Error('ORDER_FILTER_NOT_ALLOWED');
+  return { sql: `${column} ${sqlOperator} ?`, params: [filter.value] };
+};
 
 export const schemaVersion = 7;
 
@@ -212,6 +375,88 @@ export class SqliteStore {
       'CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)',
     );
     this.applyMigrations();
+  }
+
+  queryOrders(context: AccountContext, input: OrderQueryInput = {}): OrderQueryResult {
+    const limit = input.limit ?? 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error('ORDER_LIMIT_INVALID');
+    const sort = input.sort ?? { field: 'remoteCreatedAt' as const, direction: 'desc' as const };
+    const sortColumns = {
+      remoteCreatedAt: 'o.remote_modified_at',
+      updatedAt: 'o.updated_at',
+      orderNumber: 'o.order_number',
+      grandTotalMinor: 'o.grand_total_minor',
+      id: 'o.id',
+    } as const;
+    const sortColumn = sortColumns[sort.field];
+    if (!sortColumn || !['asc', 'desc'].includes(sort.direction))
+      throw new Error('ORDER_SORT_NOT_ALLOWED');
+    const clauses = ['o.account_id = ?'];
+    const params: (string | number)[] = [context.accountId];
+    if (input.search !== undefined) {
+      if (typeof input.search !== 'string' || input.search.length > 200)
+        throw new Error('ORDER_SEARCH_INVALID');
+      clauses.push(
+        `(o.order_number LIKE ? OR o.external_order_id LIKE ? OR o.remote_status LIKE ? OR o.local_status LIKE ? OR o.currency LIKE ? OR o.normalized_json LIKE ?)`,
+      );
+      const search = `%${input.search}%`;
+      params.push(search, search, search, search, search, search);
+    }
+    if (input.filter) {
+      const compiled = compileFilter(input.filter);
+      clauses.push(compiled.sql);
+      params.push(...compiled.params);
+    }
+    if (input.cursor) {
+      const cursor = decodedCursor(input.cursor);
+      const comparison = sort.direction === 'desc' ? '<' : '>';
+      clauses.push(
+        `(COALESCE(${sortColumn}, '') ${comparison} ? OR (COALESCE(${sortColumn}, '') = ? AND o.id ${comparison} ?))`,
+      );
+      params.push(cursor.sortValue, cursor.sortValue, cursor.id);
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT o.id, o.order_number, o.external_order_id, o.origin, o.connection_id, o.remote_status, o.local_status, o.export_state, o.currency, o.grand_total_minor, o.remote_modified_at, o.updated_at, o.normalized_json, COALESCE(${sortColumn}, '') AS sort_value FROM orders o WHERE ${clauses.join(' AND ')} ORDER BY COALESCE(${sortColumn}, '') ${sort.direction}, o.id ${sort.direction} LIMIT ?`,
+      )
+      .all(...params, limit + 1) as Array<Record<string, unknown>>;
+    const hasMore = rows.length > limit;
+    const visible = rows.slice(0, limit);
+    const items = visible.map((row) => {
+      let normalized: Record<string, unknown> = {};
+      if (typeof row.normalized_json === 'string') {
+        try {
+          normalized = JSON.parse(row.normalized_json) as Record<string, unknown>;
+        } catch {
+          normalized = {};
+        }
+      }
+      return {
+        ...normalized,
+        id: row.id,
+        orderNumber: row.order_number,
+        externalOrderId: row.external_order_id,
+        origin: row.origin,
+        connectionId: row.connection_id,
+        remoteStatus: row.remote_status,
+        localStatus: row.local_status,
+        exportState: row.export_state,
+        currency: row.currency,
+        grandTotalMinor: row.grand_total_minor,
+        remoteCreatedAt: row.remote_modified_at,
+        updatedAt: row.updated_at,
+      };
+    });
+    const last = visible.at(-1);
+    return {
+      items,
+      hasMore,
+      nextCursor:
+        hasMore && last
+          ? encodedCursor({ sortValue: String(last.sort_value ?? ''), id: String(last.id) })
+          : null,
+    };
   }
 
   private applyMigrations(): void {
