@@ -9,7 +9,7 @@ type DurableJob = {
   attempts: number;
 };
 
-export const schemaVersion = 3;
+export const schemaVersion = 4;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -70,6 +70,14 @@ const migrations: readonly Migration[] = [
       CREATE INDEX sessions_user_active ON sessions(user_id, revoked_at, expires_at);
       CREATE INDEX sessions_account_active ON sessions(account_id, revoked_at, expires_at);
     `,
+  },
+  {
+    version: 4,
+    name: 'woocommerce-authorization-states',
+    sql: `CREATE TABLE authorization_states (
+      state_hash TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), user_id TEXT NOT NULL REFERENCES users(id),
+      store_url TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, created_at TEXT NOT NULL
+    ); CREATE INDEX authorization_states_expiry ON authorization_states(expires_at, used_at);`,
   },
 ];
 

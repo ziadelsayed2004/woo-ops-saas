@@ -10,3 +10,11 @@ export interface ReadOnlyCommerceConnector {
   pullProducts(): AsyncIterable<unknown>;
   verifyWebhook(rawBody: Uint8Array, signature: string): Promise<boolean>;
 }
+
+export {
+  WooCommerceConnector,
+  canonicalizeStoreUrl,
+  createAuthorizationUrl,
+  encryptCredentialEnvelope,
+  verifyWebhookSignature,
+} from './woocommerce.js';

@@ -4,6 +4,12 @@ import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { healthResponseSchema } from '@woo-ops/contracts';
 import { SqliteStore } from '@woo-ops/persistence';
+import {
+  canonicalizeStoreUrl,
+  createAuthorizationUrl,
+  encryptCredentialEnvelope,
+} from '@woo-ops/connectors';
+import { createHmac, randomBytes } from 'node:crypto';
 import { AuthService, can, recordAudit } from './auth.js';
 
 const port = Number(process.env.PORT ?? 3000);
@@ -14,6 +20,16 @@ const store = new SqliteStore(databasePath);
 const auth = new AuthService(store.db);
 const app: Express = express();
 const attempts = new Map<string, { count: number; resetAt: number }>();
+const callbackSecret = process.env.SESSION_SECRET ?? 'development-only-session-secret';
+const signState = (nonce: string): string =>
+  `${nonce}.${createHmac('sha256', callbackSecret).update(nonce).digest('base64url')}`;
+const readState = (state: string): string | null => {
+  const [nonce, signature] = state.split('.');
+  if (!nonce || !signature) return null;
+  return createHmac('sha256', callbackSecret).update(nonce).digest('base64url') === signature
+    ? nonce
+    : null;
+};
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '256kb' }));
@@ -48,6 +64,125 @@ app.get('/health', (_request, response) => {
     version: '0.1.0',
   });
   response.json(body);
+});
+app.post('/api/v1/connections/woocommerce/authorize', (request, response) => {
+  const user = auth.current(request);
+  if (!user) {
+    response.status(401).json({
+      error: {
+        code: 'AUTH_UNAUTHENTICATED',
+        message: 'Authentication required',
+        correlationId: response.getHeader('x-correlation-id'),
+      },
+    });
+    return;
+  }
+  try {
+    const storeUrl = canonicalizeStoreUrl(String(request.body?.storeUrl ?? ''));
+    const nonce = randomBytes(24).toString('base64url');
+    const now = new Date();
+    store.db
+      .prepare(
+        'INSERT INTO authorization_states (state_hash, account_id, user_id, store_url, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        nonce,
+        user.accountId,
+        user.id,
+        storeUrl.toString(),
+        new Date(now.getTime() + 600000).toISOString(),
+        now.toISOString(),
+      );
+    const returnUrl = `${process.env.WEB_PUBLIC_URL ?? 'http://localhost:5173'}/connections/woocommerce/callback`;
+    const callbackUrl = `${process.env.API_PUBLIC_URL ?? 'http://localhost:3000'}/api/v1/connections/woocommerce/return`;
+    response.json({
+      authorizationUrl: createAuthorizationUrl(storeUrl, {
+        state: signState(nonce),
+        returnUrl,
+        callbackUrl,
+      }),
+    });
+  } catch (error) {
+    response.status(400).json({
+      error: {
+        code: error instanceof Error ? error.message : 'CONNECTOR_URL_INVALID',
+        message: 'Invalid WooCommerce store URL',
+        correlationId: response.getHeader('x-correlation-id'),
+      },
+    });
+  }
+});
+app.get('/api/v1/connections/woocommerce/return', (request, response) => {
+  const nonce = readState(String(request.query.state ?? ''));
+  const key = String(request.query.key ?? '');
+  const secret = String(request.query.secret ?? '');
+  if (!nonce || !key.startsWith('ck_') || !secret.startsWith('cs_')) {
+    response.status(400).json({
+      error: {
+        code: 'CONNECTOR_CALLBACK_INVALID',
+        message: 'Authorization callback is invalid',
+        correlationId: response.getHeader('x-correlation-id'),
+      },
+    });
+    return;
+  }
+  const row = store.db
+    .prepare(
+      'SELECT account_id, user_id, store_url, expires_at, used_at FROM authorization_states WHERE state_hash = ?',
+    )
+    .get(nonce) as
+    | {
+        account_id: string;
+        user_id: string;
+        store_url: string;
+        expires_at: string;
+        used_at: string | null;
+      }
+    | undefined;
+  if (!row || row.used_at || row.expires_at <= new Date().toISOString()) {
+    response.status(400).json({
+      error: {
+        code: 'CONNECTOR_CALLBACK_REPLAYED',
+        message: 'Authorization state expired or already used',
+        correlationId: response.getHeader('x-correlation-id'),
+      },
+    });
+    return;
+  }
+  const encryptionKey = process.env.TOKEN_ENCRYPTION_KEY;
+  if (!encryptionKey) {
+    response.status(503).json({
+      error: {
+        code: 'CREDENTIAL_ENCRYPTION_UNAVAILABLE',
+        message: 'Connector encryption is not configured',
+        correlationId: response.getHeader('x-correlation-id'),
+      },
+    });
+    return;
+  }
+  const now = new Date().toISOString();
+  store.db.transaction(() => {
+    store.db
+      .prepare(
+        'UPDATE authorization_states SET used_at = ? WHERE state_hash = ? AND used_at IS NULL',
+      )
+      .run(now, nonce);
+    store.db
+      .prepare(
+        'INSERT INTO connections (id, account_id, platform, store_url, status, encrypted_credentials, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, platform, store_url) DO UPDATE SET status = excluded.status, encrypted_credentials = excluded.encrypted_credentials, updated_at = excluded.updated_at',
+      )
+      .run(
+        randomBytes(16).toString('hex'),
+        row.account_id,
+        'woocommerce',
+        row.store_url,
+        'active',
+        JSON.stringify(encryptCredentialEnvelope({ key, secret }, encryptionKey)),
+        now,
+        now,
+      );
+  })();
+  response.json({ connected: true, platform: 'woocommerce', storeUrl: row.store_url });
 });
 app.post('/api/v1/auth/register', (request, response) => {
   try {
