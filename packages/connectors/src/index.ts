@@ -13,7 +13,9 @@ export interface ReadOnlyCommerceConnector {
 
 export {
   catalogIdentity,
+  decimalToMinorUnits,
   normalizeCatalogRecord,
+  normalizeWooOrder,
   toCatalogItems,
   WooCommerceConnector,
   canonicalizeStoreUrl,
@@ -23,7 +25,9 @@ export {
 } from './woocommerce.js';
 export type {
   NormalizedCatalogItem,
+  NormalizedOrder,
   WooCatalogKind,
   WooCatalogPage,
+  WooOrderKind,
   WooCredentials,
 } from './woocommerce.js';

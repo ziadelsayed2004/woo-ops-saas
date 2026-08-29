@@ -18,6 +18,22 @@ export type CatalogItem = {
   sku: string | null;
   sourceJson: string;
 };
+export type NormalizedOrderInput = {
+  externalOrderId: string;
+  orderNumber: string;
+  remoteStatus: string;
+  currency: string;
+  grandTotalMinor: string;
+  createdAt: string | null;
+  modifiedAt: string | null;
+  customer: unknown;
+  billing: unknown;
+  shipping: unknown;
+  lines: readonly unknown[];
+  refunds: readonly { externalRefundId: string; amountMinor: string; reason: unknown }[];
+  sourceJson: string;
+  sourceHash: string;
+};
 
 const isJsonValue = (value: unknown, depth = 0): boolean => {
   if (depth > 8) return false;
@@ -41,7 +57,7 @@ const serializeJobPayload = (payload: unknown): string => {
 
 const requireHash = (value: string): string => createHash('sha256').update(value).digest('hex');
 
-export const schemaVersion = 6;
+export const schemaVersion = 7;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -158,6 +174,29 @@ const migrations: readonly Migration[] = [
         error_code TEXT, started_at TEXT NOT NULL, completed_at TEXT
       );
       CREATE INDEX catalog_sync_runs_account ON catalog_sync_runs(account_id, connection_id, started_at);
+    `,
+  },
+  {
+    version: 7,
+    name: 'normalized-order-sync',
+    sql: `
+      ALTER TABLE orders ADD COLUMN remote_payload_json TEXT;
+      ALTER TABLE orders ADD COLUMN normalized_json TEXT;
+      ALTER TABLE orders ADD COLUMN remote_deleted_at TEXT;
+      ALTER TABLE orders ADD COLUMN stale_export_at TEXT;
+      CREATE TABLE order_refunds (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), order_id TEXT NOT NULL REFERENCES orders(id),
+        external_refund_id TEXT NOT NULL, amount_minor TEXT NOT NULL, reason TEXT, source_json TEXT NOT NULL,
+        created_at TEXT NOT NULL, UNIQUE(account_id, order_id, external_refund_id)
+      );
+      CREATE INDEX order_refunds_account_order ON order_refunds(account_id, order_id);
+      CREATE TABLE order_sync_runs (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), connection_id TEXT NOT NULL REFERENCES connections(id),
+        cursor TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('running', 'succeeded', 'failed')),
+        pages INTEGER NOT NULL DEFAULT 0, items INTEGER NOT NULL DEFAULT 0, error_code TEXT,
+        started_at TEXT NOT NULL, completed_at TEXT
+      );
+      CREATE INDEX order_sync_runs_account ON order_sync_runs(account_id, connection_id, started_at);
     `,
   },
 ];
@@ -398,6 +437,80 @@ export class SqliteStore {
         connectionId,
         context.accountId,
       );
+  }
+
+  upsertRemoteOrder(
+    context: AccountContext,
+    connectionId: string,
+    input: NormalizedOrderInput,
+  ): string {
+    const now = new Date().toISOString();
+    const id = `${context.accountId}:${connectionId}:order:${input.externalOrderId}`;
+    const existing = this.db
+      .prepare(
+        'SELECT source_hash, export_state FROM orders WHERE account_id = ? AND connection_id = ? AND external_order_id = ?',
+      )
+      .get(context.accountId, connectionId, input.externalOrderId) as
+      { source_hash: string | null; export_state: string } | undefined;
+    const stale = Boolean(
+      existing?.source_hash &&
+      existing.source_hash !== input.sourceHash &&
+      existing.export_state !== 'never-exported',
+    );
+    this.db
+      .prepare(
+        `INSERT INTO orders (id, account_id, connection_id, origin, order_number, external_order_id, remote_status, currency, grand_total_minor, source_hash, remote_modified_at, remote_payload_json, normalized_json, stale_export_at, created_at, updated_at)
+         VALUES (?, ?, ?, 'woo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(account_id, connection_id, external_order_id) DO UPDATE SET order_number = excluded.order_number, remote_status = excluded.remote_status, currency = excluded.currency, grand_total_minor = excluded.grand_total_minor, source_hash = excluded.source_hash, remote_modified_at = excluded.remote_modified_at, remote_payload_json = excluded.remote_payload_json, normalized_json = excluded.normalized_json, stale_export_at = CASE WHEN excluded.stale_export_at IS NOT NULL THEN excluded.stale_export_at ELSE orders.stale_export_at END, updated_at = excluded.updated_at`,
+      )
+      .run(
+        id,
+        context.accountId,
+        connectionId,
+        input.orderNumber,
+        input.externalOrderId,
+        input.remoteStatus,
+        input.currency,
+        input.grandTotalMinor,
+        input.sourceHash,
+        input.modifiedAt,
+        input.sourceJson,
+        JSON.stringify(input),
+        stale ? now : null,
+        now,
+        now,
+      );
+    for (const refund of input.refunds) {
+      this.db
+        .prepare(
+          `INSERT INTO order_refunds (id, account_id, order_id, external_refund_id, amount_minor, reason, source_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, order_id, external_refund_id) DO UPDATE SET amount_minor = excluded.amount_minor, reason = excluded.reason, source_json = excluded.source_json`,
+        )
+        .run(
+          `${id}:refund:${refund.externalRefundId}`,
+          context.accountId,
+          id,
+          refund.externalRefundId,
+          refund.amountMinor,
+          typeof refund.reason === 'string' ? refund.reason : null,
+          JSON.stringify(refund),
+          now,
+        );
+    }
+    return id;
+  }
+
+  markRemoteOrderDeleted(
+    context: AccountContext,
+    connectionId: string,
+    externalOrderId: string,
+  ): boolean {
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        'UPDATE orders SET remote_deleted_at = ?, updated_at = ? WHERE account_id = ? AND connection_id = ? AND external_order_id = ? AND remote_deleted_at IS NULL',
+      )
+      .run(now, now, context.accountId, connectionId, externalOrderId);
+    return result.changes === 1;
   }
 
   failJob(context: AccountContext, id: string, error: string): void {

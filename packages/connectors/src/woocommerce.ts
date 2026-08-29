@@ -3,6 +3,7 @@ import type { ConnectorCapabilities, ReadOnlyCommerceConnector } from './index.j
 
 export type WooCredentials = { key: string; secret: string };
 export type WooCatalogKind = 'products' | 'categories' | 'tags' | 'shipping_classes';
+export type WooOrderKind = 'orders' | 'refunds';
 export type WooCatalogPage = {
   kind: WooCatalogKind;
   page: number;
@@ -17,6 +18,22 @@ export type NormalizedCatalogItem = {
   name: string;
   sku: string | null;
   sourceJson: string;
+};
+export type NormalizedOrder = {
+  externalOrderId: string;
+  orderNumber: string;
+  remoteStatus: string;
+  currency: string;
+  grandTotalMinor: string;
+  createdAt: string | null;
+  modifiedAt: string | null;
+  customer: Record<string, unknown>;
+  billing: Record<string, unknown>;
+  shipping: Record<string, unknown>;
+  lines: readonly Record<string, unknown>[];
+  refunds: readonly Record<string, unknown>[];
+  sourceJson: string;
+  sourceHash: string;
 };
 export type CredentialEnvelope = {
   algorithm: 'aes-256-gcm';
@@ -103,6 +120,90 @@ const requiredInteger = (record: Record<string, unknown>, key: string): number =
   const value = record[key];
   if (!Number.isInteger(value) || Number(value) < 0) throw new Error(`WOO_SCHEMA_INVALID:${key}`);
   return Number(value);
+};
+
+export const decimalToMinorUnits = (value: unknown, fractionDigits = 2): string => {
+  if (typeof value !== 'string' || !/^-?\d+(?:\.\d+)?$/.test(value))
+    throw new Error('WOO_MONEY_INVALID');
+  const negative = value.startsWith('-');
+  const unsigned = negative ? value.slice(1) : value;
+  const [whole, fraction = ''] = unsigned.split('.');
+  if (fraction.length > fractionDigits) throw new Error('WOO_MONEY_PRECISION');
+  const minor =
+    BigInt(whole ?? '0') * 10n ** BigInt(fractionDigits) +
+    BigInt(fraction.padEnd(fractionDigits, '0') || 0);
+  return (negative ? -minor : minor).toString();
+};
+
+const isoOrNull = (value: unknown): string | null => {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error('WOO_DATE_INVALID');
+  return date.toISOString();
+};
+
+export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
+  const record = asRecord(value);
+  if (!record || !Number.isInteger(record.id) || typeof record.number !== 'string')
+    throw new Error('WOO_SCHEMA_INVALID:order');
+  if (typeof record.currency !== 'string' || typeof record.total !== 'string')
+    throw new Error('WOO_SCHEMA_INVALID:order_amounts');
+  const lines = Array.isArray(record.line_items)
+    ? record.line_items.map((item) => {
+        const line = asRecord(item);
+        if (
+          !line ||
+          !Number.isInteger(line.id) ||
+          !Number.isInteger(line.quantity) ||
+          typeof line.total !== 'string'
+        )
+          throw new Error('WOO_SCHEMA_INVALID:line');
+        return {
+          externalLineId: String(line.id),
+          productId: Number.isInteger(line.product_id) ? line.product_id : null,
+          variationId: Number.isInteger(line.variation_id) ? line.variation_id : null,
+          sku: typeof line.sku === 'string' ? line.sku : null,
+          name: typeof line.name === 'string' ? line.name : '',
+          quantity: line.quantity,
+          subtotalMinor: decimalToMinorUnits(line.subtotal ?? '0'),
+          totalMinor: decimalToMinorUnits(line.total),
+          taxMinor: decimalToMinorUnits(line.total_tax ?? '0'),
+          source: line,
+        };
+      })
+    : [];
+  const refunds = Array.isArray(record.refunds)
+    ? record.refunds.map((item) => {
+        const refund = asRecord(item);
+        if (!refund || !Number.isInteger(refund.id) || typeof refund.total !== 'string')
+          throw new Error('WOO_SCHEMA_INVALID:refund');
+        return {
+          externalRefundId: String(refund.id),
+          amountMinor: decimalToMinorUnits(refund.total),
+          reason: refund.reason ?? null,
+          source: refund,
+        };
+      })
+    : [];
+  const normalized = {
+    externalOrderId: String(record.id),
+    orderNumber: record.number,
+    remoteStatus: typeof record.status === 'string' ? record.status : 'unknown',
+    currency: record.currency,
+    grandTotalMinor: decimalToMinorUnits(record.total),
+    createdAt: isoOrNull(record.date_created_gmt ?? record.date_created),
+    modifiedAt: isoOrNull(record.date_modified_gmt ?? record.date_modified),
+    customer: asRecord(record.billing) ?? {},
+    billing: asRecord(record.billing) ?? {},
+    shipping: asRecord(record.shipping) ?? {},
+    lines,
+    refunds,
+    sourceJson: JSON.stringify(record),
+  };
+  const sourceHash = createHmac('sha256', 'woo-ops-normalizer-v1')
+    .update(normalized.sourceJson)
+    .digest('hex');
+  return { ...normalized, sourceHash };
 };
 
 export const normalizeCatalogRecord = (
@@ -213,7 +314,7 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
     private readonly request: typeof fetch = fetch,
   ) {}
   pullOrders(): AsyncIterable<unknown> {
-    return (async function* () {})();
+    return this.pullRemote('orders');
   }
   pullProducts(): AsyncIterable<unknown> {
     return this.pullCatalog('products');
@@ -260,6 +361,35 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
   ): Promise<void> {
     for (const kind of ['categories', 'tags', 'shipping_classes', 'products'] as const) {
       for await (const page of this.pullCatalog(kind)) await onPage(page, toCatalogItems(page));
+    }
+  }
+  async *pullRemote(
+    kind: WooOrderKind,
+    perPage = 100,
+    startPage = 1,
+  ): AsyncIterable<readonly unknown[]> {
+    if (!this.storeUrl || !this.credentials) throw new Error('WOO_CONNECTION_NOT_CONFIGURED');
+    if (!Number.isInteger(perPage) || perPage < 1 || perPage > 100)
+      throw new Error('WOO_PAGE_SIZE_INVALID');
+    for (let page = startPage; ; page += 1) {
+      const url = new URL(`/wp-json/wc/v3/${kind}`, this.storeUrl);
+      url.searchParams.set('page', String(page));
+      url.searchParams.set('per_page', String(perPage));
+      const response = await this.request(url, {
+        headers: {
+          authorization: `Basic ${Buffer.from(`${this.credentials.key}:${this.credentials.secret}`).toString('base64')}`,
+          accept: 'application/json',
+        },
+      });
+      if (response.status === 429) throw new Error('WOO_RATE_LIMITED');
+      if (!response.ok) throw new Error(`WOO_HTTP_${response.status}`);
+      const body: unknown = await response.json();
+      if (!Array.isArray(body)) throw new Error('WOO_SCHEMA_INVALID:page');
+      yield body;
+      const totalPages = Number(response.headers.get('x-wp-totalpages') ?? page);
+      if (!Number.isInteger(totalPages) || totalPages < page)
+        throw new Error('WOO_SCHEMA_INVALID:pagination');
+      if (page >= totalPages || body.length === 0) return;
     }
   }
   verifyWebhook(rawBody: Uint8Array, signature: string): Promise<boolean> {
