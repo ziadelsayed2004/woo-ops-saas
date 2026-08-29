@@ -1,66 +1,34 @@
-# Woo Ops SaaS Starter
+# Woo Ops
 
-Production-oriented agent pack for a multi-tenant WooCommerce order-management SaaS.
-
-This repository starts with the product contract, architecture, task graph, worktree workflow,
-quality gates, and provider-neutral agent instructions. Application code is intentionally created
-through the ordered tasks in `.agentpack/tasks/registry.json` so each change remains reviewable.
+Woo Ops is a deployable WooCommerce order-operations application. It keeps a local normalized copy
+of WooCommerce data for search, filtering, exports, invoices, labels, printing and analytics.
 
 ## Product boundary
 
-- WooCommerce and future commerce connectors are read-only.
-- Remote orders, products, refunds, and status changes flow into this application.
-- Export state, local workflow, documents, tags, assignments, and saved views stay local.
-- Manual orders never sync to a commerce platform and never change remote inventory.
-- PDFs, thermal labels, XLSX/CSV exports, and analytics use local canonical data snapshots.
+- WooCommerce connectivity is read-only; `exported` and export history are local.
+- Manual orders are local-only and never affect WooCommerce inventory.
+- SQLite is the operational database. PDF/XLSX files and backups live in a private data directory.
+- Arabic RTL is the default interface; English and LTR are supported.
 
-## Production baseline
-
-- React + TypeScript frontend.
-- Express + TypeScript API.
-- Node.js TypeScript worker.
-- MongoDB Atlas for production persistence.
-- Managed Redis with BullMQ for queues and locks.
-- S3-compatible object storage for documents and exports.
-- A long-running container runtime for the API and Chromium-enabled worker; no VPS is required.
-
-SQLite is not the production order database. It may only be used by local tooling or isolated
-tests. See `.agentpack/architecture/adr/ADR-001-database.md`.
-
-## First commands
+## Development
 
 ```bash
-git init -b main
-git add .
-git commit -m "chore: initialize agent pack"
-node .agentpack/scripts/agentpack.mjs doctor
-node .agentpack/scripts/agentpack.mjs validate
-node .agentpack/scripts/agentpack.mjs task next
-node .agentpack/scripts/agentpack.mjs task show T0001
-node .agentpack/scripts/agentpack.mjs task start T0001
+pnpm install --frozen-lockfile
+pnpm db:migrate
+pnpm dev
 ```
 
-`task start` creates a dedicated sibling worktree and branch after checking dependencies. Run the
-implementation agent inside the returned worktree, one task per worktree.
+The API listens on `http://localhost:3000`; health is available at `/health`.
 
-## Read order for humans and agents
+## Hostinger deployment
 
-1. `AGENTS.md`
-2. `.agentpack/product/PRD.md`
-3. `.agentpack/architecture/ARCHITECTURE.md`
-4. `.agentpack/tasks/README.md`
-5. The selected task from `.agentpack/tasks/registry.json`
-6. The task-specific references printed by `task show`
+Create a Node.js application and set its start command to `pnpm --filter @woo-ops/api start` (or
+`node apps/api/dist/index.js`). Set `WOO_OPS_DATA_DIR` to a writable directory outside the public web
+root, configure secrets from `.env.example`, run `pnpm db:migrate`, and expose `/health` as the health
+check. Optional Cron can invoke bounded maintenance for jobs and backups.
 
-## Useful commands
+## Agent-driven delivery
 
-```bash
-npm run agent:doctor
-npm run agent:validate
-npm run task:list
-npm run task:next
-npm run worktree:list
-```
-
-The root package contains only agent-pack tooling at first. Task `T0001` creates the actual pnpm
-monorepo applications and packages.
+Use `node .agentpack/scripts/agentpack.mjs task next` and `task start <TASK_ID>`. One task uses one
+sibling worktree. Read references, run validations, write `.agentpack/results/<TASK_ID>.md`, and commit
+with the task ID.

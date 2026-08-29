@@ -21,7 +21,7 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
-    "format:check": "prettier --check \"apps/**/*.{ts,tsx,json,html}\" \"packages/**/*.{ts,json}\" package.json tsconfig.base.json",
+    "format:check": "prettier --check \"apps/**/*.{ts,tsx,json,html}\" \"packages/**/*.{ts,json}\" \"tools/**/*.mjs\" package.json tsconfig.base.json README.md .github/workflows/ci.yml",
     "test:unit": "pnpm -r test:unit",
     "db:migrate": "pnpm --filter @woo-ops/api db:migrate",
     "db:backup": "pnpm --filter @woo-ops/api db:backup"

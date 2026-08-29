@@ -1,6 +1,11 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "baseUrl": "../..",
+    "paths": { "@woo-ops/application": ["packages/application/src/index.ts"] }
+  },
   "include": ["src"],
   "references": [{ "path": "../application" }]
 }
