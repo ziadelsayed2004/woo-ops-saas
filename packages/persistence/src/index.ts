@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 type AccountContext = Readonly<{ accountId: string; actorId?: string; correlationId: string }>;
 type DurableJob = {
@@ -63,6 +63,24 @@ export type OrderQueryResult = {
   nextCursor: string | null;
   hasMore: boolean;
 };
+export type MetadataSensitivity = 'safe' | 'private' | 'unknown';
+export type MetadataType = 'text' | 'number' | 'money' | 'boolean' | 'date' | 'enum' | 'entity';
+export type MetadataEntry = {
+  sourceKey: string;
+  scope: string;
+  sensitivity: MetadataSensitivity;
+  inferredType: MetadataType | 'unknown';
+  occurrences: number;
+  sample: unknown;
+};
+export type FieldMapping = {
+  id: string;
+  sourceKey: string;
+  label: string;
+  type: MetadataType;
+  targetFacet: string | null;
+  version: number;
+};
 
 const isJsonValue = (value: unknown, depth = 0): boolean => {
   if (depth > 8) return false;
@@ -85,6 +103,64 @@ const serializeJobPayload = (payload: unknown): string => {
 };
 
 const requireHash = (value: string): string => createHash('sha256').update(value).digest('hex');
+const randomId = (): string => randomUUID();
+const privateMetadataKey =
+  /(password|passwd|secret|token|authorization|api[_-]?key|private[_-]?key|access[_-]?key)/i;
+const metadataType = (values: readonly unknown[]): MetadataType | 'unknown' => {
+  if (values.length === 0) return 'unknown';
+  if (values.every((value) => typeof value === 'boolean')) return 'boolean';
+  if (values.every((value) => typeof value === 'number' && Number.isFinite(value))) return 'number';
+  if (values.every((value) => typeof value === 'string' && !Number.isNaN(Date.parse(value))))
+    return 'date';
+  if (values.every((value) => typeof value === 'string')) return 'text';
+  return 'unknown';
+};
+const metadataSensitivity = (key: string): MetadataSensitivity =>
+  privateMetadataKey.test(key) || key.startsWith('_') ? 'private' : 'safe';
+const readMetadata = (source: unknown): Array<{ key: string; value: unknown }> => {
+  if (!source || typeof source !== 'object') return [];
+  const record = source as Record<string, unknown>;
+  if (Array.isArray(record.meta_data))
+    return record.meta_data.flatMap((item) => {
+      if (!item || typeof item !== 'object') return [];
+      const entry = item as Record<string, unknown>;
+      return typeof entry.key === 'string'
+        ? [{ key: entry.key.slice(0, 120), value: entry.value }]
+        : [];
+    });
+  return Object.entries(record)
+    .filter(([key]) => key === 'meta_data')
+    .map(([key, value]) => ({ key, value }));
+};
+export const discoverMetadata = (samples: readonly unknown[], scope = 'order'): MetadataEntry[] => {
+  const grouped = new Map<string, unknown[]>();
+  for (const sample of samples)
+    for (const item of readMetadata(sample))
+      grouped.set(item.key, [...(grouped.get(item.key) ?? []), item.value]);
+  return [...grouped.entries()].map(([sourceKey, values]) => ({
+    sourceKey,
+    scope,
+    sensitivity: metadataSensitivity(sourceKey),
+    inferredType: metadataType(values),
+    occurrences: values.length,
+    sample: metadataSensitivity(sourceKey) === 'safe' ? values[0] : undefined,
+  }));
+};
+const coerceMappedValue = (value: unknown, type: MetadataType): string | null => {
+  if (type === 'text' || type === 'enum' || type === 'entity')
+    return typeof value === 'string' || typeof value === 'number' ? String(value) : null;
+  if (type === 'number' || type === 'money')
+    return (typeof value === 'number' && Number.isFinite(value)) ||
+      (typeof value === 'string' && /^-?\d+(?:\.\d+)?$/.test(value))
+      ? String(value)
+      : null;
+  if (type === 'boolean') return typeof value === 'boolean' ? String(value) : null;
+  if (type === 'date')
+    return typeof value === 'string' && !Number.isNaN(Date.parse(value))
+      ? new Date(value).toISOString()
+      : null;
+  return null;
+};
 
 const filterColumns: Record<OrderFilterField, string> = {
   orderNumber: 'o.order_number',
@@ -220,7 +296,7 @@ const compileFilter = (filter: OrderFilter): { sql: string; params: (string | nu
   return { sql: `${column} ${sqlOperator} ?`, params: [filter.value] };
 };
 
-export const schemaVersion = 7;
+export const schemaVersion = 8;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -360,6 +436,31 @@ const migrations: readonly Migration[] = [
         started_at TEXT NOT NULL, completed_at TEXT
       );
       CREATE INDEX order_sync_runs_account ON order_sync_runs(account_id, connection_id, started_at);
+    `,
+  },
+  {
+    version: 8,
+    name: 'metadata-discovery-and-mappings',
+    sql: `
+      CREATE TABLE field_catalogs (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), connection_id TEXT NOT NULL REFERENCES connections(id),
+        scope TEXT NOT NULL, source_key TEXT NOT NULL, sensitivity TEXT NOT NULL CHECK(sensitivity IN ('safe', 'private', 'unknown')),
+        inferred_type TEXT NOT NULL, occurrences INTEGER NOT NULL DEFAULT 0, sample_json TEXT, discovered_at TEXT NOT NULL,
+        UNIQUE(account_id, connection_id, scope, source_key)
+      );
+      CREATE INDEX field_catalogs_account_safe ON field_catalogs(account_id, connection_id, sensitivity, scope);
+      CREATE TABLE field_mappings (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), connection_id TEXT NOT NULL REFERENCES connections(id),
+        source_key TEXT NOT NULL, label TEXT NOT NULL, type TEXT NOT NULL CHECK(type IN ('text', 'number', 'money', 'boolean', 'date', 'enum', 'entity')),
+        target_facet TEXT, version INTEGER NOT NULL DEFAULT 1, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE(account_id, connection_id, source_key)
+      );
+      CREATE INDEX field_mappings_account_active ON field_mappings(account_id, connection_id, active);
+      CREATE TABLE order_mapped_fields (
+        account_id TEXT NOT NULL REFERENCES accounts(id), order_id TEXT NOT NULL REFERENCES orders(id), mapping_id TEXT NOT NULL REFERENCES field_mappings(id),
+        value_text TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(account_id, order_id, mapping_id)
+      );
+      CREATE INDEX order_mapped_fields_lookup ON order_mapped_fields(account_id, mapping_id, value_text);
     `,
   },
 ];
@@ -756,6 +857,171 @@ export class SqliteStore {
       )
       .run(now, now, context.accountId, connectionId, externalOrderId);
     return result.changes === 1;
+  }
+
+  discoverOrderMetadata(
+    context: AccountContext,
+    connectionId: string,
+    samples: readonly unknown[],
+    scope = 'order',
+  ): MetadataEntry[] {
+    const entries = discoverMetadata(samples, scope);
+    const now = new Date().toISOString();
+    const statement = this.db.prepare(
+      `INSERT INTO field_catalogs (id, account_id, connection_id, scope, source_key, sensitivity, inferred_type, occurrences, sample_json, discovered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, connection_id, scope, source_key) DO UPDATE SET sensitivity = excluded.sensitivity, inferred_type = excluded.inferred_type, occurrences = field_catalogs.occurrences + excluded.occurrences, sample_json = CASE WHEN field_catalogs.sensitivity = 'safe' THEN excluded.sample_json ELSE NULL END, discovered_at = excluded.discovered_at`,
+    );
+    this.db.transaction(() => {
+      for (const entry of entries)
+        statement.run(
+          `${context.accountId}:${connectionId}:${scope}:${entry.sourceKey}`,
+          context.accountId,
+          connectionId,
+          scope,
+          entry.sourceKey,
+          entry.sensitivity,
+          entry.inferredType,
+          entry.occurrences,
+          entry.sensitivity === 'safe' ? JSON.stringify(entry.sample) : null,
+          now,
+        );
+    })();
+    return entries;
+  }
+
+  createFieldMapping(
+    context: AccountContext,
+    input: {
+      connectionId: string;
+      sourceKey: string;
+      label: string;
+      type: MetadataType;
+      targetFacet?: string;
+    },
+  ): FieldMapping {
+    if (
+      !input.label.trim() ||
+      input.label.length > 120 ||
+      !['text', 'number', 'money', 'boolean', 'date', 'enum', 'entity'].includes(input.type)
+    )
+      throw new Error('FIELD_MAPPING_INVALID');
+    const catalog = this.db
+      .prepare(
+        'SELECT id, sensitivity FROM field_catalogs WHERE account_id = ? AND connection_id = ? AND scope = ? AND source_key = ?',
+      )
+      .get(context.accountId, input.connectionId, 'order', input.sourceKey) as
+      { id: string; sensitivity: MetadataSensitivity } | undefined;
+    if (!catalog || catalog.sensitivity !== 'safe') throw new Error('FIELD_MAPPING_PRIVATE');
+    const now = new Date().toISOString();
+    const id = `${context.accountId}:${input.connectionId}:mapping:${input.sourceKey}`;
+    this.db
+      .prepare(
+        `INSERT INTO field_mappings (id, account_id, connection_id, source_key, label, type, target_facet, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, connection_id, source_key) DO UPDATE SET label = excluded.label, type = excluded.type, target_facet = excluded.target_facet, version = field_mappings.version + 1, active = 1, updated_at = excluded.updated_at`,
+      )
+      .run(
+        id,
+        context.accountId,
+        input.connectionId,
+        input.sourceKey,
+        input.label.trim(),
+        input.type,
+        input.targetFacet ?? null,
+        now,
+        now,
+      );
+    const mapping = this.db
+      .prepare(
+        'SELECT id, source_key, label, type, target_facet, version FROM field_mappings WHERE id = ? AND account_id = ?',
+      )
+      .get(id, context.accountId) as {
+      id: string;
+      source_key: string;
+      label: string;
+      type: MetadataType;
+      target_facet: string | null;
+      version: number;
+    };
+    this.db
+      .prepare(
+        'INSERT INTO audit_events (id, account_id, actor_id, action, target_type, target_id, summary_json, correlation_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        randomId(),
+        context.accountId,
+        context.actorId ?? null,
+        'field-mapping.created',
+        'field_mapping',
+        id,
+        JSON.stringify({
+          sourceKey: input.sourceKey,
+          type: input.type,
+          targetFacet: input.targetFacet ?? null,
+        }),
+        context.correlationId,
+        now,
+      );
+    return {
+      id: mapping.id,
+      sourceKey: mapping.source_key,
+      label: mapping.label,
+      type: mapping.type,
+      targetFacet: mapping.target_facet,
+      version: mapping.version,
+    };
+  }
+
+  backfillFieldMapping(
+    context: AccountContext,
+    mappingId: string,
+    cursor: string | null = null,
+    limit = 100,
+  ): { processed: number; mapped: number; errors: number; nextCursor: string | null } {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error('FIELD_BACKFILL_LIMIT_INVALID');
+    const mapping = this.db
+      .prepare(
+        'SELECT id, connection_id, source_key, type FROM field_mappings WHERE id = ? AND account_id = ? AND active = 1',
+      )
+      .get(mappingId, context.accountId) as
+      { id: string; connection_id: string; source_key: string; type: MetadataType } | undefined;
+    if (!mapping) throw new Error('FIELD_MAPPING_NOT_FOUND');
+    const rows = this.db
+      .prepare(
+        `SELECT id, remote_payload_json FROM orders WHERE account_id = ? AND connection_id = ? AND id > ? ORDER BY id LIMIT ?`,
+      )
+      .all(context.accountId, mapping.connection_id, cursor ?? '', limit) as Array<{
+      id: string;
+      remote_payload_json: string | null;
+    }>;
+    let mapped = 0;
+    let errors = 0;
+    const upsert = this.db.prepare(
+      'INSERT INTO order_mapped_fields (account_id, order_id, mapping_id, value_text, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(account_id, order_id, mapping_id) DO UPDATE SET value_text = excluded.value_text, updated_at = excluded.updated_at',
+    );
+    this.db.transaction(() => {
+      for (const row of rows) {
+        try {
+          const source = row.remote_payload_json
+            ? (JSON.parse(row.remote_payload_json) as unknown)
+            : null;
+          const item = readMetadata(source).find((entry) => entry.key === mapping.source_key);
+          const value = item ? coerceMappedValue(item.value, mapping.type) : null;
+          if (value === null) {
+            errors += 1;
+            continue;
+          }
+          upsert.run(context.accountId, row.id, mapping.id, value, new Date().toISOString());
+          mapped += 1;
+        } catch {
+          errors += 1;
+        }
+      }
+    })();
+    return {
+      processed: rows.length,
+      mapped,
+      errors,
+      nextCursor: rows.length === limit ? (rows.at(-1)?.id ?? null) : null,
+    };
   }
 
   failJob(context: AccountContext, id: string, error: string): void {
