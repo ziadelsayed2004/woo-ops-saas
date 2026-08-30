@@ -17,17 +17,30 @@ Base path: `/api/v1`. JSON errors use stable machine codes and a correlation ID.
 ```text
 POST   /auth/login
 POST   /auth/logout
-POST   /auth/refresh
+POST   /auth/password/change
+POST   /auth/password/reset/request
+POST   /auth/password/reset/confirm
 GET    /auth/session
-GET    /accounts
-POST   /accounts
-POST   /accounts/:id/activate
+GET    /account
+PATCH  /account
 GET    /members
+GET    /members/invitations
 POST   /members/invitations
-PATCH  /members/:membershipId
-DELETE /members/:membershipId
+POST   /members/invitations/:invitationId/accept
+POST   /members/invitations/:invitationId/revoke
+PATCH  /members/:userId
+DELETE /members/:userId
+GET    /sessions
+POST   /sessions/:sessionId/revoke
+POST   /sessions/revoke-all
 GET    /audit-events
 ```
+
+Member and session responses are always scoped to the active authenticated membership. Invitation
+acceptance binds the one-time token to the authenticated user's normalized email; the raw token is
+returned only once to the creating administrator and is stored as a SHA-256 hash. Password reset
+requests return the same `202 { accepted: true }` response for known and unknown emails. Reset
+tokens are single-use, expire after 30 minutes, and are never returned by the API or written to logs.
 
 ## Connections
 
@@ -212,6 +225,10 @@ GET    /operations/dead-letters
 POST   /operations/dead-letters/:id/replay
 GET    /operations/usage
 ```
+
+`GET /health` and `GET /ready` report database connectivity, applied schema version, private
+storage accessibility, and queue counts. They return `503` with `status: degraded` when a
+production readiness dependency is unavailable.
 
 ## Error format
 

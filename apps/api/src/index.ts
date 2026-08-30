@@ -1,6 +1,11 @@
-import express, { type Express, type Request, type Response } from 'express';
+import express, {
+  type ErrorRequestHandler,
+  type Express,
+  type Request,
+  type Response,
+} from 'express';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { accessSync, existsSync, mkdirSync, readFileSync, constants as fsConstants } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import {
   bulkCreateSchema,
@@ -27,6 +32,14 @@ import {
   costRuleCreateSchema,
   costRuleUpdateSchema,
   healthResponseSchema,
+  accountUpdateSchema,
+  memberRoleUpdateSchema,
+  invitationCreateSchema,
+  invitationAcceptSchema,
+  passwordChangeSchema,
+  passwordResetRequestSchema,
+  passwordResetConfirmSchema,
+  sessionTargetSchema,
 } from '@woo-ops/contracts';
 import { SqliteStore } from '@woo-ops/persistence';
 import type {
@@ -195,6 +208,24 @@ const documentFormatForAction = (
         : undefined;
 
 app.disable('x-powered-by');
+app.use((_request, response, next) => {
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.setHeader('X-Frame-Options', 'DENY');
+  response.setHeader('Referrer-Policy', 'no-referrer');
+  response.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  response.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'",
+  );
+  if (process.env.NODE_ENV === 'production')
+    response.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+app.use((request, response, next) => {
+  response.setHeader('x-correlation-id', randomUUID());
+  if (request.path.startsWith('/api/')) response.setHeader('Cache-Control', 'no-store');
+  next();
+});
 app.use(
   express.json({
     limit: '256kb',
@@ -203,6 +234,21 @@ app.use(
     },
   }),
 );
+app.use((request, response, next) => {
+  const hasBody = Number(request.headers['content-length'] ?? 0) > 0;
+  if (
+    request.path.startsWith('/api/') &&
+    hasBody &&
+    ['POST', 'PATCH', 'PUT', 'DELETE'].includes(request.method) &&
+    !String(request.headers['content-type'] ?? '')
+      .toLowerCase()
+      .includes('application/json')
+  ) {
+    sendApiError(response, 415, 'CONTENT_TYPE_NOT_SUPPORTED', 'JSON request body required');
+    return;
+  }
+  next();
+});
 app.use((request, response, next) => {
   const origin = request.header('origin');
   const expectedOrigin = process.env.WEB_PUBLIC_URL ?? 'http://localhost:5173';
@@ -222,18 +268,33 @@ app.use((request, response, next) => {
   }
   next();
 });
-app.use((_request, response, next) => {
-  response.setHeader('x-correlation-id', randomUUID());
-  next();
-});
-app.get('/health', (_request, response) => {
-  const body = healthResponseSchema.parse({
-    status: 'ok',
-    service: 'api',
-    database: 'connected',
-    version: '0.1.0',
-  });
-  response.json(body);
+const healthBody = (): {
+  body: ReturnType<typeof healthResponseSchema.parse>;
+  healthy: boolean;
+} => {
+  const health = store.healthSnapshot();
+  let storageHealthy = true;
+  try {
+    accessSync(dataDirectory, fsConstants.R_OK | fsConstants.W_OK);
+  } catch {
+    storageHealthy = false;
+  }
+  const healthy = health.database === 'connected' && health.schemaVersion >= 15 && storageHealthy;
+  return {
+    healthy,
+    body: healthResponseSchema.parse({
+      status: healthy ? 'ok' : 'degraded',
+      service: 'api',
+      database: health.database,
+      version: '0.1.0',
+      schemaVersion: health.schemaVersion,
+      queue: health.queue,
+    }),
+  };
+};
+app.get(['/health', '/ready'], (_request, response) => {
+  const result = healthBody();
+  response.status(result.healthy ? 200 : 503).json(result.body);
 });
 app.post('/api/v1/orders/query', (request, response) => {
   const user = auth.current(request);
@@ -659,90 +720,267 @@ app.post('/api/v1/auth/logout', (request, response) => {
   });
   response.status(204).end();
 });
-app.get('/api/v1/account', (request, response) => {
-  const user = auth.current(request);
-  if (!user) {
-    response.status(401).json({
-      error: {
-        code: 'AUTH_UNAUTHENTICATED',
-        message: 'Authentication required',
-        correlationId: response.getHeader('x-correlation-id'),
-      },
-    });
+app.post('/api/v1/auth/password/change', (request, response) => {
+  const currentUser = authenticatedUser(request, response);
+  if (!currentUser) return;
+  if (!auth.csrfValid(request)) {
+    sendApiError(response, 403, 'CSRF_INVALID', 'CSRF token required');
     return;
   }
-  const account = store.db
-    .prepare(
-      'SELECT id, name, locale, direction, timezone, base_currency FROM accounts WHERE id = ?',
-    )
-    .get(user.accountId);
-  response.json({ account, user });
+  const parsed = passwordChangeSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'AUTH_PASSWORD_INPUT_INVALID', 'Password data is invalid');
+    return;
+  }
+  try {
+    const loggedIn = auth.changePassword(
+      currentUser.id,
+      currentUser.accountId,
+      parsed.data.currentPassword,
+      parsed.data.newPassword,
+      String(response.getHeader('x-correlation-id')),
+    );
+    auth.setCookies(response, loggedIn);
+    response.json({ user: loggedIn.user });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : 'AUTH_PASSWORD_CHANGE_FAILED';
+    const status = code === 'AUTH_INVALID_CREDENTIALS' ? 401 : 400;
+    sendApiError(response, status, code, 'Password could not be changed');
+  }
+});
+app.post('/api/v1/auth/password/reset/request', (request, response) => {
+  const key = `password-reset:${request.ip ?? 'unknown'}`;
+  const current = attempts.get(key);
+  if (!current || current.resetAt <= Date.now())
+    attempts.set(key, { count: 1, resetAt: Date.now() + 900000 });
+  else current.count += 1;
+  if ((attempts.get(key)?.count ?? 0) > 10) {
+    response.status(202).json({ accepted: true });
+    return;
+  }
+  const parsed = passwordResetRequestSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'AUTH_RESET_INPUT_INVALID', 'Password reset data is invalid');
+    return;
+  }
+  try {
+    auth.requestPasswordReset(parsed.data.email, String(response.getHeader('x-correlation-id')));
+  } catch {
+    // Keep this endpoint non-enumerating even when the input is syntactically valid.
+  }
+  response.status(202).json({ accepted: true });
+});
+app.post('/api/v1/auth/password/reset/confirm', (request, response) => {
+  const parsed = passwordResetConfirmSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'AUTH_RESET_INPUT_INVALID', 'Password reset data is invalid');
+    return;
+  }
+  try {
+    auth.confirmPasswordReset(
+      parsed.data.token,
+      parsed.data.newPassword,
+      String(response.getHeader('x-correlation-id')),
+    );
+    response.json({ reset: true });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : 'AUTH_RESET_INVALID';
+    sendApiError(response, 400, code, 'Password reset could not be completed');
+  }
+});
+app.get('/api/v1/account', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({ account: store.getAccount(operationContext(user, response)), user });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
 });
 app.patch('/api/v1/account', (request, response) => {
-  const user = auth.current(request);
-  if (!user) {
-    response.status(401).json({
-      error: {
-        code: 'AUTH_UNAUTHENTICATED',
-        message: 'Authentication required',
-        correlationId: response.getHeader('x-correlation-id'),
-      },
-    });
-    return;
-  }
+  const user = authenticatedUser(request, response);
+  if (!user) return;
   if (!can(user.role, 'account:write') || !auth.csrfValid(request)) {
-    response.status(403).json({
-      error: {
-        code: 'FORBIDDEN',
-        message: 'Permission or CSRF validation failed',
-        correlationId: response.getHeader('x-correlation-id'),
-      },
-    });
+    sendApiError(response, 403, 'FORBIDDEN', 'Permission or CSRF validation failed');
     return;
   }
-  const allowed = {
-    name: request.body?.name,
-    locale: request.body?.locale,
-    direction: request.body?.direction,
-    timezone: request.body?.timezone,
-    base_currency: request.body?.base_currency,
-  };
-  const current = store.db
-    .prepare('SELECT name, locale, direction, timezone, base_currency FROM accounts WHERE id = ?')
-    .get(user.accountId) as Record<string, string>;
-  const next = {
-    ...current,
-    ...Object.fromEntries(
-      Object.entries(allowed).filter(([, value]) => typeof value === 'string' && value.length > 0),
-    ),
-  };
-  store.db
-    .prepare(
-      'UPDATE accounts SET name = ?, locale = ?, direction = ?, timezone = ?, base_currency = ?, updated_at = ? WHERE id = ?',
-    )
-    .run(
-      next.name,
-      next.locale,
-      next.direction,
-      next.timezone,
-      next.base_currency,
-      new Date().toISOString(),
-      user.accountId,
-    );
-  recordAudit(store.db, {
-    accountId: user.accountId,
-    actorId: user.id,
-    action: 'account.updated',
-    targetType: 'account',
-    targetId: user.accountId,
-    correlationId: String(response.getHeader('x-correlation-id')),
-    summary: {
-      fields: Object.keys(allowed).filter(
-        (key) => allowed[key as keyof typeof allowed] !== undefined,
+  const parsed = accountUpdateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'ACCOUNT_INPUT_INVALID', 'Account settings are invalid');
+    return;
+  }
+  try {
+    response.json({
+      account: store.updateAccount(operationContext(user, response), parsed.data),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+const requireMemberAdmin = (
+  request: Request,
+  response: Response,
+  write = false,
+): CurrentUser | null => {
+  const user = authenticatedUser(request, response);
+  if (!user) return null;
+  if (
+    !can(user.role, write ? 'members:write' : 'members:read') ||
+    (write && !auth.csrfValid(request))
+  ) {
+    sendApiError(response, 403, 'FORBIDDEN', 'Permission or CSRF validation failed');
+    return null;
+  }
+  return user;
+};
+app.get('/api/v1/members', (request, response) => {
+  const user = requireMemberAdmin(request, response);
+  if (!user) return;
+  try {
+    response.json({ items: store.listMembers(operationContext(user, response)) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/members/invitations', (request, response) => {
+  const user = requireMemberAdmin(request, response);
+  if (!user) return;
+  try {
+    response.json({ items: store.listInvitations(operationContext(user, response)) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/members/invitations', (request, response) => {
+  const user = requireMemberAdmin(request, response, true);
+  if (!user) return;
+  const parsed = invitationCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'INVITATION_INPUT_INVALID', 'Invitation data is invalid');
+    return;
+  }
+  try {
+    response.status(201).json({
+      invitation: store.createInvitation(operationContext(user, response), parsed.data),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/members/invitations/:invitationId/accept', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  if (!auth.csrfValid(request)) {
+    sendApiError(response, 403, 'CSRF_INVALID', 'CSRF token required');
+    return;
+  }
+  const parsed = invitationAcceptSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'INVITATION_INPUT_INVALID', 'Invitation token is invalid');
+    return;
+  }
+  try {
+    response.json({
+      member: store.acceptInvitation(
+        user.id,
+        request.params.invitationId,
+        parsed.data.token,
+        String(response.getHeader('x-correlation-id')),
       ),
-    },
-  });
-  response.json({ account: next });
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/members/invitations/:invitationId/revoke', (request, response) => {
+  const user = requireMemberAdmin(request, response, true);
+  if (!user) return;
+  try {
+    store.revokeInvitation(operationContext(user, response), request.params.invitationId);
+    response.status(204).end();
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.patch('/api/v1/members/:userId', (request, response) => {
+  const user = requireMemberAdmin(request, response, true);
+  if (!user) return;
+  const parsed = memberRoleUpdateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'MEMBER_ROLE_INVALID', 'Member role is invalid');
+    return;
+  }
+  try {
+    response.json({
+      member: store.changeMemberRole(
+        operationContext(user, response),
+        request.params.userId,
+        parsed.data.role,
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.delete('/api/v1/members/:userId', (request, response) => {
+  const user = requireMemberAdmin(request, response, true);
+  if (!user) return;
+  try {
+    store.revokeMembership(operationContext(user, response), request.params.userId);
+    response.status(204).end();
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/sessions', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const parsed = sessionTargetSchema.safeParse(request.query);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'SESSION_INPUT_INVALID', 'Session query is invalid');
+    return;
+  }
+  try {
+    response.json({
+      items: store.listSessions(operationContext(user, response), parsed.data.targetUserId),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/sessions/:sessionId/revoke', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  if (!can(user.role, 'sessions:write') || !auth.csrfValid(request)) {
+    sendApiError(response, 403, 'FORBIDDEN', 'Permission or CSRF validation failed');
+    return;
+  }
+  try {
+    store.revokeSession(operationContext(user, response), request.params.sessionId);
+    response.status(204).end();
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/sessions/revoke-all', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  if (!can(user.role, 'sessions:write') || !auth.csrfValid(request)) {
+    sendApiError(response, 403, 'FORBIDDEN', 'Permission or CSRF validation failed');
+    return;
+  }
+  const parsed = sessionTargetSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    sendApiError(response, 400, 'SESSION_INPUT_INVALID', 'Session input is invalid');
+    return;
+  }
+  try {
+    response.json({
+      revoked: store.revokeAllSessions(operationContext(user, response), parsed.data.targetUserId),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
 });
 app.get('/api/v1/audit-events', (request, response) => {
   const user = auth.current(request);
@@ -1573,6 +1811,25 @@ app.post('/api/v1/analytics/rebuilds', (request, response) => {
 app.get('/api/v1/meta', (_request, response) =>
   response.json({ locale: 'ar-EG', direction: 'rtl', readOnlyConnector: true }),
 );
+
+const apiErrorHandler: ErrorRequestHandler = (error, _request, response, next) => {
+  if (response.headersSent) {
+    next(error);
+    return;
+  }
+  const type =
+    typeof error === 'object' && error !== null && 'type' in error ? error.type : undefined;
+  if (type === 'entity.too.large') {
+    sendApiError(response, 413, 'REQUEST_BODY_TOO_LARGE', 'Request body is too large');
+    return;
+  }
+  if (type === 'entity.parse.failed') {
+    sendApiError(response, 400, 'REQUEST_BODY_INVALID', 'Request body is invalid JSON');
+    return;
+  }
+  next(error);
+};
+app.use(apiErrorHandler);
 
 if (webDistDirectory) {
   app.use(

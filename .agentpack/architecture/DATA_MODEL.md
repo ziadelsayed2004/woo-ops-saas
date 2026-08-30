@@ -23,13 +23,19 @@ Indexes:
 ### users, sessions, memberships
 
 Users hold global identity. Memberships map user to account, role, permissions override, and
-state. Sessions are hashed, revocable, rotated, and device-aware.
+state (`active` or `revoked`) with update/revocation timestamps. Sessions are hashed, revocable,
+rotated on password or role changes, account-scoped, and device-aware. Password reset tokens are
+hashed, account-bound, single-use records with an expiry; invitation records are account-scoped,
+hashed-token, role-limited, and have accepted/revoked/expiry state.
 
 Indexes:
 
 - unique normalized email
 - unique account + user membership
 - session hash and expiry TTL
+- account + membership status and user + membership status
+- password reset token hash, used state, and expiry
+- pending invitation email per account
 
 ### storeConnections
 
