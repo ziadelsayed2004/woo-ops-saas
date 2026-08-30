@@ -16,7 +16,9 @@
     "db:restore": "tsx src/db-cli.ts restore",
     "db:maintenance": "tsx src/db-cli.ts maintenance",
     "db:list": "tsx src/db-cli.ts list",
-    "test:integration": "tsx --test tests/*.integration.test.js"
+    "test:integration": "tsx --test tests/*.integration.test.js",
+    "test:security": "tsx --test tests/security.integration.test.js",
+    "test:tenant-isolation": "tsx --test tests/tenant-isolation.integration.test.js"
   },
   "dependencies": {
     "@woo-ops/contracts": "workspace:*",

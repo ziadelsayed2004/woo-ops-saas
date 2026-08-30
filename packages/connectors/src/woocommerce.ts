@@ -1,4 +1,6 @@
 import { createCipheriv, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import type { ConnectorCapabilities, ReadOnlyCommerceConnector } from './index.js';
 
 export type WooCredentials = { key: string; secret: string };
@@ -43,21 +45,83 @@ export type CredentialEnvelope = {
   ciphertext: string;
 };
 
+const hostWithoutBrackets = (hostname: string): string =>
+  hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+
+const privateIpv4 = (hostname: string): boolean => {
+  const octets = hostname.split('.').map(Number);
+  if (
+    octets.length !== 4 ||
+    octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)
+  )
+    return true;
+  const [first, second] = octets;
+  if (first === undefined || second === undefined) return true;
+  return (
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && (second === 0 || second === 168)) ||
+    (first === 198 && second >= 18 && second <= 19) ||
+    first >= 224
+  );
+};
+
+const isPrivateHost = (hostname: string): boolean => {
+  const host = hostWithoutBrackets(hostname).toLowerCase().replace(/\.$/u, '');
+  const version = isIP(host);
+  if (version === 4) return privateIpv4(host);
+  if (version === 6) {
+    return (
+      host === '::1' ||
+      host.startsWith('::ffff:') ||
+      host.startsWith('fc') ||
+      host.startsWith('fd') ||
+      /^fe[89ab]/u.test(host)
+    );
+  }
+  return (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal') ||
+    host.endsWith('.home.arpa')
+  );
+};
+
+const assertSafeStoreUrl = (url: URL): void => {
+  if (url.protocol !== 'https:') throw new Error('CONNECTOR_HTTPS_REQUIRED');
+  if (url.username || url.password || (url.port && url.port !== '443'))
+    throw new Error('CONNECTOR_URL_UNSAFE');
+  if (isPrivateHost(url.hostname)) throw new Error('CONNECTOR_PRIVATE_HOST');
+};
+
+type HostResolver = (hostname: string) => Promise<readonly { address: string }[]>;
+
+const defaultHostResolver: HostResolver = async (hostname) =>
+  lookup(hostname, { all: true, verbatim: true });
+
+export const assertPublicStoreUrl = async (
+  url: URL,
+  resolveHost: HostResolver = defaultHostResolver,
+): Promise<void> => {
+  assertSafeStoreUrl(url);
+  let addresses: readonly { address: string }[];
+  try {
+    addresses = await resolveHost(url.hostname);
+  } catch {
+    throw new Error('CONNECTOR_HOST_UNRESOLVED');
+  }
+  if (addresses.length === 0 || addresses.some(({ address }) => isPrivateHost(address)))
+    throw new Error('CONNECTOR_PRIVATE_HOST');
+};
+
 export const canonicalizeStoreUrl = (input: string): URL => {
   const url = new URL(input.trim());
-  if (
-    url.protocol !== 'https:' &&
-    !(process.env.NODE_ENV === 'development' && url.hostname === 'localhost')
-  )
-    throw new Error('CONNECTOR_HTTPS_REQUIRED');
-  if (url.username || url.password || (url.port && !['443', '80'].includes(url.port)))
-    throw new Error('CONNECTOR_URL_UNSAFE');
-  if (
-    ['localhost', '127.0.0.1', '::1'].includes(url.hostname) ||
-    url.hostname.endsWith('.local') ||
-    url.hostname.endsWith('.internal')
-  )
-    throw new Error('CONNECTOR_PRIVATE_HOST');
+  assertSafeStoreUrl(url);
   url.pathname = url.pathname.replace(/\/$/, '');
   url.search = '';
   url.hash = '';
@@ -68,6 +132,7 @@ export const createAuthorizationUrl = (
   storeUrl: URL,
   input: { state: string; returnUrl: string; callbackUrl: string; appName?: string },
 ): string => {
+  assertSafeStoreUrl(storeUrl);
   const url = new URL('/wc-auth/v1/authorize', storeUrl);
   url.searchParams.set('app_name', input.appName ?? 'Woo Ops');
   url.searchParams.set('scope', 'read');
@@ -105,6 +170,7 @@ export const verifyWebhookSignature = (
   signature: string,
   secret: string,
 ): boolean => {
+  if (!secret || !/^[A-Za-z0-9+/]{43}=$/u.test(signature)) return false;
   const expected = createHmac('sha256', secret).update(rawBody).digest('base64');
   const received = Buffer.from(signature, 'base64');
   const calculated = Buffer.from(expected, 'base64');
@@ -204,6 +270,20 @@ export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
     .update(normalized.sourceJson)
     .digest('hex');
   return { ...normalized, sourceHash };
+};
+
+export type WooOrderValidation =
+  | { status: 'accepted'; value: NormalizedOrder }
+  | { status: 'quarantined'; reason: 'schema-drift' };
+
+export const validateWooOrder = (value: unknown): WooOrderValidation => {
+  try {
+    return { status: 'accepted', value: normalizeWooOrder(value) };
+  } catch (error) {
+    if (error instanceof Error && /^WOO_(?:SCHEMA|MONEY|DATE)_/u.test(error.message))
+      return { status: 'quarantined', reason: 'schema-drift' };
+    throw error;
+  }
 };
 
 export const normalizeCatalogRecord = (
@@ -312,7 +392,28 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
     private readonly storeUrl?: URL,
     private readonly credentials?: WooCredentials,
     private readonly request: typeof fetch = fetch,
+    private readonly resolveHost: HostResolver = defaultHostResolver,
   ) {}
+
+  private async requestPage(url: URL): Promise<Response> {
+    if (!this.storeUrl) throw new Error('WOO_CONNECTION_NOT_CONFIGURED');
+    await assertPublicStoreUrl(this.storeUrl, this.resolveHost);
+    const response = await this.request(url, {
+      method: 'GET',
+      headers: {
+        authorization: `Basic ${Buffer.from(`${this.credentials?.key ?? ''}:${this.credentials?.secret ?? ''}`).toString('base64')}`,
+        accept: 'application/json',
+      },
+      cache: 'no-store',
+      redirect: 'manual',
+    });
+    if (response.status >= 300 && response.status < 400) throw new Error('WOO_REDIRECT_BLOCKED');
+    if (response.url) {
+      const responseUrl = new URL(response.url);
+      if (responseUrl.origin !== this.storeUrl.origin) throw new Error('WOO_ORIGIN_CHANGED');
+    }
+    return response;
+  }
   pullOrders(): AsyncIterable<unknown> {
     return this.pullRemote('orders');
   }
@@ -333,12 +434,7 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
       const url = new URL(endpoint, this.storeUrl);
       url.searchParams.set('page', String(page));
       url.searchParams.set('per_page', String(perPage));
-      const response = await this.request(url, {
-        headers: {
-          authorization: `Basic ${Buffer.from(`${this.credentials.key}:${this.credentials.secret}`).toString('base64')}`,
-          accept: 'application/json',
-        },
-      });
+      const response = await this.requestPage(url);
       if (response.status === 429) throw new Error('WOO_RATE_LIMITED');
       if (!response.ok) throw new Error(`WOO_HTTP_${response.status}`);
       const body: unknown = await response.json();
@@ -375,12 +471,7 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
       const url = new URL(`/wp-json/wc/v3/${kind}`, this.storeUrl);
       url.searchParams.set('page', String(page));
       url.searchParams.set('per_page', String(perPage));
-      const response = await this.request(url, {
-        headers: {
-          authorization: `Basic ${Buffer.from(`${this.credentials.key}:${this.credentials.secret}`).toString('base64')}`,
-          accept: 'application/json',
-        },
-      });
+      const response = await this.requestPage(url);
       if (response.status === 429) throw new Error('WOO_RATE_LIMITED');
       if (!response.ok) throw new Error(`WOO_HTTP_${response.status}`);
       const body: unknown = await response.json();

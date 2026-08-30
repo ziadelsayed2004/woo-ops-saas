@@ -1,5 +1,5 @@
 import express, { type Express, type Request, type Response } from 'express';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import {
@@ -49,7 +49,6 @@ import {
   createAuthorizationUrl,
   encryptCredentialEnvelope,
 } from '@woo-ops/connectors';
-import { createHmac, randomBytes } from 'node:crypto';
 import { AuthService, can, recordAudit } from './auth.js';
 import { verifyWebhookSignature } from '@woo-ops/connectors';
 import { generateDocument } from '@woo-ops/documents';
@@ -69,14 +68,24 @@ const auth = new AuthService(store.db);
 const app: Express = express();
 const attempts = new Map<string, { count: number; resetAt: number }>();
 const callbackSecret = process.env.SESSION_SECRET ?? 'development-only-session-secret';
+if (process.env.NODE_ENV === 'production' && callbackSecret.length < 32)
+  throw new Error('SESSION_SECRET_REQUIRED');
+const stateHash = (nonce: string): string => createHash('sha256').update(nonce).digest('hex');
 const signState = (nonce: string): string =>
   `${nonce}.${createHmac('sha256', callbackSecret).update(nonce).digest('base64url')}`;
 const readState = (state: string): string | null => {
   const [nonce, signature] = state.split('.');
-  if (!nonce || !signature) return null;
-  return createHmac('sha256', callbackSecret).update(nonce).digest('base64url') === signature
-    ? nonce
-    : null;
+  if (
+    !nonce ||
+    !signature ||
+    state.length > 220 ||
+    !/^[A-Za-z0-9_-]{32,80}$/u.test(nonce) ||
+    !/^[A-Za-z0-9_-]{43}$/u.test(signature)
+  )
+    return null;
+  const expected = createHmac('sha256', callbackSecret).update(nonce).digest();
+  const received = Buffer.from(signature, 'base64url');
+  return received.length === expected.length && timingSafeEqual(received, expected) ? nonce : null;
 };
 type CurrentUser = { id: string; accountId: string; role: string };
 const correlationId = (response: Response): string =>
@@ -349,30 +358,39 @@ app.post('/api/v1/webhooks/woocommerce/:connectionId', (request, response) => {
   const deliveryKey =
     request.header('x-wc-webhook-delivery-id') ??
     `${request.header('x-wc-webhook-topic') ?? 'unknown'}:${checksum}`;
-  const accepted = store.acceptWebhook({
-    id: randomUUID(),
-    accountId: connection.account_id,
-    connectionId: connection.id,
-    deliveryKey,
-    topic: request.header('x-wc-webhook-topic') ?? 'unknown',
-    body: rawBody,
-    checksum,
-  });
-  if (accepted.accepted) {
-    store.enqueueJob(
-      { accountId: connection.account_id, correlationId: randomUUID() },
-      {
-        id: randomUUID(),
-        type: 'webhook.process',
-        idempotencyKey: deliveryKey,
-        payload: { inboxId: accepted.inboxId },
-        maxAttempts: 5,
-      },
+  try {
+    const accepted = store.acceptWebhook({
+      id: randomUUID(),
+      accountId: connection.account_id,
+      connectionId: connection.id,
+      deliveryKey,
+      topic: request.header('x-wc-webhook-topic') ?? 'unknown',
+      body: rawBody,
+      checksum,
+    });
+    if (accepted.accepted) {
+      store.enqueueJob(
+        { accountId: connection.account_id, correlationId: randomUUID() },
+        {
+          id: randomUUID(),
+          type: 'webhook.process',
+          idempotencyKey: deliveryKey,
+          payload: { inboxId: accepted.inboxId },
+          maxAttempts: 5,
+        },
+      );
+    }
+    response
+      .status(accepted.accepted ? 202 : 200)
+      .json({ accepted: true, duplicate: !accepted.accepted, inboxId: accepted.inboxId });
+  } catch (error) {
+    sendApiError(
+      response,
+      400,
+      error instanceof Error ? error.message : 'WEBHOOK_INPUT_INVALID',
+      'Webhook could not be accepted',
     );
   }
-  response
-    .status(accepted.accepted ? 202 : 200)
-    .json({ accepted: true, duplicate: !accepted.accepted, inboxId: accepted.inboxId });
 });
 app.post('/api/v1/connections/woocommerce/authorize', (request, response) => {
   const user = auth.current(request);
@@ -395,7 +413,7 @@ app.post('/api/v1/connections/woocommerce/authorize', (request, response) => {
         'INSERT INTO authorization_states (state_hash, account_id, user_id, store_url, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       )
       .run(
-        nonce,
+        stateHash(nonce),
         user.accountId,
         user.id,
         storeUrl.toString(),
@@ -425,7 +443,11 @@ app.get('/api/v1/connections/woocommerce/return', (request, response) => {
   const nonce = readState(String(request.query.state ?? ''));
   const key = String(request.query.key ?? '');
   const secret = String(request.query.secret ?? '');
-  if (!nonce || !key.startsWith('ck_') || !secret.startsWith('cs_')) {
+  if (
+    !nonce ||
+    !/^ck_[A-Za-z0-9_-]{1,200}$/u.test(key) ||
+    !/^cs_[A-Za-z0-9_-]{1,200}$/u.test(secret)
+  ) {
     response.status(400).json({
       error: {
         code: 'CONNECTOR_CALLBACK_INVALID',
@@ -439,7 +461,7 @@ app.get('/api/v1/connections/woocommerce/return', (request, response) => {
     .prepare(
       'SELECT account_id, user_id, store_url, expires_at, used_at FROM authorization_states WHERE state_hash = ?',
     )
-    .get(nonce) as
+    .get(stateHash(nonce)) as
     | {
         account_id: string;
         user_id: string;
@@ -470,27 +492,40 @@ app.get('/api/v1/connections/woocommerce/return', (request, response) => {
     return;
   }
   const now = new Date().toISOString();
-  store.db.transaction(() => {
-    store.db
-      .prepare(
-        'UPDATE authorization_states SET used_at = ? WHERE state_hash = ? AND used_at IS NULL',
-      )
-      .run(now, nonce);
-    store.db
-      .prepare(
-        'INSERT INTO connections (id, account_id, platform, store_url, status, encrypted_credentials, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, platform, store_url) DO UPDATE SET status = excluded.status, encrypted_credentials = excluded.encrypted_credentials, updated_at = excluded.updated_at',
-      )
-      .run(
-        randomBytes(16).toString('hex'),
-        row.account_id,
-        'woocommerce',
-        row.store_url,
-        'active',
-        JSON.stringify(encryptCredentialEnvelope({ key, secret }, encryptionKey)),
-        now,
-        now,
-      );
-  })();
+  try {
+    store.db.transaction(() => {
+      const claimed = store.db
+        .prepare(
+          'UPDATE authorization_states SET used_at = ? WHERE state_hash = ? AND used_at IS NULL',
+        )
+        .run(now, stateHash(nonce));
+      if (claimed.changes !== 1) throw new Error('CONNECTOR_CALLBACK_REPLAYED');
+      store.db
+        .prepare(
+          'INSERT INTO connections (id, account_id, platform, store_url, status, encrypted_credentials, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, platform, store_url) DO UPDATE SET status = excluded.status, encrypted_credentials = excluded.encrypted_credentials, updated_at = excluded.updated_at',
+        )
+        .run(
+          randomBytes(16).toString('hex'),
+          row.account_id,
+          'woocommerce',
+          row.store_url,
+          'active',
+          JSON.stringify(encryptCredentialEnvelope({ key, secret }, encryptionKey)),
+          now,
+          now,
+        );
+    })();
+  } catch (error) {
+    const code = error instanceof Error ? error.message : 'CONNECTOR_CALLBACK_INVALID';
+    response.status(code === 'CONNECTOR_CALLBACK_REPLAYED' ? 409 : 400).json({
+      error: {
+        code,
+        message: 'Authorization callback is invalid or was already used',
+        correlationId: response.getHeader('x-correlation-id'),
+      },
+    });
+    return;
+  }
   response.json({ connected: true, platform: 'woocommerce', storeUrl: row.store_url });
 });
 app.post('/api/v1/auth/register', (request, response) => {

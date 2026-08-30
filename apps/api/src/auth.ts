@@ -5,6 +5,8 @@ import type Database from 'better-sqlite3';
 const SESSION_COOKIE = 'woo_ops_session';
 const CSRF_COOKIE = 'woo_ops_csrf';
 const SESSION_DAYS = 14;
+const MAX_PASSWORD_LENGTH = 1024;
+const MAX_ACCOUNT_NAME_LENGTH = 160;
 
 type AuthUser = { id: string; email: string; accountId: string; role: string };
 type SessionRow = {
@@ -20,6 +22,8 @@ type SessionRow = {
 const hashToken = (token: string): Buffer => createHash('sha256').update(token).digest();
 
 export const hashPassword = (password: string): string => {
+  if (password.length < 12 || password.length > MAX_PASSWORD_LENGTH)
+    throw new Error('AUTH_INVALID_INPUT');
   const salt = randomBytes(16);
   const derived = scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 });
   return `scrypt$${salt.toString('base64url')}$${derived.toString('base64url')}`;
@@ -29,7 +33,10 @@ export const verifyPassword = (password: string, encoded: string): boolean => {
   const [algorithm, saltText, digestText] = encoded.split('$');
   if (algorithm !== 'scrypt' || !saltText || !digestText) return false;
   const expected = Buffer.from(digestText, 'base64url');
-  const actual = scryptSync(password, Buffer.from(saltText, 'base64url'), expected.length, {
+  const salt = Buffer.from(saltText, 'base64url');
+  if (password.length > MAX_PASSWORD_LENGTH || salt.length !== 16 || expected.length !== 64)
+    return false;
+  const actual = scryptSync(password, salt, expected.length, {
     N: 16384,
     r: 8,
     p: 1,
@@ -48,9 +55,10 @@ const cookieValue = (request: Request, name: string): string | undefined => {
 
 const setCookies = (response: Response, session: string, csrf: string): void => {
   const maxAge = SESSION_DAYS * 24 * 60 * 60;
+  const secure = process.env.NODE_ENV === 'development' ? '' : ' Secure;';
   response.setHeader('Set-Cookie', [
-    `${SESSION_COOKIE}=${session}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`,
-    `${CSRF_COOKIE}=${csrf}; SameSite=Lax; Path=/; Max-Age=${maxAge}`,
+    `${SESSION_COOKIE}=${session}; HttpOnly; SameSite=Lax;${secure} Path=/; Max-Age=${maxAge}`,
+    `${CSRF_COOKIE}=${csrf}; SameSite=Lax;${secure} Path=/; Max-Age=${maxAge}`,
   ]);
 };
 
@@ -59,7 +67,13 @@ export class AuthService {
 
   register(email: string, password: string, accountName: string): AuthUser {
     const normalizedEmail = email.trim().toLowerCase();
-    if (!/^\S+@\S+\.\S+$/.test(normalizedEmail) || password.length < 12)
+    const normalizedAccountName = accountName.trim();
+    if (
+      !/^\S+@\S+\.\S+$/.test(normalizedEmail) ||
+      password.length < 12 ||
+      password.length > MAX_PASSWORD_LENGTH ||
+      normalizedAccountName.length > MAX_ACCOUNT_NAME_LENGTH
+    )
       throw new Error('AUTH_INVALID_INPUT');
     const existing = this.db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
     if (existing) throw new Error('AUTH_ACCOUNT_EXISTS');
@@ -69,7 +83,7 @@ export class AuthService {
     this.db.transaction(() => {
       this.db
         .prepare('INSERT INTO accounts (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)')
-        .run(accountId, accountName.trim() || 'Woo Ops Account', now, now);
+        .run(accountId, normalizedAccountName || 'Woo Ops Account', now, now);
       this.db
         .prepare(
           'INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
@@ -151,8 +165,8 @@ export class AuthService {
         .prepare('UPDATE sessions SET revoked_at = ? WHERE token_hash = ?')
         .run(new Date().toISOString(), hashToken(token));
     response.setHeader('Set-Cookie', [
-      `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`,
-      `${CSRF_COOKIE}=; SameSite=Lax; Path=/; Max-Age=0`,
+      `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax;${process.env.NODE_ENV === 'development' ? '' : ' Secure;'} Path=/; Max-Age=0`,
+      `${CSRF_COOKIE}=; SameSite=Lax;${process.env.NODE_ENV === 'development' ? '' : ' Secure;'} Path=/; Max-Age=0`,
     ]);
   }
 

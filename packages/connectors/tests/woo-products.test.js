@@ -27,6 +27,7 @@ test('Woo product pages are validated, paginated, and normalized with determinis
           ])
         : response([], { 'x-wp-totalpages': '2' });
     },
+    async () => [{ address: '93.184.216.34' }],
   );
   const pages = [];
   for await (const page of connector.pullCatalog('products')) pages.push(page);
@@ -51,6 +52,7 @@ test('Woo catalog schema and rate failures are classified', async () => {
     new URL('https://shop.example.com'),
     { key: 'k', secret: 's' },
     async () => new Response('{}', { status: 429 }),
+    async () => [{ address: '93.184.216.34' }],
   );
   await assert.rejects(async () => {
     for await (const _page of connector.pullCatalog('products')) break;

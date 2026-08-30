@@ -97,8 +97,23 @@ pnpm test:unit
 pnpm test:integration
 pnpm test:contract
 pnpm test:e2e:critical
-pnpm test:account-isolation
+pnpm test:tenant-isolation
 pnpm build
 ```
+
+The security certification gate is:
+
+```bash
+pnpm test:security
+pnpm test:tenant-isolation
+pnpm test:contract --filter woocommerce
+pnpm security:scan
+pnpm security:audit
+```
+
+The tenant-isolation runner exercises account-scoped repositories, selections, jobs, webhook
+connection ownership, and API contexts. Connector certification covers synthetic Woo orders,
+catalog pages, pagination, read-only GET behavior, SSRF/private-address rejection, redirect and
+origin protection, strict webhook signatures, schema-drift quarantine, and deterministic replay.
 
 Tasks may add narrower commands but may not remove affected repository-wide gates.

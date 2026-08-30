@@ -50,6 +50,7 @@ test('pulls orders read-only and resumes at a requested page', async () => {
         headers: { 'x-wp-totalpages': '2' },
       });
     },
+    async () => [{ address: '93.184.216.34' }],
   );
   const pages = [];
   for await (const page of connector.pullRemote('orders', 50, 2)) pages.push(page);

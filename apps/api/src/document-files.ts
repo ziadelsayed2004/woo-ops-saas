@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 const safeId = /^[A-Za-z0-9_-]{1,80}$/u;
 
@@ -9,6 +9,28 @@ const insideRoot = (root: string, candidate: string): boolean => {
   const resolvedCandidate = resolve(candidate);
   const relativePath = relative(resolvedRoot, resolvedCandidate);
   return relativePath !== '..' && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath);
+};
+
+const assertPrivatePath = (root: string, candidate: string): void => {
+  if (!insideRoot(root, candidate)) throw new Error('DOCUMENT_FILE_PATH_INVALID');
+  const rootPath = resolve(root);
+  let current = rootPath;
+  const relativePath = relative(rootPath, resolve(candidate));
+  for (const [index, part] of relativePath.split(sep).entries()) {
+    current = join(current, part);
+    let stat;
+    try {
+      stat = lstatSync(current);
+    } catch {
+      if (index === relativePath.split(sep).length - 1) return;
+      throw new Error('DOCUMENT_FILE_PATH_INVALID');
+    }
+    if (
+      stat.isSymbolicLink() ||
+      (index < relativePath.split(sep).length - 1 && !stat.isDirectory())
+    )
+      throw new Error('DOCUMENT_FILE_PATH_INVALID');
+  }
 };
 
 export const privateDocumentRelativePath = (accountId: string, fileId: string): string => {
@@ -39,6 +61,7 @@ export const writePrivatePdf = (
   if (bytes.length < 1 || bytes.length > 50 * 1024 * 1024)
     throw new Error('DOCUMENT_FILE_SIZE_INVALID');
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  assertPrivatePath(root, path);
   if (!existsSync(path)) writeFileSync(path, Buffer.from(bytes), { mode: 0o600, flag: 'wx' });
   const stored = readFileSync(path);
   const checksum = createHash('sha256').update(stored).digest('hex');
@@ -53,6 +76,7 @@ export const readPrivatePdf = (
   expectedChecksum: string,
 ): Buffer => {
   const path = privateDocumentPath(root, relativePath);
+  assertPrivatePath(root, path);
   const bytes = readFileSync(path);
   const checksum = createHash('sha256').update(bytes).digest('hex');
   if (checksum !== expectedChecksum) throw new Error('DOCUMENT_FILE_CHECKSUM_MISMATCH');
