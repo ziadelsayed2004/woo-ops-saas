@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { validateSafeTemplate } from '@woo-ops/documents';
 import {
   calculateOrderMetrics,
@@ -369,6 +369,47 @@ export type DocumentFileRecord = Readonly<{
   createdBy: string;
   createdAt: string;
 }>;
+export type AccountRecord = Readonly<{
+  id: string;
+  name: string;
+  locale: 'ar-EG' | 'en-US';
+  direction: 'rtl' | 'ltr';
+  timezone: string;
+  baseCurrency: string;
+}>;
+export type MemberRecord = Readonly<{
+  userId: string;
+  email: string;
+  role: AccountRole;
+  status: 'active' | 'revoked';
+  createdAt: string;
+  updatedAt: string;
+  revokedAt: string | null;
+}>;
+export type InvitationRecord = Readonly<{
+  id: string;
+  email: string;
+  role: Exclude<AccountRole, 'owner' | 'revoked'>;
+  expiresAt: string;
+  acceptedAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+  acceptToken?: string;
+}>;
+export type SessionRecord = Readonly<{
+  id: string;
+  userId: string;
+  email: string;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+}>;
+export type StoreHealth = Readonly<{
+  database: 'connected' | 'degraded';
+  schemaVersion: number;
+  queue: { queued: number; running: number; deadLettered: number };
+}>;
 
 const isJsonValue = (value: unknown, depth = 0): boolean => {
   if (depth > 8) return false;
@@ -711,7 +752,7 @@ const compileFilter = (
   return { sql: `${column} ${sqlOperator} ?`, params: [filter.value] };
 };
 
-export const schemaVersion = 14;
+export const schemaVersion = 15;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -1067,6 +1108,34 @@ const migrations: readonly Migration[] = [
         PRIMARY KEY(account_id, fact_date, currency, source, dimension_hash)
       );
       CREATE INDEX daily_order_facts_account_date ON daily_order_facts(account_id, fact_date, currency, source);
+    `,
+  },
+  {
+    version: 15,
+    name: 'account-administration-and-password-recovery',
+    sql: `
+      ALTER TABLE account_memberships ADD COLUMN status TEXT NOT NULL DEFAULT 'active'
+        CHECK(status IN ('active', 'revoked'));
+      ALTER TABLE account_memberships ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+      ALTER TABLE account_memberships ADD COLUMN revoked_at TEXT;
+      UPDATE account_memberships SET updated_at = created_at WHERE updated_at = '';
+      CREATE INDEX memberships_account_status ON account_memberships(account_id, status, created_at);
+      CREATE INDEX memberships_user_status ON account_memberships(user_id, status, account_id);
+      CREATE TABLE password_reset_tokens (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), account_id TEXT NOT NULL REFERENCES accounts(id),
+        token_hash TEXT NOT NULL UNIQUE, expires_at TEXT NOT NULL, used_at TEXT, created_at TEXT NOT NULL
+      );
+      CREATE INDEX password_reset_tokens_lookup ON password_reset_tokens(token_hash, used_at, expires_at);
+      CREATE TABLE account_invitations (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), email TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('admin', 'operator', 'viewer')), token_hash TEXT NOT NULL UNIQUE,
+        expires_at TEXT NOT NULL, accepted_at TEXT, revoked_at TEXT, created_by TEXT NOT NULL REFERENCES users(id),
+        created_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX account_invitations_pending_email
+        ON account_invitations(account_id, email) WHERE accepted_at IS NULL AND revoked_at IS NULL;
+      CREATE INDEX account_invitations_account_status
+        ON account_invitations(account_id, expires_at, accepted_at, revoked_at);
     `,
   },
 ];
@@ -1733,7 +1802,9 @@ export class SqliteStore {
     this.assertContext(context);
     if (!context.actorId) throw new Error('BULK_PERMISSION_DENIED');
     const membership = this.db
-      .prepare('SELECT role FROM account_memberships WHERE account_id = ? AND user_id = ?')
+      .prepare(
+        "SELECT role FROM account_memberships WHERE account_id = ? AND user_id = ? AND status = 'active'",
+      )
       .get(context.accountId, context.actorId) as { role: AccountRole } | undefined;
     if (!membership) throw new Error('BULK_PERMISSION_DENIED');
     return membership.role;
@@ -1743,6 +1814,472 @@ export class SqliteStore {
     const role = this.assertMember(context);
     if (context.role === 'viewer' || role === 'viewer') throw new Error('BULK_PERMISSION_DENIED');
     return context.actorId as string;
+  }
+
+  private requireAccountAdmin(context: AccountContext): string {
+    const role = this.assertMember(context);
+    if (role !== 'owner' && role !== 'admin') throw new Error('ACCOUNT_ADMIN_PERMISSION_DENIED');
+    return context.actorId as string;
+  }
+
+  getAccount(context: AccountContext): AccountRecord {
+    this.assertMember(context);
+    const row = this.db
+      .prepare(
+        'SELECT id, name, locale, direction, timezone, base_currency FROM accounts WHERE id = ?',
+      )
+      .get(context.accountId) as
+      | {
+          id: string;
+          name: string;
+          locale: 'ar-EG' | 'en-US';
+          direction: 'rtl' | 'ltr';
+          timezone: string;
+          base_currency: string;
+        }
+      | undefined;
+    if (!row) throw new Error('ACCOUNT_NOT_FOUND');
+    return {
+      id: row.id,
+      name: row.name,
+      locale: row.locale,
+      direction: row.direction,
+      timezone: row.timezone,
+      baseCurrency: row.base_currency,
+    };
+  }
+
+  updateAccount(
+    context: AccountContext,
+    input: Partial<{
+      name: string | undefined;
+      locale: 'ar-EG' | 'en-US' | undefined;
+      direction: 'rtl' | 'ltr' | undefined;
+      timezone: string | undefined;
+      baseCurrency: string | undefined;
+    }>,
+  ): AccountRecord {
+    this.requireAccountAdmin(context);
+    if (input.name !== undefined && (input.name.trim().length < 1 || input.name.length > 160))
+      throw new Error('ACCOUNT_NAME_INVALID');
+    if (input.locale !== undefined && !['ar-EG', 'en-US'].includes(input.locale))
+      throw new Error('ACCOUNT_LOCALE_INVALID');
+    if (input.direction !== undefined && !['rtl', 'ltr'].includes(input.direction))
+      throw new Error('ACCOUNT_DIRECTION_INVALID');
+    if (input.timezone !== undefined) {
+      if (input.timezone.length < 1 || input.timezone.length > 80)
+        throw new Error('ACCOUNT_TIMEZONE_INVALID');
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: input.timezone }).format();
+      } catch {
+        throw new Error('ACCOUNT_TIMEZONE_INVALID');
+      }
+    }
+    if (input.baseCurrency !== undefined && !/^[A-Za-z]{3}$/u.test(input.baseCurrency))
+      throw new Error('ACCOUNT_CURRENCY_INVALID');
+    const current = this.getAccount(context);
+    const next = {
+      name: input.name?.trim() ?? current.name,
+      locale: input.locale ?? current.locale,
+      direction: input.direction ?? current.direction,
+      timezone: input.timezone ?? current.timezone,
+      baseCurrency: input.baseCurrency?.toUpperCase() ?? current.baseCurrency,
+    };
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        'UPDATE accounts SET name = ?, locale = ?, direction = ?, timezone = ?, base_currency = ?, updated_at = ? WHERE id = ?',
+      )
+      .run(
+        next.name,
+        next.locale,
+        next.direction,
+        next.timezone,
+        next.baseCurrency,
+        now,
+        context.accountId,
+      );
+    this.audit(context, 'account.updated', 'account', context.accountId, {
+      fields: Object.keys(input),
+    });
+    return this.getAccount(context);
+  }
+
+  listMembers(context: AccountContext): MemberRecord[] {
+    this.requireAccountAdmin(context);
+    const rows = this.db
+      .prepare(
+        `SELECT u.id AS user_id, u.email, m.role, m.status, m.created_at, m.updated_at, m.revoked_at
+         FROM account_memberships m JOIN users u ON u.id = m.user_id
+         WHERE m.account_id = ? ORDER BY CASE m.status WHEN 'active' THEN 0 ELSE 1 END, u.email, u.id`,
+      )
+      .all(context.accountId) as Array<{
+      user_id: string;
+      email: string;
+      role: AccountRole;
+      status: 'active' | 'revoked';
+      created_at: string;
+      updated_at: string;
+      revoked_at: string | null;
+    }>;
+    return rows.map((row) => ({
+      userId: row.user_id,
+      email: row.email,
+      role: row.role,
+      status: row.status,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at || row.created_at,
+      revokedAt: row.revoked_at,
+    }));
+  }
+
+  createInvitation(
+    context: AccountContext,
+    input: { email: string; role: Exclude<AccountRole, 'owner'>; expiresAt: string },
+  ): InvitationRecord {
+    const actorId = this.requireAccountAdmin(context);
+    const email = input.email.trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/u.test(email) || email.length > 320)
+      throw new Error('INVITATION_EMAIL_INVALID');
+    if (!['admin', 'operator', 'viewer'].includes(input.role))
+      throw new Error('INVITATION_ROLE_INVALID');
+    const actorRole = this.assertMember(context);
+    if (actorRole !== 'owner' && input.role === 'admin')
+      throw new Error('INVITATION_ROLE_PERMISSION_DENIED');
+    const expiresAt = new Date(input.expiresAt);
+    if (Number.isNaN(expiresAt.getTime()) || expiresAt <= new Date())
+      throw new Error('INVITATION_EXPIRY_INVALID');
+    if (expiresAt.getTime() > Date.now() + 30 * 86400000)
+      throw new Error('INVITATION_EXPIRY_INVALID');
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        'UPDATE account_invitations SET revoked_at = ? WHERE account_id = ? AND email = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at <= ?',
+      )
+      .run(now, context.accountId, email, now);
+    if (
+      this.db
+        .prepare(
+          "SELECT 1 FROM users u JOIN account_memberships m ON m.user_id = u.id WHERE m.account_id = ? AND u.email = ? AND m.status = 'active'",
+        )
+        .get(context.accountId, email)
+    )
+      throw new Error('INVITATION_MEMBER_EXISTS');
+    const token = randomBytes(32).toString('base64url');
+    const id = randomId();
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO account_invitations
+            (id, account_id, email, role, token_hash, expires_at, created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          context.accountId,
+          email,
+          input.role,
+          requireHash(token),
+          expiresAt.toISOString(),
+          actorId,
+          now,
+        );
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE'))
+        throw new Error('INVITATION_PENDING_EXISTS');
+      throw error;
+    }
+    this.audit(context, 'invitation.created', 'invitation', id, { email, role: input.role });
+    return {
+      id,
+      email,
+      role: input.role,
+      expiresAt: expiresAt.toISOString(),
+      acceptedAt: null,
+      revokedAt: null,
+      createdAt: now,
+      acceptToken: token,
+    };
+  }
+
+  listInvitations(context: AccountContext): InvitationRecord[] {
+    this.requireAccountAdmin(context);
+    const rows = this.db
+      .prepare(
+        `SELECT id, email, role, expires_at, accepted_at, revoked_at, created_at
+         FROM account_invitations WHERE account_id = ? ORDER BY created_at DESC, id DESC LIMIT 200`,
+      )
+      .all(context.accountId) as Array<{
+      id: string;
+      email: string;
+      role: Exclude<AccountRole, 'owner'>;
+      expires_at: string;
+      accepted_at: string | null;
+      revoked_at: string | null;
+      created_at: string;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      email: row.email,
+      role: row.role,
+      expiresAt: row.expires_at,
+      acceptedAt: row.accepted_at,
+      revokedAt: row.revoked_at,
+      createdAt: row.created_at,
+    }));
+  }
+
+  revokeInvitation(context: AccountContext, invitationId: string): void {
+    this.requireAccountAdmin(context);
+    const result = this.db
+      .prepare(
+        'UPDATE account_invitations SET revoked_at = ? WHERE account_id = ? AND id = ? AND accepted_at IS NULL AND revoked_at IS NULL',
+      )
+      .run(new Date().toISOString(), context.accountId, invitationId);
+    if (result.changes !== 1) throw new Error('INVITATION_NOT_FOUND');
+    this.audit(context, 'invitation.revoked', 'invitation', invitationId, {});
+  }
+
+  acceptInvitation(
+    userId: string,
+    invitationId: string,
+    token: string,
+    correlationId: string,
+  ): MemberRecord {
+    if (!userId || !invitationId || !/^[A-Za-z0-9_-]{32,80}$/u.test(token))
+      throw new Error('INVITATION_INVALID');
+    const now = new Date().toISOString();
+    const result = this.db.transaction(() => {
+      const invitation = this.db
+        .prepare(
+          `SELECT id, account_id, email, role, expires_at FROM account_invitations
+           WHERE id = ? AND token_hash = ? AND accepted_at IS NULL AND revoked_at IS NULL`,
+        )
+        .get(invitationId, requireHash(token)) as
+        | { id: string; account_id: string; email: string; role: AccountRole; expires_at: string }
+        | undefined;
+      if (!invitation || invitation.expires_at <= now) throw new Error('INVITATION_INVALID');
+      const user = this.db.prepare('SELECT id, email FROM users WHERE id = ?').get(userId) as
+        { id: string; email: string } | undefined;
+      if (!user || user.email !== invitation.email) throw new Error('INVITATION_EMAIL_MISMATCH');
+      this.db
+        .prepare(
+          `INSERT INTO account_memberships (account_id, user_id, role, status, created_at, updated_at)
+           VALUES (?, ?, ?, 'active', ?, ?)
+           ON CONFLICT(account_id, user_id) DO UPDATE SET role = excluded.role, status = 'active', revoked_at = NULL, updated_at = excluded.updated_at`,
+        )
+        .run(invitation.account_id, user.id, invitation.role, now, now);
+      this.db
+        .prepare(
+          'UPDATE account_invitations SET accepted_at = ? WHERE id = ? AND accepted_at IS NULL',
+        )
+        .run(now, invitation.id);
+      this.db
+        .prepare(
+          'INSERT INTO audit_events (id, account_id, actor_id, action, target_type, target_id, summary_json, correlation_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(
+          randomId(),
+          invitation.account_id,
+          user.id,
+          'invitation.accepted',
+          'membership',
+          user.id,
+          JSON.stringify({ role: invitation.role }),
+          correlationId,
+          now,
+        );
+      return invitation;
+    })();
+    const row = this.db
+      .prepare(
+        `SELECT u.id AS user_id, u.email, m.role, m.status, m.created_at, m.updated_at, m.revoked_at
+         FROM account_memberships m JOIN users u ON u.id = m.user_id
+         WHERE m.account_id = ? AND m.user_id = ?`,
+      )
+      .get(result.account_id, userId) as {
+      user_id: string;
+      email: string;
+      role: AccountRole;
+      status: 'active' | 'revoked';
+      created_at: string;
+      updated_at: string;
+      revoked_at: string | null;
+    };
+    return {
+      userId: row.user_id,
+      email: row.email,
+      role: row.role,
+      status: row.status,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      revokedAt: row.revoked_at,
+    };
+  }
+
+  changeMemberRole(context: AccountContext, userId: string, role: AccountRole): MemberRecord {
+    const actorId = this.requireAccountAdmin(context);
+    if (userId === actorId) throw new Error('MEMBER_SELF_ROLE_CHANGE');
+    if (!['owner', 'admin', 'operator', 'viewer'].includes(role))
+      throw new Error('MEMBER_ROLE_INVALID');
+    const actorRole = this.assertMember(context);
+    if (actorRole !== 'owner' && role === 'owner') throw new Error('MEMBER_ROLE_PERMISSION_DENIED');
+    const target = this.db
+      .prepare('SELECT role, status FROM account_memberships WHERE account_id = ? AND user_id = ?')
+      .get(context.accountId, userId) as { role: AccountRole; status: string } | undefined;
+    if (!target || target.status !== 'active') throw new Error('MEMBER_NOT_FOUND');
+    if (target.role === 'owner' && role !== 'owner') {
+      const owners = this.db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM account_memberships WHERE account_id = ? AND role = 'owner' AND status = 'active'",
+        )
+        .get(context.accountId) as { count: number };
+      if (owners.count <= 1) throw new Error('MEMBER_LAST_OWNER');
+      if (actorRole !== 'owner') throw new Error('MEMBER_ROLE_PERMISSION_DENIED');
+    }
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        "UPDATE account_memberships SET role = ?, updated_at = ?, revoked_at = NULL, status = 'active' WHERE account_id = ? AND user_id = ? AND status = 'active'",
+      )
+      .run(role, now, context.accountId, userId);
+    this.db
+      .prepare(
+        'UPDATE sessions SET revoked_at = ? WHERE account_id = ? AND user_id = ? AND revoked_at IS NULL',
+      )
+      .run(now, context.accountId, userId);
+    this.audit(context, 'membership.role-changed', 'membership', userId, {
+      role,
+      actorId,
+    });
+    return this.listMembers(context).find((member) => member.userId === userId) as MemberRecord;
+  }
+
+  revokeMembership(context: AccountContext, userId: string): void {
+    const actorRole = this.assertMember(context);
+    const actorId = this.requireAccountAdmin(context);
+    const target = this.db
+      .prepare('SELECT role, status FROM account_memberships WHERE account_id = ? AND user_id = ?')
+      .get(context.accountId, userId) as { role: AccountRole; status: string } | undefined;
+    if (!target || target.status !== 'active') throw new Error('MEMBER_NOT_FOUND');
+    if (userId === actorId) throw new Error('MEMBER_SELF_REVOKE');
+    if (target.role === 'owner') {
+      if (actorRole !== 'owner') throw new Error('MEMBER_ROLE_PERMISSION_DENIED');
+      const owners = this.db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM account_memberships WHERE account_id = ? AND role = 'owner' AND status = 'active'",
+        )
+        .get(context.accountId) as { count: number };
+      if (owners.count <= 1) throw new Error('MEMBER_LAST_OWNER');
+    }
+    const now = new Date().toISOString();
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          "UPDATE account_memberships SET status = 'revoked', revoked_at = ?, updated_at = ? WHERE account_id = ? AND user_id = ? AND status = 'active'",
+        )
+        .run(now, now, context.accountId, userId);
+      this.db
+        .prepare(
+          'UPDATE sessions SET revoked_at = ? WHERE account_id = ? AND user_id = ? AND revoked_at IS NULL',
+        )
+        .run(now, context.accountId, userId);
+    })();
+    this.audit(context, 'membership.revoked', 'membership', userId, {});
+  }
+
+  listSessions(context: AccountContext, targetUserId = context.actorId): SessionRecord[] {
+    const actorRole = this.assertMember(context);
+    if (!targetUserId) throw new Error('SESSION_USER_INVALID');
+    if (targetUserId !== context.actorId && actorRole !== 'owner' && actorRole !== 'admin')
+      throw new Error('SESSION_PERMISSION_DENIED');
+    const rows = this.db
+      .prepare(
+        `SELECT s.id, s.user_id, u.email, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at
+         FROM sessions s JOIN users u ON u.id = s.user_id
+         WHERE s.account_id = ? AND s.user_id = ? ORDER BY s.created_at DESC, s.id DESC LIMIT 100`,
+      )
+      .all(context.accountId, targetUserId) as Array<{
+      id: string;
+      user_id: string;
+      email: string;
+      created_at: string;
+      last_seen_at: string;
+      expires_at: string;
+      revoked_at: string | null;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      email: row.email,
+      createdAt: row.created_at,
+      lastSeenAt: row.last_seen_at,
+      expiresAt: row.expires_at,
+      revokedAt: row.revoked_at,
+    }));
+  }
+
+  revokeSession(context: AccountContext, sessionId: string): void {
+    const actorRole = this.assertMember(context);
+    const row = this.db
+      .prepare('SELECT user_id FROM sessions WHERE account_id = ? AND id = ?')
+      .get(context.accountId, sessionId) as { user_id: string } | undefined;
+    if (!row) throw new Error('SESSION_NOT_FOUND');
+    if (row.user_id !== context.actorId && actorRole !== 'owner' && actorRole !== 'admin')
+      throw new Error('SESSION_PERMISSION_DENIED');
+    const result = this.db
+      .prepare(
+        'UPDATE sessions SET revoked_at = ? WHERE account_id = ? AND id = ? AND revoked_at IS NULL',
+      )
+      .run(new Date().toISOString(), context.accountId, sessionId);
+    if (result.changes !== 1) throw new Error('SESSION_NOT_FOUND');
+    this.audit(context, 'session.revoked', 'session', sessionId, {});
+  }
+
+  revokeAllSessions(context: AccountContext, targetUserId = context.actorId): number {
+    const actorRole = this.assertMember(context);
+    if (!targetUserId) throw new Error('SESSION_USER_INVALID');
+    if (targetUserId !== context.actorId && actorRole !== 'owner' && actorRole !== 'admin')
+      throw new Error('SESSION_PERMISSION_DENIED');
+    const result = this.db
+      .prepare(
+        'UPDATE sessions SET revoked_at = ? WHERE account_id = ? AND user_id = ? AND revoked_at IS NULL',
+      )
+      .run(new Date().toISOString(), context.accountId, targetUserId);
+    this.audit(context, 'session.all-revoked', 'user', targetUserId, { count: result.changes });
+    return result.changes;
+  }
+
+  healthSnapshot(): StoreHealth {
+    try {
+      const schema = this.db
+        .prepare('SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations')
+        .get() as { version: number };
+      const counts = this.db
+        .prepare(
+          `SELECT
+             COALESCE(SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END), 0) AS queued,
+             COALESCE(SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END), 0) AS running,
+             COALESCE(SUM(CASE WHEN status = 'dead-lettered' THEN 1 ELSE 0 END), 0) AS dead_lettered
+           FROM jobs`,
+        )
+        .get() as { queued: number; running: number; dead_lettered: number };
+      return {
+        database: 'connected',
+        schemaVersion: schema.version,
+        queue: {
+          queued: Number(counts.queued),
+          running: Number(counts.running),
+          deadLettered: Number(counts.dead_lettered),
+        },
+      };
+    } catch {
+      return {
+        database: 'degraded',
+        schemaVersion: 0,
+        queue: { queued: 0, running: 0, deadLettered: 0 },
+      };
+    }
   }
 
   private selectionRow(context: AccountContext, selectionId: string): SelectionRow {

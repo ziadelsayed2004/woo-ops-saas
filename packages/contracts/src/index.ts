@@ -1,12 +1,68 @@
 import { z } from 'zod';
 
 export const healthResponseSchema = z.object({
-  status: z.literal('ok'),
+  status: z.enum(['ok', 'degraded']),
   service: z.string(),
   database: z.enum(['connected', 'degraded']),
   version: z.string(),
+  schemaVersion: z.number().int().nonnegative().optional(),
+  queue: z
+    .object({
+      queued: z.number().int().nonnegative(),
+      running: z.number().int().nonnegative(),
+      deadLettered: z.number().int().nonnegative(),
+    })
+    .optional(),
 });
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
+
+const accountLocaleSchema = z.enum(['ar-EG', 'en-US']);
+const accountDirectionSchema = z.enum(['rtl', 'ltr']);
+const accountRoleSchema = z.enum(['owner', 'admin', 'operator', 'viewer']);
+const memberRoleSchema = z.enum(['admin', 'operator', 'viewer']);
+
+export const accountUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(160).optional(),
+    locale: accountLocaleSchema.optional(),
+    direction: accountDirectionSchema.optional(),
+    timezone: z.string().trim().min(1).max(80).optional(),
+    baseCurrency: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z]{3}$/)
+      .optional(),
+  })
+  .strict();
+export const memberRoleUpdateSchema = z.object({ role: accountRoleSchema }).strict();
+export const invitationCreateSchema = z
+  .object({
+    email: z.string().trim().email().max(320),
+    role: memberRoleSchema,
+    expiresAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export const invitationAcceptSchema = z
+  .object({ token: z.string().regex(/^[A-Za-z0-9_-]{32,80}$/u) })
+  .strict();
+export const passwordChangeSchema = z
+  .object({
+    currentPassword: z.string().min(12).max(1024),
+    newPassword: z.string().min(12).max(1024),
+  })
+  .strict();
+export const passwordResetRequestSchema = z
+  .object({ email: z.string().trim().email().max(320) })
+  .strict();
+export const passwordResetConfirmSchema = z
+  .object({
+    token: z.string().regex(/^[A-Za-z0-9_-]{32,80}$/u),
+    newPassword: z.string().min(12).max(1024),
+  })
+  .strict();
+export const sessionTargetSchema = z
+  .object({ targetUserId: z.string().trim().min(1).max(256).optional() })
+  .strict();
 
 export const apiErrorSchema = z.object({
   error: z.object({ code: z.string(), message: z.string(), correlationId: z.string() }),

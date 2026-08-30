@@ -65,6 +65,36 @@ const setCookies = (response: Response, session: string, csrf: string): void => 
 export class AuthService {
   constructor(private readonly db: Database.Database) {}
 
+  private createSession(row: { id: string; email: string; account_id: string; role: string }): {
+    user: AuthUser;
+    session: string;
+    csrf: string;
+  } {
+    const session = randomBytes(32).toString('base64url');
+    const csrf = randomBytes(24).toString('base64url');
+    const now = new Date();
+    const expires = new Date(now.getTime() + SESSION_DAYS * 86400000).toISOString();
+    this.db
+      .prepare(
+        'INSERT INTO sessions (id, user_id, account_id, token_hash, csrf_hash, expires_at, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        randomUUID(),
+        row.id,
+        row.account_id,
+        hashToken(session),
+        hashToken(csrf),
+        expires,
+        now.toISOString(),
+        now.toISOString(),
+      );
+    return {
+      user: { id: row.id, email: row.email, accountId: row.account_id, role: row.role },
+      session,
+      csrf,
+    };
+  }
+
   register(email: string, password: string, accountName: string): AuthUser {
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedAccountName = accountName.trim();
@@ -91,9 +121,9 @@ export class AuthService {
         .run(userId, normalizedEmail, hashPassword(password), now, now);
       this.db
         .prepare(
-          'INSERT INTO account_memberships (account_id, user_id, role, created_at) VALUES (?, ?, ?, ?)',
+          "INSERT INTO account_memberships (account_id, user_id, role, status, updated_at, created_at) VALUES (?, ?, ?, 'active', ?, ?)",
         )
-        .run(accountId, userId, 'owner', now);
+        .run(accountId, userId, 'owner', now, now);
     })();
     return { id: userId, email: normalizedEmail, accountId, role: 'owner' };
   }
@@ -101,36 +131,14 @@ export class AuthService {
   login(email: string, password: string): { user: AuthUser; session: string; csrf: string } {
     const row = this.db
       .prepare(
-        'SELECT u.id, u.email, u.password_hash, m.account_id, m.role FROM users u JOIN account_memberships m ON m.user_id = u.id WHERE u.email = ? ORDER BY m.created_at LIMIT 1',
+        "SELECT u.id, u.email, u.password_hash, m.account_id, m.role FROM users u JOIN account_memberships m ON m.user_id = u.id WHERE u.email = ? AND m.status = 'active' ORDER BY m.created_at LIMIT 1",
       )
       .get(email.trim().toLowerCase()) as
       | { id: string; email: string; password_hash: string; account_id: string; role: string }
       | undefined;
     if (!row || !verifyPassword(password, row.password_hash))
       throw new Error('AUTH_INVALID_CREDENTIALS');
-    const session = randomBytes(32).toString('base64url');
-    const csrf = randomBytes(24).toString('base64url');
-    const now = new Date();
-    const expires = new Date(now.getTime() + SESSION_DAYS * 86400000).toISOString();
-    this.db
-      .prepare(
-        'INSERT INTO sessions (id, user_id, account_id, token_hash, csrf_hash, expires_at, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      )
-      .run(
-        randomUUID(),
-        row.id,
-        row.account_id,
-        hashToken(session),
-        hashToken(csrf),
-        expires,
-        now.toISOString(),
-        now.toISOString(),
-      );
-    return {
-      user: { id: row.id, email: row.email, accountId: row.account_id, role: row.role },
-      session,
-      csrf,
-    };
+    return this.createSession(row);
   }
 
   current(request: Request): AuthUser | null {
@@ -138,11 +146,131 @@ export class AuthService {
     if (!token) return null;
     const row = this.db
       .prepare(
-        'SELECT s.user_id, s.account_id, s.csrf_hash, s.expires_at, s.revoked_at, u.email, m.role FROM sessions s JOIN users u ON u.id = s.user_id JOIN account_memberships m ON m.user_id = s.user_id AND m.account_id = s.account_id WHERE s.token_hash = ? LIMIT 1',
+        "SELECT s.user_id, s.account_id, s.csrf_hash, s.expires_at, s.revoked_at, u.email, m.role FROM sessions s JOIN users u ON u.id = s.user_id JOIN account_memberships m ON m.user_id = s.user_id AND m.account_id = s.account_id AND m.status = 'active' WHERE s.token_hash = ? LIMIT 1",
       )
       .get(hashToken(token)) as SessionRow | undefined;
     if (!row || row.revoked_at || row.expires_at <= new Date().toISOString()) return null;
+    this.db
+      .prepare('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ? AND revoked_at IS NULL')
+      .run(new Date().toISOString(), hashToken(token));
     return { id: row.user_id, email: row.email, accountId: row.account_id, role: row.role };
+  }
+
+  changePassword(
+    userId: string,
+    accountId: string,
+    currentPassword: string,
+    newPassword: string,
+    correlationId = 'auth-password-change',
+  ): { user: AuthUser; session: string; csrf: string } {
+    if (currentPassword === newPassword) throw new Error('AUTH_PASSWORD_REUSE');
+    const row = this.db
+      .prepare(
+        "SELECT u.id, u.email, u.password_hash, m.account_id, m.role FROM users u JOIN account_memberships m ON m.user_id = u.id AND m.account_id = ? AND m.status = 'active' WHERE u.id = ?",
+      )
+      .get(accountId, userId) as
+      | { id: string; email: string; password_hash: string; account_id: string; role: string }
+      | undefined;
+    if (!row || !verifyPassword(currentPassword, row.password_hash))
+      throw new Error('AUTH_INVALID_CREDENTIALS');
+    const passwordHash = hashPassword(newPassword);
+    const now = new Date().toISOString();
+    this.db.transaction(() => {
+      this.db
+        .prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
+        .run(passwordHash, now, userId);
+      this.db
+        .prepare(
+          'UPDATE sessions SET revoked_at = ? WHERE account_id = ? AND user_id = ? AND revoked_at IS NULL',
+        )
+        .run(now, accountId, userId);
+      recordAudit(this.db, {
+        accountId,
+        actorId: userId,
+        action: 'auth.password-changed',
+        targetType: 'user',
+        targetId: userId,
+        correlationId,
+        summary: {},
+      });
+    })();
+    return this.createSession(row);
+  }
+
+  requestPasswordReset(
+    email: string,
+    correlationId = 'auth-password-reset-request',
+    deliver?: (token: string) => void,
+  ): void {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/u.test(normalizedEmail) || normalizedEmail.length > 320)
+      throw new Error('AUTH_INVALID_INPUT');
+    const row = this.db
+      .prepare(
+        "SELECT u.id, u.email, m.account_id FROM users u JOIN account_memberships m ON m.user_id = u.id AND m.status = 'active' WHERE u.email = ? ORDER BY m.created_at LIMIT 1",
+      )
+      .get(normalizedEmail) as { id: string; email: string; account_id: string } | undefined;
+    if (!row) return;
+    const token = randomBytes(32).toString('base64url');
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 30 * 60 * 1000).toISOString();
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          'DELETE FROM password_reset_tokens WHERE user_id = ? OR expires_at <= ? OR used_at IS NOT NULL',
+        )
+        .run(row.id, now.toISOString());
+      this.db
+        .prepare(
+          'INSERT INTO password_reset_tokens (id, user_id, account_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        )
+        .run(randomUUID(), row.id, row.account_id, hashToken(token), expiresAt, now.toISOString());
+      recordAudit(this.db, {
+        accountId: row.account_id,
+        action: 'auth.password-reset-requested',
+        targetType: 'user',
+        targetId: row.id,
+        correlationId,
+        summary: {},
+      });
+    })();
+    deliver?.(token);
+  }
+
+  confirmPasswordReset(
+    token: string,
+    newPassword: string,
+    correlationId = 'auth-password-reset-confirmed',
+  ): void {
+    if (!/^[A-Za-z0-9_-]{32,80}$/u.test(token)) throw new Error('AUTH_RESET_INVALID');
+    const passwordHash = hashPassword(newPassword);
+    const now = new Date().toISOString();
+    this.db.transaction(() => {
+      const row = this.db
+        .prepare(
+          'SELECT id, user_id, account_id, expires_at FROM password_reset_tokens WHERE token_hash = ? AND used_at IS NULL',
+        )
+        .get(hashToken(token)) as
+        { id: string; user_id: string; account_id: string; expires_at: string } | undefined;
+      if (!row || row.expires_at <= now) throw new Error('AUTH_RESET_INVALID');
+      this.db
+        .prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
+        .run(passwordHash, now, row.user_id);
+      this.db
+        .prepare('UPDATE password_reset_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL')
+        .run(now, row.id);
+      this.db
+        .prepare('UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL')
+        .run(now, row.user_id);
+      recordAudit(this.db, {
+        accountId: row.account_id,
+        action: 'auth.password-reset-completed',
+        targetType: 'user',
+        targetId: row.user_id,
+        correlationId,
+        summary: {},
+      });
+    })();
   }
 
   csrfValid(request: Request): boolean {
@@ -177,10 +305,24 @@ export class AuthService {
 
 export const can = (
   role: string,
-  permission: 'account:write' | 'audit:read' | 'operations:write',
+  permission:
+    | 'account:write'
+    | 'audit:read'
+    | 'operations:write'
+    | 'members:read'
+    | 'members:write'
+    | 'sessions:read'
+    | 'sessions:write'
+    | 'security:write',
 ): boolean => {
   if (permission === 'audit:read') return ['owner', 'admin', 'operator', 'viewer'].includes(role);
   if (permission === 'operations:write') return ['owner', 'admin', 'operator'].includes(role);
+  if (permission === 'members:read' || permission === 'members:write')
+    return ['owner', 'admin'].includes(role);
+  if (permission === 'sessions:read' || permission === 'sessions:write')
+    return ['owner', 'admin', 'operator', 'viewer'].includes(role);
+  if (permission === 'security:write')
+    return ['owner', 'admin', 'operator', 'viewer'].includes(role);
   return ['owner', 'admin'].includes(role);
 };
 

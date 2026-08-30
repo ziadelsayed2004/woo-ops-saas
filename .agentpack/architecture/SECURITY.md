@@ -40,6 +40,12 @@
 - Login, password reset, invitation, and sensitive endpoints have rate limits and abuse monitoring.
 - MFA-ready architecture; owner/admin MFA becomes a configurable requirement.
 
+The account administration implementation enforces active membership at session lookup and
+repository authorization boundaries. Role changes and membership/session revocation revoke the
+affected account sessions. Password reset material is generated with cryptographically secure
+random bytes, stored only as a digest, invalidated after one use or expiry, and never exposed by
+the reset request API.
+
 ## Public endpoint controls
 
 - Strict request/body size, content type, timeout, and method limits.
