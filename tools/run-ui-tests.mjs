@@ -42,8 +42,8 @@ if (filter === 'documents' && mode === 'visual') {
   process.exit();
 }
 
-if (mode === 'a11y') args.push('--grep', '@a11y');
-else if (mode === 'visual') args.push('--grep', '@visual');
+if (mode === 'a11y') args.push('--grep', filter ? `@a11y.*@${filter}` : '@a11y');
+else if (mode === 'visual') args.push('--grep', filter ? `@${filter}` : '@visual');
 else if (filter) args.push('--grep', filter);
 
 const ignored = new Set(['--filter', filter]);

@@ -124,6 +124,12 @@ export type AnalyticsFilter = {
   to?: string;
   source?: AnalyticsSource;
   currency?: string;
+  store?: string;
+  status?: string;
+  shippingMethod?: string;
+  product?: string;
+  category?: string;
+  author?: string;
 };
 export type AnalyticsRebuildResult = {
   from: string | null;
@@ -1480,6 +1486,8 @@ const addAnalyticsTotals = (left: MetricTotals, right: MetricTotals): MetricTota
       (analyticsMinor(left[key]) + analyticsMinor(right[key])).toString(),
     ]),
   ) as MetricTotals;
+const analyticsLike = (value: string): string =>
+  `%${value.toLowerCase().replace(/[\\%_]/gu, (character) => `\\${character}`)}%`;
 const documentTemplate = (row: DocumentTemplateRow): DocumentTemplateRecord => ({
   id: row.id,
   accountId: row.account_id,
@@ -2585,6 +2593,54 @@ export class SqliteStore {
       clauses.push('currency = ?');
       params.push(normalizeAnalyticsCurrency(input.currency));
     }
+    if (input.store !== undefined) {
+      clauses.push(
+        `LOWER(COALESCE(json_extract(dimensions_json, '$.store'), '')) LIKE ? ESCAPE '\\'`,
+      );
+      params.push(analyticsLike(input.store));
+    }
+    if (input.status !== undefined) {
+      clauses.push(
+        `(LOWER(COALESCE(json_extract(dimensions_json, '$.remoteStatus'), '')) LIKE ? ESCAPE '\\'
+          OR LOWER(COALESCE(json_extract(dimensions_json, '$.localStatus'), '')) LIKE ? ESCAPE '\\')`,
+      );
+      params.push(analyticsLike(input.status), analyticsLike(input.status));
+    }
+    if (input.shippingMethod !== undefined) {
+      clauses.push(
+        `LOWER(COALESCE(json_extract(dimensions_json, '$.shippingMethod'), '')) LIKE ? ESCAPE '\\'`,
+      );
+      params.push(analyticsLike(input.shippingMethod));
+    }
+    if (input.product !== undefined) {
+      clauses.push(
+        `EXISTS (SELECT 1 FROM json_each(COALESCE(json_extract(dimensions_json, '$.products'), '[]')) AS product
+          WHERE LOWER(COALESCE(json_extract(product.value, '$.product'), '')) LIKE ? ESCAPE '\\'
+             OR LOWER(COALESCE(json_extract(product.value, '$.variation'), '')) LIKE ? ESCAPE '\\'
+             OR LOWER(COALESCE(json_extract(product.value, '$.sku'), '')) LIKE ? ESCAPE '\\'
+             OR LOWER(COALESCE(json_extract(product.value, '$.name'), '')) LIKE ? ESCAPE '\\')`,
+      );
+      params.push(
+        analyticsLike(input.product),
+        analyticsLike(input.product),
+        analyticsLike(input.product),
+        analyticsLike(input.product),
+      );
+    }
+    if (input.category !== undefined) {
+      clauses.push(
+        `EXISTS (SELECT 1 FROM json_each(COALESCE(json_extract(dimensions_json, '$.categories'), '[]')) AS category
+          WHERE LOWER(COALESCE(category.value, '')) LIKE ? ESCAPE '\\')`,
+      );
+      params.push(analyticsLike(input.category));
+    }
+    if (input.author !== undefined) {
+      clauses.push(
+        `EXISTS (SELECT 1 FROM json_each(COALESCE(json_extract(dimensions_json, '$.authors'), '[]')) AS author
+          WHERE LOWER(COALESCE(author.value, '')) LIKE ? ESCAPE '\\')`,
+      );
+      params.push(analyticsLike(input.author));
+    }
     return this.db
       .prepare(
         `SELECT account_id, fact_date, currency, source, dimension_hash, dimensions_json,
@@ -2621,6 +2677,30 @@ export class SqliteStore {
       current.totals = addAnalyticsTotals(current.totals, dailyAnalyticsFact(row).totals);
       byCurrency.set(row.currency, current);
     }
+    const coverageClauses = ['s.account_id = ?'];
+    const coverageParams: (string | number)[] = [context.accountId];
+    if (input.source !== undefined && input.source !== 'combined') {
+      coverageClauses.push('o.origin = ?');
+      coverageParams.push(input.source);
+    }
+    if (input.currency !== undefined) {
+      coverageClauses.push('s.currency = ?');
+      coverageParams.push(normalizeAnalyticsCurrency(input.currency));
+    }
+    const coverage = this.db
+      .prepare(
+        `SELECT COUNT(*) AS total_lines,
+          COALESCE(SUM(CASE WHEN s.source <> 'missing' THEN 1 ELSE 0 END), 0) AS covered_lines
+         FROM order_cost_snapshots s JOIN orders o ON o.id = s.order_id AND o.account_id = s.account_id
+         WHERE ${coverageClauses.join(' AND ')}`,
+      )
+      .get(...coverageParams) as { total_lines: number; covered_lines: number };
+    const freshness = rows.reduce<string | null>(
+      (latest, row) => (!latest || row.rebuilt_at > latest ? row.rebuilt_at : latest),
+      null,
+    );
+    const totalLines = Number(coverage.total_lines);
+    const coveredLines = Number(coverage.covered_lines);
     return {
       source: input.source ?? 'combined',
       from: input.from ?? null,
@@ -2628,6 +2708,13 @@ export class SqliteStore {
       excludedStatuses: ['cancelled', 'failed', 'trash'],
       metricsVersion: 1,
       definitions: metricDefinitions(),
+      freshness: { lastRebuiltAt: freshness },
+      costCoverage: {
+        scope: 'account',
+        coveredLines,
+        totalLines,
+        percentage: totalLines === 0 ? null : Math.round((coveredLines / totalLines) * 10000) / 100,
+      },
       currencies: [...byCurrency.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([currency, value]) => ({ currency, ...value })),
@@ -2669,7 +2756,17 @@ export class SqliteStore {
     context: AccountContext,
     input: AnalyticsFilter & {
       dimension?:
-        'source' | 'currency' | 'channel' | 'pos' | 'shippingMethod' | 'paymentMethod' | 'status';
+        | 'source'
+        | 'currency'
+        | 'channel'
+        | 'pos'
+        | 'store'
+        | 'shippingMethod'
+        | 'paymentMethod'
+        | 'status'
+        | 'product'
+        | 'category'
+        | 'author';
     } = {},
   ) {
     const dimension = input.dimension ?? 'source';
@@ -2680,26 +2777,42 @@ export class SqliteStore {
     >();
     for (const row of rows) {
       const dimensions = dailyAnalyticsFact(row).dimensions;
-      const value =
+      const productValues = Array.isArray(dimensions.products)
+        ? dimensions.products.flatMap((item) => {
+            if (!isRecord(item)) return [];
+            const value = item.product ?? item.variation ?? item.sku ?? item.name;
+            return value === null || value === undefined ? [] : [String(value)];
+          })
+        : [];
+      const listDimension = dimensions[`${dimension}s`];
+      const dimensionValues =
         dimension === 'source'
-          ? row.source
+          ? [row.source]
           : dimension === 'currency'
-            ? row.currency
+            ? [row.currency]
             : dimension === 'status'
-              ? String(dimensions.remoteStatus ?? dimensions.localStatus ?? 'unknown')
-              : String(dimensions[dimension] ?? 'unknown');
-      const mapKey = `${row.currency}|${value}`;
-      const current = values.get(mapKey) ?? {
-        key: value,
-        currency: row.currency,
-        orderCount: 0,
-        lineCount: 0,
-        totals: emptyAnalyticsTotals(),
-      };
-      current.orderCount += row.order_count;
-      current.lineCount += row.line_count;
-      current.totals = addAnalyticsTotals(current.totals, dailyAnalyticsFact(row).totals);
-      values.set(mapKey, current);
+              ? [String(dimensions.remoteStatus ?? dimensions.localStatus ?? 'unknown')]
+              : dimension === 'product'
+                ? productValues
+                : dimension === 'category' || dimension === 'author'
+                  ? Array.isArray(listDimension)
+                    ? listDimension.map(String)
+                    : []
+                  : [String(dimensions[dimension] ?? 'unknown')];
+      for (const value of dimensionValues.length > 0 ? dimensionValues : ['unknown']) {
+        const mapKey = `${row.currency}|${value}`;
+        const current = values.get(mapKey) ?? {
+          key: value,
+          currency: row.currency,
+          orderCount: 0,
+          lineCount: 0,
+          totals: emptyAnalyticsTotals(),
+        };
+        current.orderCount += row.order_count;
+        current.lineCount += row.line_count;
+        current.totals = addAnalyticsTotals(current.totals, dailyAnalyticsFact(row).totals);
+        values.set(mapKey, current);
+      }
     }
     return {
       dimension,
@@ -2805,6 +2918,7 @@ export class SqliteStore {
         orderNumber: row.order_number,
         externalOrderId: row.external_order_id,
         origin: rowSource,
+        connectionId: row.connection_id,
         remoteStatus: row.remote_status,
         localStatus: row.local_status,
         exportState:

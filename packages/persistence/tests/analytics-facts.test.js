@@ -115,6 +115,13 @@ test('cost rules are effective-dated and analytics facts rebuild deterministical
   assert.equal(summary.currencies[0].currency, 'EGP');
   assert.equal(summary.currencies[0].totals.cogsMinor, '1400');
   assert.equal(summary.currencies[0].totals.contributionProfitMinor, '1610');
+  assert.equal(
+    store.getAnalyticsSummary(context, { shippingMethod: 'courier' }).currencies.length,
+    1,
+  );
+  assert.equal(store.getAnalyticsSummary(context, { product: 'p1' }).currencies.length, 1);
+  assert.equal(store.getAnalyticsSummary(context, { status: 'new' }).currencies.length, 1);
+  assert.equal(store.getAnalyticsBreakdown(context, { dimension: 'product' }).items[0].key, 'p1');
   assert.equal(store.getAnalyticsTimeseries(context, { source: 'manual' }).items.length, 1);
   assert.equal(
     store.getAnalyticsBreakdown(context, { source: 'manual', dimension: 'source' }).items[0].key,

@@ -131,12 +131,24 @@ type AnalyticsRequestFilter = {
   to?: string | undefined;
   source?: 'woo' | 'manual' | 'combined' | undefined;
   currency?: string | undefined;
+  store?: string | undefined;
+  status?: string | undefined;
+  shippingMethod?: string | undefined;
+  product?: string | undefined;
+  category?: string | undefined;
+  author?: string | undefined;
 };
 const analyticsFilterInput = (value: AnalyticsRequestFilter): AnalyticsFilter => ({
   ...(value.from === undefined ? {} : { from: value.from }),
   ...(value.to === undefined ? {} : { to: value.to }),
   ...(value.source === undefined ? {} : { source: value.source }),
   ...(value.currency === undefined ? {} : { currency: value.currency }),
+  ...(value.store === undefined ? {} : { store: value.store }),
+  ...(value.status === undefined ? {} : { status: value.status }),
+  ...(value.shippingMethod === undefined ? {} : { shippingMethod: value.shippingMethod }),
+  ...(value.product === undefined ? {} : { product: value.product }),
+  ...(value.category === undefined ? {} : { category: value.category }),
+  ...(value.author === undefined ? {} : { author: value.author }),
 });
 
 const documentTemplateForEngine = (template: DocumentTemplateRecord) => ({

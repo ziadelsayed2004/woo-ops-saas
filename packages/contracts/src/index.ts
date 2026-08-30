@@ -130,12 +130,30 @@ export const analyticsFilterSchema = z
       .string()
       .regex(/^[A-Za-z]{3}$/)
       .optional(),
+    store: z.string().trim().min(1).max(256).optional(),
+    status: z.string().trim().min(1).max(120).optional(),
+    shippingMethod: z.string().trim().min(1).max(256).optional(),
+    product: z.string().trim().min(1).max(256).optional(),
+    category: z.string().trim().min(1).max(256).optional(),
+    author: z.string().trim().min(1).max(256).optional(),
   })
   .strict();
 export const analyticsBreakdownSchema = analyticsFilterSchema
   .extend({
     dimension: z
-      .enum(['source', 'currency', 'channel', 'pos', 'shippingMethod', 'paymentMethod', 'status'])
+      .enum([
+        'source',
+        'currency',
+        'channel',
+        'pos',
+        'store',
+        'shippingMethod',
+        'paymentMethod',
+        'status',
+        'product',
+        'category',
+        'author',
+      ])
       .optional(),
   })
   .strict();

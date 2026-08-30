@@ -78,7 +78,11 @@ Imported order commerce fields have no PATCH endpoint.
     "op": "and",
     "children": [
       { "field": "remoteCreatedAt", "operator": "between", "value": ["2026-08-01", "2026-08-31"] },
-      { "field": "exportState", "operator": "is-any-of", "value": ["never-exported", "changed-after-export"] },
+      {
+        "field": "exportState",
+        "operator": "is-any-of",
+        "value": ["never-exported", "changed-after-export"]
+      },
       {
         "op": "or",
         "children": [
@@ -191,7 +195,12 @@ POST   /analytics/rebuilds
 Analytics summaries, time series, and breakdowns return currency-separated metric totals; the API
 never silently adds amounts from different currencies. Each metric definition includes its formula
 and excluded order statuses. Rebuilds read canonical local orders and persist versioned daily facts
-plus immutable line-cost snapshots.
+plus immutable line-cost snapshots. Analytics filters accept inclusive date bounds, source (`woo`,
+`manual`, or `combined`), store / connection ID, status, shipping method, product or SKU, category,
+and author text facets. Breakdown dimensions include source, store, status, shipping, product,
+category, and author. Summary responses expose the latest fact rebuild timestamp and account-wide
+cost-snapshot coverage (`scope: account`) so clients can show freshness and partial-cost states
+explicitly without implying that coverage is a date/facet-level estimate.
 
 ## Operations
 
