@@ -22,16 +22,21 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r build && pnpm -r typecheck",
     "lint": "pnpm -r lint",
-    "format:check": "prettier --check \"apps/**/*.{ts,tsx,json,html}\" \"packages/**/*.{ts,json}\" \"tools/**/*.mjs\" package.json tsconfig.base.json README.md .github/workflows/ci.yml",
+    "format:check": "prettier --check \"apps/**/*.{ts,tsx,json,html}\" \"packages/**/*.{ts,json}\" \"tools/**/*.mjs\" \"tests/**/*.{ts,tsx,js}\" playwright.config.ts package.json tsconfig.base.json README.md .github/workflows/ci.yml",
     "test:unit": "node tools/run-tests.mjs unit",
     "test:integration": "node tools/run-tests.mjs integration",
     "test:security": "node tools/run-tests.mjs security",
     "test:chaos": "node tools/run-tests.mjs chaos",
     "test:contract": "node tools/run-tests.mjs contract",
+    "test:e2e": "node tools/run-ui-tests.mjs e2e",
+    "test:a11y": "node tools/run-ui-tests.mjs a11y",
+    "test:visual": "node tools/run-ui-tests.mjs visual",
     "db:migrate": "pnpm --filter @woo-ops/api db:migrate",
     "db:backup": "pnpm --filter @woo-ops/api db:backup"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
+    "@playwright/test": "1.55.0",
     "prettier": "^3.6.2",
     "typescript": "^5.9.2"
   },

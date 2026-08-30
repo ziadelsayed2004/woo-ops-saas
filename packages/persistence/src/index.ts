@@ -459,6 +459,55 @@ export class SqliteStore {
     };
   }
 
+  getOrder(context: AccountContext, orderId: string): Record<string, unknown> | null {
+    if (!orderId || orderId.length > 200) return null;
+    const row = this.db
+      .prepare(
+        `SELECT o.id, o.order_number, o.external_order_id, o.origin, o.connection_id,
+          o.remote_status, o.local_status, o.export_state, o.currency, o.grand_total_minor,
+          o.remote_modified_at, o.remote_deleted_at, o.stale_export_at, o.updated_at,
+          o.normalized_json
+         FROM orders o WHERE o.account_id = ? AND o.id = ?`,
+      )
+      .get(context.accountId, orderId) as Record<string, unknown> | undefined;
+    if (!row) return null;
+
+    let normalized: Record<string, unknown> = {};
+    if (typeof row.normalized_json === 'string') {
+      try {
+        normalized = JSON.parse(row.normalized_json) as Record<string, unknown>;
+      } catch {
+        normalized = {};
+      }
+    }
+    const refunds = this.db
+      .prepare(
+        `SELECT external_refund_id AS externalRefundId, amount_minor AS amountMinor,
+          reason, source_json AS sourceJson, created_at AS createdAt
+         FROM order_refunds WHERE account_id = ? AND order_id = ? ORDER BY created_at ASC, id ASC`,
+      )
+      .all(context.accountId, orderId) as Array<Record<string, unknown>>;
+
+    return {
+      ...normalized,
+      id: row.id,
+      orderNumber: row.order_number,
+      externalOrderId: row.external_order_id,
+      origin: row.origin,
+      connectionId: row.connection_id,
+      remoteStatus: row.remote_status,
+      localStatus: row.local_status,
+      exportState: row.export_state,
+      currency: row.currency,
+      grandTotalMinor: row.grand_total_minor,
+      remoteCreatedAt: row.remote_modified_at,
+      remoteDeletedAt: row.remote_deleted_at,
+      staleExportAt: row.stale_export_at,
+      updatedAt: row.updated_at,
+      refunds: refunds.length > 0 ? refunds : normalized.refunds,
+    };
+  }
+
   private applyMigrations(): void {
     const applied = new Set(
       (this.db.prepare('SELECT version FROM schema_migrations').all() as { version: number }[]).map(

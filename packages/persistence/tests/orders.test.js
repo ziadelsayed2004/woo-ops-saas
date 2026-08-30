@@ -70,6 +70,20 @@ test('remote order upsert is idempotent and preserves local fields while marking
   );
 });
 
+test('order details return normalized sections and stay account scoped', () => {
+  const orderId = `${accountId}:${connectionId}:order:42`;
+  const detail = store.getOrder(context, orderId);
+  assert.equal(detail.id, orderId);
+  assert.equal(detail.orderNumber, '10042');
+  assert.deepEqual(detail.billing, {});
+  assert.equal(Array.isArray(detail.lines), true);
+  assert.equal(Array.isArray(detail.refunds), true);
+  assert.equal(
+    store.getOrder({ accountId: randomUUID(), correlationId: randomUUID() }, orderId),
+    null,
+  );
+});
+
 test.after(() => {
   store.db.close();
   rmSync(directory, { recursive: true, force: true });

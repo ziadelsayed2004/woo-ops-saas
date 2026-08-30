@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   AppBar,
@@ -7,6 +7,7 @@ import {
   Chip,
   CircularProgress,
   Container,
+  Divider,
   Drawer,
   FormControl,
   IconButton,
@@ -15,11 +16,13 @@ import {
   Paper,
   Select,
   Stack,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableRow,
+  Tabs,
   TextField,
   Toolbar,
   Tooltip,
@@ -28,25 +31,32 @@ import {
 
 type Locale = 'ar' | 'en';
 type Direction = 'rtl' | 'ltr';
-type Order = Record<string, unknown> & {
+type JsonRecord = Record<string, unknown>;
+type Order = JsonRecord & {
   id: string;
   orderNumber?: string;
+  externalOrderId?: string;
   origin?: string;
   remoteStatus?: string;
   localStatus?: string;
   exportState?: string;
   currency?: string;
   grandTotalMinor?: string;
-  billing?: Record<string, unknown>;
-  lines?: readonly Record<string, unknown>[];
+  billing?: JsonRecord;
+  shipping?: JsonRecord;
+  lines?: readonly JsonRecord[];
+  refunds?: readonly JsonRecord[];
 };
 type QueryResponse = { items: Order[]; nextCursor: string | null; hasMore: boolean };
+type OrderResponse = { order: Order };
+
 const copy = {
   ar: {
     app: 'Woo Ops',
     orders: 'إدارة الطلبات',
     subtitle: 'بحث وتشغيل الطلبات من كل المصادر في مكان واحد',
-    search: 'بحث في رقم الطلب، العميل، SKU أو الهاتف',
+    search: 'ابحث برقم الطلب أو العميل أو SKU أو الهاتف',
+    searchButton: 'بحث',
     status: 'الحالة',
     all: 'الكل',
     processing: 'قيد التجهيز',
@@ -57,16 +67,25 @@ const copy = {
     close: 'إغلاق',
     remote: 'بيانات المنصة',
     localFacts: 'بيانات التشغيل المحلية',
-    customer: 'العميل والعناوين',
+    summary: 'الملخص',
     items: 'المنتجات',
+    customer: 'العميل والعناوين',
+    finance: 'الدفع والشحن والضرائب',
+    workflow: 'التشغيل المحلي',
+    history: 'المزامنة والتدقيق',
+    raw: 'بيانات المصدر',
     noOrders: 'لا توجد طلبات مطابقة',
     noConnection: 'لم يتم الاتصال بالخادم بعد',
+    noData: 'لا توجد بيانات متاحة',
     loading: 'جارٍ التحميل',
     loadMore: 'تحميل المزيد',
     language: 'English',
-    direction: 'LTR',
+    switchToLtr: 'التبديل إلى LTR',
+    switchToRtl: 'التبديل إلى RTL',
     orderNumber: 'رقم الطلب',
     source: 'المصدر',
+    sourceId: 'معرّف المصدر',
+    store: 'المتجر',
     remoteStatus: 'حالة المنصة',
     localStatus: 'الحالة المحلية',
     total: 'الإجمالي',
@@ -74,7 +93,44 @@ const copy = {
     originWoo: 'WooCommerce',
     originManual: 'يدوي',
     never: 'لم يُصدّر',
-    remoteOnly: 'لا يمكن تعديل بيانات المنصة من هنا',
+    platformOnly: 'هذه البيانات مملوكة للمنصة وتُعرض للقراءة فقط.',
+    created: 'تاريخ الإنشاء',
+    updated: 'آخر تحديث',
+    channel: 'القناة',
+    pos: 'نقطة البيع',
+    externalCustomer: 'معرّف العميل الخارجي',
+    billing: 'عنوان الفوترة',
+    shippingAddress: 'عنوان الشحن',
+    email: 'البريد الإلكتروني',
+    phone: 'الهاتف',
+    payment: 'الدفع',
+    shippingMethod: 'الشحن',
+    taxes: 'الضرائب والرسوم',
+    refunds: 'المرتجعات',
+    method: 'الطريقة',
+    paymentStatus: 'حالة الدفع',
+    collected: 'المحصّل',
+    shippingCollected: 'الشحن المحصّل',
+    actualShipping: 'تكلفة الشحن الفعلية',
+    merchandise: 'صافي المنتجات',
+    discount: 'الخصم',
+    tax: 'الضريبة',
+    fees: 'الرسوم',
+    refund: 'المرتجع',
+    quantity: 'الكمية',
+    sku: 'SKU',
+    subtotal: 'الإجمالي قبل الخصم',
+    lineTotal: 'إجمالي السطر',
+    assignee: 'المسؤول',
+    tags: 'الوسوم',
+    notes: 'الملاحظات',
+    syncPolicy: 'سياسة المزامنة',
+    inventoryPolicy: 'سياسة المخزون',
+    syncEvents: 'أحداث المزامنة',
+    exports: 'التصديرات',
+    documents: 'المستندات',
+    audit: 'سجل التدقيق',
+    restricted: 'البيانات الخام محمية وتحتاج صلاحية مخصصة.',
     errors: 'تعذر تحميل الطلبات، يمكنك المحاولة مرة أخرى',
   },
   en: {
@@ -82,6 +138,7 @@ const copy = {
     orders: 'Orders workspace',
     subtitle: 'Search and operate orders from every source in one place',
     search: 'Search order number, customer, SKU or phone',
+    searchButton: 'Search',
     status: 'Status',
     all: 'All',
     processing: 'Processing',
@@ -92,27 +149,74 @@ const copy = {
     close: 'Close',
     remote: 'Platform facts',
     localFacts: 'Local operations',
-    customer: 'Customer & addresses',
+    summary: 'Summary',
     items: 'Items',
+    customer: 'Customer & addresses',
+    finance: 'Payment, shipping & tax',
+    workflow: 'Local workflow',
+    history: 'Sync & audit',
+    raw: 'Source data',
     noOrders: 'No matching orders',
     noConnection: 'The server is not connected yet',
+    noData: 'No data available',
     loading: 'Loading',
     loadMore: 'Load more',
     language: 'العربية',
-    direction: 'RTL',
+    switchToLtr: 'Switch to LTR',
+    switchToRtl: 'Switch to RTL',
     orderNumber: 'Order number',
     source: 'Source',
-    remoteStatus: 'Remote status',
+    sourceId: 'Source ID',
+    store: 'Store',
+    remoteStatus: 'Platform status',
     localStatus: 'Local status',
     total: 'Total',
     exportState: 'Export state',
     originWoo: 'WooCommerce',
     originManual: 'Manual',
     never: 'Not exported',
-    remoteOnly: 'Platform facts cannot be edited here',
+    platformOnly: 'These facts belong to the platform and are read-only.',
+    created: 'Created',
+    updated: 'Updated',
+    channel: 'Channel',
+    pos: 'POS',
+    externalCustomer: 'External customer ID',
+    billing: 'Billing address',
+    shippingAddress: 'Shipping address',
+    email: 'Email',
+    phone: 'Phone',
+    payment: 'Payment',
+    shippingMethod: 'Shipping',
+    taxes: 'Taxes & fees',
+    refunds: 'Refunds',
+    method: 'Method',
+    paymentStatus: 'Payment status',
+    collected: 'Collected',
+    shippingCollected: 'Shipping collected',
+    actualShipping: 'Actual shipping cost',
+    merchandise: 'Net merchandise',
+    discount: 'Discount',
+    tax: 'Tax',
+    fees: 'Fees',
+    refund: 'Refund',
+    quantity: 'Quantity',
+    sku: 'SKU',
+    subtotal: 'Subtotal',
+    lineTotal: 'Line total',
+    assignee: 'Assignee',
+    tags: 'Tags',
+    notes: 'Notes',
+    syncPolicy: 'Sync policy',
+    inventoryPolicy: 'Inventory policy',
+    syncEvents: 'Sync events',
+    exports: 'Exports',
+    documents: 'Documents',
+    audit: 'Audit history',
+    restricted: 'Raw source data is protected and requires a dedicated permission.',
     errors: 'Could not load orders. Try again',
   },
 } as const;
+
 const columns = [
   'orderNumber',
   'source',
@@ -121,8 +225,431 @@ const columns = [
   'total',
   'exportState',
 ] as const;
-const money = (order: Order): string =>
-  `${(Number(order.grandTotalMinor ?? 0) / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })} ${order.currency ?? ''}`;
+
+const asRecord = (value: unknown): JsonRecord =>
+  value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as JsonRecord) : {};
+
+const asList = (value: unknown): readonly JsonRecord[] =>
+  Array.isArray(value) ? value.map(asRecord) : [];
+
+const valueText = (value: unknown, fallback = '—'): string =>
+  typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+    ? String(value)
+    : fallback;
+
+const dateText = (value: unknown, locale: Locale): string => {
+  if (typeof value !== 'string' || value.length === 0) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? '—'
+    : date.toLocaleString(locale === 'ar' ? 'ar-EG' : 'en-US', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      });
+};
+
+const formatMinor = (value: unknown, currency: string, locale: Locale): string => {
+  try {
+    const minor = BigInt(valueText(value, '0'));
+    const negative = minor < 0n;
+    const absolute = negative ? -minor : minor;
+    const whole = absolute / 100n;
+    const fraction = (absolute % 100n).toString().padStart(2, '0');
+    return `${negative ? '-' : ''}${whole.toLocaleString(locale === 'ar' ? 'ar-EG' : 'en-US')}.${fraction} ${currency}`;
+  } catch {
+    return `— ${currency}`;
+  }
+};
+
+const orderCustomerName = (order: Order): string => {
+  const billing = asRecord(order.billing);
+  return `${valueText(billing.first_name, '')} ${valueText(billing.last_name, '')}`.trim() || '—';
+};
+
+const addressLines = (addressValue: unknown): string[] => {
+  const address = asRecord(addressValue);
+  return [
+    ['first_name', 'last_name']
+      .map((key) => valueText(address[key], ''))
+      .join(' ')
+      .trim(),
+    valueText(address.company, ''),
+    valueText(address.address_1, ''),
+    valueText(address.address_2, ''),
+    [address.city, address.state, address.postcode]
+      .map((value) => valueText(value, ''))
+      .filter(Boolean)
+      .join(', '),
+    valueText(address.country, ''),
+  ].filter(Boolean);
+};
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <Stack direction="row" justifyContent="space-between" gap={2} sx={{ py: 0.5 }}>
+      <Typography color="text.secondary" variant="body2">
+        {label}
+      </Typography>
+      <Typography fontWeight={700} textAlign="end" variant="body2" dir="auto">
+        {value}
+      </Typography>
+    </Stack>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Box>
+      <Typography variant="subtitle1" fontWeight={800} gutterBottom>
+        {title}
+      </Typography>
+      {children}
+    </Box>
+  );
+}
+
+function EmptyValue({ label }: { label: string }) {
+  return <Typography color="text.secondary">{label}</Typography>;
+}
+
+function Address({ title, value, empty }: { title: string; value: unknown; empty: string }) {
+  const lines = addressLines(value);
+  return (
+    <Section title={title}>
+      {lines.length === 0 ? (
+        <EmptyValue label={empty} />
+      ) : (
+        lines.map((line, index) => (
+          <Typography key={`${line}-${index}`} dir="auto">
+            {line}
+          </Typography>
+        ))
+      )}
+    </Section>
+  );
+}
+
+function HistoryList({
+  title,
+  entries,
+  empty,
+}: {
+  title: string;
+  entries: readonly JsonRecord[];
+  empty: string;
+}) {
+  return (
+    <Section title={title}>
+      {entries.length === 0 ? (
+        <EmptyValue label={empty} />
+      ) : (
+        entries.map((entry, index) => (
+          <Paper key={String(entry.id ?? index)} variant="outlined" sx={{ p: 1, mb: 1 }}>
+            <Typography variant="body2">
+              {valueText(entry.action ?? entry.type ?? entry.status)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {valueText(entry.createdAt ?? entry.created_at)}
+            </Typography>
+          </Paper>
+        ))
+      )}
+    </Section>
+  );
+}
+
+function OrderDetail({
+  order,
+  locale,
+  t,
+  onClose,
+}: {
+  order: Order;
+  locale: Locale;
+  t: (typeof copy)[Locale];
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState(0);
+  const currency = valueText(order.currency, '');
+  const amounts = asRecord(order.amounts);
+  const payment = asRecord(order.payment);
+  const shippingMethod = asRecord(order.shippingMethod);
+  const workflow = asRecord(order.local);
+  const tags = Array.isArray(order.tags) ? order.tags : [];
+  const syncEvents = asList(order.syncEvents ?? order.syncTimeline);
+  const auditEvents = asList(order.auditHistory ?? order.auditEvents);
+  const exports = asList(order.exports ?? order.exportHistory);
+  const documents = asList(order.documents ?? order.documentHistory);
+  const tabLabels = [t.summary, t.items, t.customer, t.finance, t.workflow, t.history, t.raw];
+
+  return (
+    <Stack gap={2} role="document" aria-labelledby="order-detail-title">
+      <Stack direction="row" alignItems="center" gap={1}>
+        <Typography id="order-detail-title" variant="h5" fontWeight={800} sx={{ flexGrow: 1 }}>
+          {t.details} <span dir="ltr">#{valueText(order.orderNumber)}</span>
+        </Typography>
+        <Tooltip title={t.close}>
+          <IconButton onClick={onClose} aria-label={t.close}>
+            ×
+          </IconButton>
+        </Tooltip>
+      </Stack>
+      <Stack direction="row" gap={1} flexWrap="wrap">
+        <Chip label={order.origin === 'manual' ? t.originManual : t.originWoo} />
+        <Chip label={valueText(order.remoteStatus)} variant="outlined" />
+        <Chip
+          label={
+            valueText(order.exportState) === 'never-exported'
+              ? t.never
+              : valueText(order.exportState)
+          }
+          variant="outlined"
+        />
+      </Stack>
+      <Tabs
+        value={tab}
+        onChange={(_event, nextTab: number) => setTab(nextTab)}
+        variant="scrollable"
+        scrollButtons="auto"
+        aria-label={t.details}
+      >
+        {tabLabels.map((label, index) => (
+          <Tab
+            key={label}
+            label={label}
+            id={`order-tab-${index}`}
+            aria-controls={`order-tabpanel-${index}`}
+          />
+        ))}
+      </Tabs>
+      <Box role="tabpanel" id={`order-tabpanel-${tab}`} aria-labelledby={`order-tab-${tab}`}>
+        {tab === 0 && (
+          <Stack gap={2}>
+            <Section title={t.remote}>
+              <Fact label={t.orderNumber} value={valueText(order.orderNumber)} />
+              <Fact label={t.sourceId} value={valueText(order.externalOrderId)} />
+              <Fact label={t.store} value={valueText(order.connectionId)} />
+              <Fact label={t.remoteStatus} value={valueText(order.remoteStatus)} />
+              <Fact label={t.total} value={formatMinor(order.grandTotalMinor, currency, locale)} />
+              <Fact label={t.channel} value={valueText(order.channel ?? order.createdVia)} />
+              <Fact label={t.pos} value={valueText(order.posLocation ?? order.pos)} />
+              <Fact
+                label={t.created}
+                value={dateText(order.createdAt ?? order.remoteCreatedAt, locale)}
+              />
+              <Fact
+                label={t.updated}
+                value={dateText(order.modifiedAt ?? order.updatedAt, locale)}
+              />
+            </Section>
+            <Divider />
+            <Section title={t.localFacts}>
+              <Fact label={t.localStatus} value={valueText(order.localStatus)} />
+              <Fact
+                label={t.exportState}
+                value={
+                  valueText(order.exportState) === 'never-exported'
+                    ? t.never
+                    : valueText(order.exportState)
+                }
+              />
+              <Fact label={t.assignee} value={valueText(order.assigneeId ?? workflow.assigneeId)} />
+              <Fact
+                label={t.syncPolicy}
+                value={valueText(order.syncPolicy ?? workflow.syncPolicy)}
+              />
+              <Fact
+                label={t.inventoryPolicy}
+                value={valueText(order.inventoryPolicy ?? workflow.inventoryPolicy)}
+              />
+              {typeof order.staleExportAt === 'string' && (
+                <Fact label={t.updated} value={dateText(order.staleExportAt, locale)} />
+              )}
+            </Section>
+            <Alert severity="info">{t.platformOnly}</Alert>
+            <Section title={t.items}>
+              {asList(order.lines).length === 0 ? (
+                <EmptyValue label={t.noData} />
+              ) : (
+                asList(order.lines).map((line, index) => (
+                  <Typography key={valueText(line.externalLineId, String(index))} dir="auto">
+                    {valueText(line.name)}
+                  </Typography>
+                ))
+              )}
+            </Section>
+          </Stack>
+        )}
+        {tab === 1 && (
+          <Section title={t.items}>
+            {asList(order.lines).length === 0 ? (
+              <EmptyValue label={t.noData} />
+            ) : (
+              <Table size="small" aria-label={t.items}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>{t.items}</TableCell>
+                    <TableCell>{t.sku}</TableCell>
+                    <TableCell>{t.quantity}</TableCell>
+                    <TableCell>{t.subtotal}</TableCell>
+                    <TableCell>{t.lineTotal}</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {asList(order.lines).map((line, index) => (
+                    <TableRow key={valueText(line.externalLineId, String(index))}>
+                      <TableCell>{valueText(line.name)}</TableCell>
+                      <TableCell dir="ltr">{valueText(line.sku)}</TableCell>
+                      <TableCell>{valueText(line.quantity)}</TableCell>
+                      <TableCell>{formatMinor(line.subtotalMinor, currency, locale)}</TableCell>
+                      <TableCell>{formatMinor(line.totalMinor, currency, locale)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </Section>
+        )}
+        {tab === 2 && (
+          <Stack gap={2}>
+            <Section title={t.customer}>
+              <Fact label={t.externalCustomer} value={valueText(order.externalCustomerId)} />
+              <Fact label={t.customer} value={orderCustomerName(order)} />
+              <Fact label={t.email} value={valueText(asRecord(order.billing).email)} />
+              <Fact label={t.phone} value={valueText(asRecord(order.billing).phone)} />
+            </Section>
+            <Address title={t.billing} value={order.billing} empty={t.noData} />
+            <Address title={t.shippingAddress} value={order.shipping} empty={t.noData} />
+          </Stack>
+        )}
+        {tab === 3 && (
+          <Stack gap={2}>
+            <Section title={t.payment}>
+              <Fact
+                label={t.method}
+                value={valueText(
+                  payment.title ??
+                    payment.methodTitle ??
+                    order.paymentMethodTitle ??
+                    order.paymentMethod,
+                )}
+              />
+              <Fact
+                label={t.paymentStatus}
+                value={valueText(payment.status ?? order.paymentStatus)}
+              />
+              <Fact
+                label={t.collected}
+                value={formatMinor(
+                  amounts.collectedMinor ?? order.collectedMinor,
+                  currency,
+                  locale,
+                )}
+              />
+            </Section>
+            <Section title={t.shippingMethod}>
+              <Fact
+                label={t.method}
+                value={valueText(shippingMethod.title ?? order.shippingMethodTitle)}
+              />
+              <Fact
+                label={t.shippingCollected}
+                value={formatMinor(
+                  amounts.shippingCollectedMinor ?? order.shippingCollectedMinor,
+                  currency,
+                  locale,
+                )}
+              />
+              <Fact
+                label={t.actualShipping}
+                value={formatMinor(
+                  shippingMethod.actualCostMinor ?? order.actualShippingCostMinor,
+                  currency,
+                  locale,
+                )}
+              />
+            </Section>
+            <Section title={t.taxes}>
+              <Fact
+                label={t.merchandise}
+                value={formatMinor(
+                  amounts.merchandiseNetMinor ?? order.merchandiseNetMinor,
+                  currency,
+                  locale,
+                )}
+              />
+              <Fact
+                label={t.discount}
+                value={formatMinor(amounts.discountMinor ?? order.discountMinor, currency, locale)}
+              />
+              <Fact
+                label={t.tax}
+                value={formatMinor(amounts.taxMinor ?? order.taxMinor, currency, locale)}
+              />
+              <Fact
+                label={t.fees}
+                value={formatMinor(amounts.feesMinor ?? order.feesMinor, currency, locale)}
+              />
+              <Fact
+                label={t.refund}
+                value={formatMinor(amounts.refundMinor ?? order.refundMinor, currency, locale)}
+              />
+            </Section>
+            <Section title={t.refunds}>
+              {asList(order.refunds).length === 0 ? (
+                <EmptyValue label={t.noData} />
+              ) : (
+                asList(order.refunds).map((refund, index) => (
+                  <Fact
+                    key={valueText(refund.externalRefundId, String(index))}
+                    label={valueText(refund.reason, t.refunds)}
+                    value={formatMinor(refund.amountMinor, currency, locale)}
+                  />
+                ))
+              )}
+            </Section>
+          </Stack>
+        )}
+        {tab === 4 && (
+          <Stack gap={2}>
+            <Section title={t.workflow}>
+              <Fact label={t.localStatus} value={valueText(order.localStatus)} />
+              <Fact label={t.assignee} value={valueText(order.assigneeId ?? workflow.assigneeId)} />
+              <Fact
+                label={t.syncPolicy}
+                value={valueText(order.syncPolicy ?? workflow.syncPolicy)}
+              />
+              <Fact
+                label={t.inventoryPolicy}
+                value={valueText(order.inventoryPolicy ?? workflow.inventoryPolicy)}
+              />
+              <Fact label={t.notes} value={valueText(order.notesSummary ?? order.notes)} />
+            </Section>
+            <Stack direction="row" gap={1} flexWrap="wrap" aria-label={t.tags}>
+              <Typography color="text.secondary" variant="body2">
+                {t.tags}
+              </Typography>
+              {tags.length === 0 ? (
+                <EmptyValue label={t.noData} />
+              ) : (
+                tags.map((tag) => <Chip key={String(tag)} label={String(tag)} size="small" />)
+              )}
+            </Stack>
+          </Stack>
+        )}
+        {tab === 5 && (
+          <Stack gap={2}>
+            <HistoryList title={t.syncEvents} entries={syncEvents} empty={t.noData} />
+            <HistoryList title={t.exports} entries={exports} empty={t.noData} />
+            <HistoryList title={t.documents} entries={documents} empty={t.noData} />
+            <HistoryList title={t.audit} entries={auditEvents} empty={t.noData} />
+          </Stack>
+        )}
+        {tab === 6 && <Alert severity="warning">{t.restricted}</Alert>}
+      </Box>
+    </Stack>
+  );
+}
 
 export function App({
   locale,
@@ -145,6 +672,7 @@ export function App({
   const [visibleColumns, setVisibleColumns] = useState<string[]>([...columns]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+
   const loadOrders = async (append = false) => {
     setLoading(true);
     setError(false);
@@ -176,9 +704,26 @@ export function App({
       setLoading(false);
     }
   };
+
+  const openOrder = async (order: Order) => {
+    setSelected(order);
+    try {
+      const response = await fetch(`/api/v1/orders/${encodeURIComponent(order.id)}`, {
+        credentials: 'include',
+      });
+      if (response.ok) {
+        const body = (await response.json()) as OrderResponse;
+        setSelected(body.order);
+      }
+    } catch {
+      // The list response remains a usable preview when detail loading fails.
+    }
+  };
+
   useEffect(() => {
     void loadOrders();
   }, [status]);
+
   const renderedColumns = useMemo(
     () => columns.filter((column) => visibleColumns.includes(column)),
     [visibleColumns],
@@ -198,12 +743,11 @@ export function App({
         ? t.originManual
         : t.originWoo
       : column === 'total'
-        ? money(order)
-        : column === 'exportState'
-          ? order.exportState === 'never-exported'
-            ? t.never
-            : String(order.exportState ?? '')
-          : String(order[column] ?? '—');
+        ? formatMinor(order.grandTotalMinor, valueText(order.currency, ''), locale)
+        : column === 'exportState' && order.exportState === 'never-exported'
+          ? t.never
+          : valueText(order[column]);
+
   return (
     <Box minHeight="100vh" bgcolor="#f6f8fb" dir={direction}>
       <AppBar
@@ -220,7 +764,7 @@ export function App({
             onClick={onToggleDirection}
             color="inherit"
             size="small"
-            aria-label={`Switch to ${t.direction}`}
+            aria-label={direction === 'rtl' ? t.switchToLtr : t.switchToRtl}
           >
             {direction.toUpperCase()}
           </Button>
@@ -229,7 +773,7 @@ export function App({
           </Button>
         </Toolbar>
       </AppBar>
-      <Container maxWidth="xl" sx={{ py: 4 }}>
+      <Container component="main" maxWidth="xl" sx={{ py: 4 }}>
         <Stack
           direction={{ xs: 'column', md: 'row' }}
           alignItems={{ md: 'center' }}
@@ -238,30 +782,30 @@ export function App({
           mb={3}
         >
           <Box>
-            <Typography variant="h4" fontWeight={800}>
+            <Typography variant="h4" fontWeight={800} component="h1">
               {t.orders}
             </Typography>
             <Typography color="text.secondary">{t.subtitle}</Typography>
           </Box>
           <Stack direction="row" gap={1}>
             <Button variant="outlined" onClick={() => void loadOrders()} disabled={loading}>
-              {loading ? <CircularProgress size={18} /> : t.refresh}
+              {loading ? <CircularProgress size={18} aria-label={t.loading} /> : t.refresh}
             </Button>
             <FormControl size="small" sx={{ minWidth: 150 }}>
-              <InputLabel>{t.columns}</InputLabel>
+              <InputLabel id="orders-columns-label">{t.columns}</InputLabel>
               <Select
                 multiple
                 value={visibleColumns}
+                labelId="orders-columns-label"
                 label={t.columns}
                 onChange={(event) => setVisibleColumns(event.target.value as string[])}
                 renderValue={(value) => `${(value as string[]).length}/${columns.length}`}
               >
-                <MenuItem value="orderNumber">{t.orderNumber}</MenuItem>
-                <MenuItem value="source">{t.source}</MenuItem>
-                <MenuItem value="remoteStatus">{t.remoteStatus}</MenuItem>
-                <MenuItem value="localStatus">{t.localStatus}</MenuItem>
-                <MenuItem value="total">{t.total}</MenuItem>
-                <MenuItem value="exportState">{t.exportState}</MenuItem>
+                {columns.map((column) => (
+                  <MenuItem key={column} value={column}>
+                    {labelFor(column)}
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
           </Stack>
@@ -285,9 +829,10 @@ export function App({
               inputProps={{ 'aria-label': t.search }}
             />
             <FormControl size="small" sx={{ minWidth: 170 }}>
-              <InputLabel>{t.status}</InputLabel>
+              <InputLabel id="orders-status-label">{t.status}</InputLabel>
               <Select
                 value={status}
+                labelId="orders-status-label"
                 label={t.status}
                 onChange={(event) => setStatus(event.target.value)}
               >
@@ -297,7 +842,7 @@ export function App({
               </Select>
             </FormControl>
             <Button type="submit" variant="contained">
-              {locale === 'ar' ? 'بحث' : 'Search'}
+              {t.searchButton}
             </Button>
           </Stack>
         </Paper>
@@ -307,7 +852,18 @@ export function App({
           </Alert>
         )}
         <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
-          <Table size="small" aria-label={t.orders}>
+          <Table size="small" aria-label={t.orders} data-testid="orders-table">
+            <caption
+              style={{
+                position: 'absolute',
+                width: 1,
+                height: 1,
+                overflow: 'hidden',
+                clip: 'rect(0 0 0 0)',
+              }}
+            >
+              {t.orders}
+            </caption>
             <TableHead>
               <TableRow>
                 {renderedColumns.map((column) => (
@@ -323,9 +879,13 @@ export function App({
                   key={order.id}
                   hover
                   tabIndex={0}
-                  onClick={() => setSelected(order)}
+                  data-testid={`order-row-${order.id}`}
+                  onClick={() => void openOrder(order)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') setSelected(order);
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      void openOrder(order);
+                    }
                   }}
                   sx={{ cursor: 'pointer' }}
                 >
@@ -335,10 +895,17 @@ export function App({
                         <Chip
                           size="small"
                           label={display(order, column)}
-                          color={order.remoteStatus === 'completed' ? 'success' : 'warning'}
+                          variant="outlined"
+                          sx={
+                            order.remoteStatus === 'completed'
+                              ? { color: '#1b5e20', borderColor: '#1b5e20' }
+                              : { color: '#8a4b00', borderColor: '#8a4b00' }
+                          }
                         />
                       ) : (
-                        display(order, column)
+                        <span dir={column === 'orderNumber' ? 'ltr' : undefined}>
+                          {display(order, column)}
+                        </span>
                       )}
                     </TableCell>
                   ))}
@@ -369,66 +936,13 @@ export function App({
         anchor={direction === 'rtl' ? 'left' : 'right'}
         open={Boolean(selected)}
         onClose={() => setSelected(null)}
-        PaperProps={{ sx: { width: { xs: '100%', sm: 480 }, p: 3 } }}
+        aria-labelledby="order-detail-title"
+        PaperProps={{ sx: { width: { xs: '100%', sm: 560 }, p: 3 } }}
       >
         {selected && (
-          <Stack gap={2} role="dialog" aria-label={t.details}>
-            <Stack direction="row" alignItems="center">
-              <Typography variant="h5" fontWeight={800} sx={{ flexGrow: 1 }}>
-                {t.details} #{selected.orderNumber}
-              </Typography>
-              <Tooltip title={t.close}>
-                <IconButton onClick={() => setSelected(null)} aria-label={t.close}>
-                  ×
-                </IconButton>
-              </Tooltip>
-            </Stack>
-            <Chip
-              label={selected.origin === 'manual' ? t.originManual : t.originWoo}
-              sx={{ alignSelf: 'flex-start' }}
-            />
-            <Typography variant="subtitle1" fontWeight={800}>
-              {t.remote}
-            </Typography>
-            <Fact label={t.remoteStatus} value={String(selected.remoteStatus ?? '—')} />
-            <Fact label={t.total} value={money(selected)} />
-            <Fact
-              label={t.customer}
-              value={
-                `${String(selected.billing?.first_name ?? '')} ${String(selected.billing?.last_name ?? '')}`.trim() ||
-                '—'
-              }
-            />
-            <Typography variant="subtitle1" fontWeight={800}>
-              {t.localFacts}
-            </Typography>
-            <Fact label={t.localStatus} value={String(selected.localStatus ?? '—')} />
-            <Fact label={t.exportState} value={String(selected.exportState ?? '—')} />
-            <Alert severity="info">{t.remoteOnly}</Alert>
-            <Typography variant="subtitle1" fontWeight={800}>
-              {t.items}
-            </Typography>
-            {(selected.lines ?? []).map((line, index) => (
-              <Box key={index} sx={{ bgcolor: '#f8fafc', p: 1, borderRadius: 1 }}>
-                <Typography>{String(line.name ?? '—')}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  × {String(line.quantity ?? '—')} · {String(line.totalMinor ?? '—')}
-                </Typography>
-              </Box>
-            ))}
-          </Stack>
+          <OrderDetail order={selected} locale={locale} t={t} onClose={() => setSelected(null)} />
         )}
       </Drawer>
     </Box>
-  );
-}
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <Stack direction="row" justifyContent="space-between" gap={2}>
-      <Typography color="text.secondary">{label}</Typography>
-      <Typography fontWeight={700} textAlign="end">
-        {value}
-      </Typography>
-    </Stack>
   );
 }

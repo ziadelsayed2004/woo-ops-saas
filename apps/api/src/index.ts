@@ -109,6 +109,38 @@ app.post('/api/v1/orders/query', (request, response) => {
     });
   }
 });
+app.get('/api/v1/orders/:orderId', (request, response) => {
+  const user = auth.current(request);
+  if (!user) {
+    response.status(401).json({
+      error: {
+        code: 'AUTH_UNAUTHENTICATED',
+        message: 'Authentication required',
+        correlationId: String(response.getHeader('x-correlation-id')),
+      },
+    });
+    return;
+  }
+  const order = store.getOrder(
+    {
+      accountId: user.accountId,
+      actorId: user.id,
+      correlationId: String(response.getHeader('x-correlation-id')),
+    },
+    request.params.orderId,
+  );
+  if (!order) {
+    response.status(404).json({
+      error: {
+        code: 'ORDER_NOT_FOUND',
+        message: 'Order not found',
+        correlationId: String(response.getHeader('x-correlation-id')),
+      },
+    });
+    return;
+  }
+  response.json({ order });
+});
 app.post('/api/v1/webhooks/woocommerce/:connectionId', (request, response) => {
   const rawBody = (request as Request & { rawBody?: Buffer }).rawBody;
   const connectionId = request.params.connectionId;
