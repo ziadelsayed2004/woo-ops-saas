@@ -186,8 +186,12 @@ POST   /cost-rules
 PATCH  /cost-rules/:id
 POST   /orders/:orderId/cost-overrides
 POST   /analytics/rebuilds
-GET    /analytics/rebuilds/:id
 ```
+
+Analytics summaries, time series, and breakdowns return currency-separated metric totals; the API
+never silently adds amounts from different currencies. Each metric definition includes its formula
+and excluded order statuses. Rebuilds read canonical local orders and persist versioned daily facts
+plus immutable line-cost snapshots.
 
 ## Operations
 

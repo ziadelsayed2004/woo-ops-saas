@@ -119,6 +119,44 @@ export const documentJobCreateSchema = z
   .strict();
 
 const minorAmountSchema = z.string().regex(/^-?\d{1,18}$/);
+const analyticsDateKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const analyticsSourceSchema = z.enum(['woo', 'manual', 'combined']);
+export const analyticsFilterSchema = z
+  .object({
+    from: analyticsDateKeySchema.optional(),
+    to: analyticsDateKeySchema.optional(),
+    source: analyticsSourceSchema.optional(),
+    currency: z
+      .string()
+      .regex(/^[A-Za-z]{3}$/)
+      .optional(),
+  })
+  .strict();
+export const analyticsBreakdownSchema = analyticsFilterSchema
+  .extend({
+    dimension: z
+      .enum(['source', 'currency', 'channel', 'pos', 'shippingMethod', 'paymentMethod', 'status'])
+      .optional(),
+  })
+  .strict();
+export const costRuleCreateSchema = z
+  .object({
+    scope: z.enum(['product', 'variation', 'shipping', 'payment', 'return']),
+    key: z.string().trim().min(1).max(256),
+    currency: z.string().regex(/^[A-Za-z]{3}$/),
+    amountMinor: z.string().regex(/^(?:0|[1-9]\d{0,17})$/),
+    source: z.string().trim().min(1).max(120),
+    effectiveFrom: z.string().datetime({ offset: true }),
+    effectiveTo: z.string().datetime({ offset: true }).nullable().optional(),
+    active: z.boolean().optional(),
+  })
+  .strict();
+export const costRuleUpdateSchema = z
+  .object({
+    active: z.boolean().optional(),
+    effectiveTo: z.string().datetime({ offset: true }).nullable().optional(),
+  })
+  .strict();
 const manualJsonObjectSchema = z.record(z.string(), z.unknown());
 const manualLineSchema = z
   .object({
