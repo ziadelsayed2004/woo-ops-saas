@@ -676,6 +676,45 @@
         "pnpm build",
         "node .agentpack/scripts/agentpack.mjs validate"
       ]
+    },
+    {
+      "id": "T0004",
+      "epic": "E00",
+      "title": "Repair repository formatting and architecture documentation drift",
+      "type": "chore",
+      "phase": 0,
+      "priority": "P0",
+      "estimate": "M",
+      "parallelGroup": "quality",
+      "dependencies": ["T0302"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/manifest.json",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/DATA_MODEL.md",
+        ".agentpack/architecture/API.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/TESTING.md",
+        ".agentpack/architecture/adr/ADR-001-database.md",
+        ".agentpack/tasks/README.md"
+      ],
+      "scope": [
+        "Repair the repository-wide Prettier gate without changing runtime behavior",
+        "Reconcile stale MongoDB, Mongoose, Redis and worker wording with the accepted SQLite single-process architecture",
+        "Document the bounded quality and architecture validation evidence"
+      ],
+      "acceptance": [
+        "pnpm format:check passes for all configured repository paths",
+        "Architecture documentation consistently describes SQLite, local files and in-process jobs",
+        "No product source behavior or security invariant is weakened"
+      ],
+      "validation": [
+        "pnpm format:check",
+        "pnpm typecheck",
+        "pnpm build",
+        "node .agentpack/scripts/agentpack.mjs validate",
+        "git diff --check"
+      ]
     }
   ]
 }
