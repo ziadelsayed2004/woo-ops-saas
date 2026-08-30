@@ -690,12 +690,15 @@
       "references": [
         "AGENTS.md",
         ".agentpack/manifest.json",
+        ".agentpack/product/PRD.md",
         ".agentpack/architecture/ARCHITECTURE.md",
         ".agentpack/architecture/DATA_MODEL.md",
         ".agentpack/architecture/API.md",
         ".agentpack/architecture/SECURITY.md",
         ".agentpack/architecture/TESTING.md",
         ".agentpack/architecture/adr/ADR-001-database.md",
+        ".agentpack/architecture/adr/ADR-003-modular-monolith.md",
+        ".agentpack/architecture/adr/ADR-004-multi-tenancy.md",
         ".agentpack/tasks/README.md"
       ],
       "scope": [

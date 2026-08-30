@@ -2,10 +2,11 @@
 
 ## 1. Product summary
 
-Woo Ops SaaS is a multi-tenant order operations system for merchants who need a faster and more
-capable workflow than the native WooCommerce admin. A merchant connects any WooCommerce store,
-the application continuously imports commerce data, and operators work from a normalized local
-copy optimized for search, filtering, bulk actions, exports, documents, printing, and analytics.
+Woo Ops is a deployable order operations application for a merchant who needs a faster and more
+capable workflow than the native WooCommerce admin. Each installation owns one merchant account;
+the merchant connects any WooCommerce store, the application continuously imports commerce data,
+and operators work from a normalized local copy optimized for search, filtering, bulk actions,
+exports, documents, printing, and analytics.
 
 The first connector is WooCommerce. The core domain and connector SDK must support future commerce
 platforms without changing order-facing application modules.
@@ -24,7 +25,7 @@ platforms without changing order-facing application modules.
 
 ## 3. Personas
 
-### Organization owner
+### Account owner
 
 Connects stores, manages billing and security, controls members, defines invoice identity, export
 profiles, mappings, and retention.
@@ -58,7 +59,7 @@ Can inspect allowed orders, documents, dashboards, and audit history.
 - Keep manual orders visually and operationally compatible with imported orders while preventing
   any remote sync or inventory side effect.
 - Produce explainable sales, refund, shipping, cost, and contribution-profit analytics.
-- Maintain strict tenant isolation, immutable audit trails, and recoverable background jobs.
+- Maintain a strict account boundary, immutable audit trails, and recoverable background jobs.
 - Add a second platform through the connector SDK without rewriting order modules.
 
 ## 5. Out of scope for v1
@@ -73,25 +74,23 @@ Can inspect allowed orders, documents, dashboards, and audit history.
 
 ## 6. Functional requirements
 
-### FR-100 SaaS identity and tenancy
+### FR-100 Local account identity
 
 - Users authenticate through secure session-based authentication.
-- Users can belong to multiple organizations with a separate role per membership.
-- Roles: owner, admin, operations-manager, operator, accountant, viewer.
+- Each deployment has one merchant account with local roles: owner, admin, operator, and viewer.
 - Permissions are capability-based and enforced on API and job boundaries.
-- Organization switching never leaks cached or in-flight data from another organization.
-- Plans expose entitlements and usage limits without coupling domain logic to a billing provider.
-- All sensitive operations write actor, organization, request/job, target, before/after summary,
+- A future hosted edition may add account switching without leaking cached or in-flight data.
+- All sensitive operations write actor, account, request/job, target, before/after summary,
   timestamp, and correlation ID to an audit log.
 
 ### FR-200 WooCommerce connection
 
 - User enters an HTTPS store URL and follows the Woo authorization flow with read scope.
-- Callback state is single-use, short-lived, signed, and bound to user and organization.
+- Callback state is single-use, short-lived, signed, and bound to user and account.
 - Credentials are encrypted at rest and never returned after connection.
 - Connection health exposes last success, last error category, permissions, Woo version, supported
   capabilities, webhook health, cursor, and lag.
-- Disconnecting disables new ingestion but retains data according to organization policy.
+- Disconnecting disables new ingestion but retains data according to account policy.
 - Reconnect rotates credentials without creating a duplicate store.
 - Standard integration uses Woo REST API v3; no legacy REST API and no direct WordPress database
   access.
@@ -133,7 +132,7 @@ Can inspect allowed orders, documents, dashboards, and audit history.
 - Users can choose, order, resize, pin, and hide columns.
 - Saved views store filters, sort, columns, page size, and visibility; shared views require a
   permission.
-- Query URLs are shareable inside the same organization without embedding sensitive values.
+- Query URLs are shareable inside the same account without embedding sensitive values.
 - Counts and facets are computed asynchronously or from bounded aggregations when needed.
 
 ### FR-310 Cross-page selection and bulk actions
@@ -160,7 +159,7 @@ Can inspect allowed orders, documents, dashboards, and audit history.
 ### FR-330 Manual orders
 
 - Use the same canonical form and presentation as imported orders.
-- Manual order number comes from an organization-scoped atomic sequence.
+- Manual order number comes from an account-scoped atomic sequence.
 - Operator can use a catalog snapshot or create a free-form line.
 - Line price, quantity, tax, discount, unit cost, and notes are explicit and validated.
 - Customer, billing, shipping, payment, shipping method, and local status are editable.
@@ -177,7 +176,7 @@ Can inspect allowed orders, documents, dashboards, and audit history.
 - Row modes: one row per order, line, package, or configurable carrier template.
 - Phone, postcode, IDs, and SKU can be forced to text.
 - Cells are protected from spreadsheet formula injection.
-- Export generation occurs in a worker and streams output to object storage.
+- Export generation occurs in an in-process durable job and streams output to private local files.
 - An export batch stores query/selection snapshot, source watermarks, order snapshot hashes,
   profile version, actor, counts, errors, file checksum, and file version.
 - `exported` is derived from successful batches, never a remote status.
@@ -186,10 +185,10 @@ Can inspect allowed orders, documents, dashboards, and audit history.
 
 ### FR-410 Document and print engine
 
-- Versioned organization templates support logo, colors, company identity, terms, dynamic fields,
+- Versioned account templates support logo, colors, company identity, terms, dynamic fields,
   RTL/LTR, Arabic/English, and safe HTML/CSS tokens.
 - A4/A5 invoice, 80mm receipt, and 100x150mm shipping label presets.
-- Invoice numbering is atomic and configurable per organization/store/year only after business and
+- Invoice numbering is atomic and configurable per account/store/year only after business and
   legal approval.
 - Each generated document is an immutable snapshot with template version and SHA-256 checksum.
 - Batch jobs can create a merged PDF or ZIP of individual PDFs.
@@ -235,13 +234,13 @@ Can inspect allowed orders, documents, dashboards, and audit history.
 | Collection | contains-any, contains-all, contains-none |
 
 All operators are validated against the server-owned field catalog. Clients cannot submit raw
-MongoDB operators, JavaScript expressions, field paths, or regular expressions.
+SQL fragments, JavaScript expressions, field paths, or regular expressions.
 
 ## 8. Non-functional requirements
 
 ### Performance
 
-- P95 cached/supported order list request under 700ms at 100k orders per tenant.
+- P95 cached/supported order list request under 700ms at 100k orders per account.
 - P95 order detail request under 500ms excluding file transfer.
 - Common search result begins rendering within 1.5 seconds.
 - Bulk actions accept the request within 500ms and continue asynchronously.
@@ -257,10 +256,10 @@ MongoDB operators, JavaScript expressions, field paths, or regular expressions.
 
 ### Security and privacy
 
-- Tenant isolation at route, service, repository, queue, cache, storage, and search boundaries.
+- Account isolation at route, service, repository, jobs, storage, and search boundaries.
 - Encryption in transit and application-layer encryption for connector credentials.
 - Session rotation, CSRF protection, origin checks, rate limiting, and secure cookie defaults.
-- Least-privilege object storage and time-limited URLs.
+- Private filesystem permissions and time-limited signed file URLs.
 - Configurable PII retention and redacted logs.
 - Dependency, secret, and container scanning in CI.
 
@@ -275,7 +274,7 @@ MongoDB operators, JavaScript expressions, field paths, or regular expressions.
 
 - More than 99.9% of accepted webhook deliveries produce exactly one normalized effect.
 - Initial sync can resume after interruption without duplicating orders.
-- Zero cross-tenant access in automated isolation suites.
+- Zero cross-account access in automated isolation suites.
 - An operator can filter, select across pages, export, and print without opening Woo admin.
 - Standard store connection completes without developer intervention.
 - At least 95% of supported standard order fields are available to column and export builders.

@@ -32,7 +32,7 @@ Authorization requirements:
 - HTTPS is required outside explicitly flagged local development.
 - Resolve DNS and block loopback, link-local, private, metadata-service, and unsafe redirected
   destinations to prevent SSRF.
-- State includes nonce, organization, actor, canonical store hash, issued/expiry times, and PKCE-like
+- State includes nonce, account, actor, canonical store hash, issued/expiry times, and PKCE-like
   binding where the flow permits.
 - Callback endpoint accepts only the expected method/content type and a small body.
 - Encrypt credentials immediately and remove plaintext references before further work.
@@ -84,7 +84,7 @@ transport payload
  -> currency/time/phone/address normalization
  -> product and mapping enrichment
  -> deterministic source hash
- -> tenant-scoped upsert
+ -> account-scoped upsert
  -> local stale-artifact evaluation
  -> internal domain events
 ```
@@ -142,7 +142,7 @@ REST-visible, an optional companion WordPress bridge may expose an allowlisted, 
 
 Remote deletion/trash never hard-deletes local operational evidence. Mark `remoteDeletedAt`, retain
 documents/exports/audit, remove from default views if policy says so, and allow privileged
-inspection. Organization retention may later purge eligible data through a separately audited job.
+ inspection. Account retention may later purge eligible data through a separately audited job.
 
 ## Connector certification
 
