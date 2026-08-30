@@ -4,6 +4,8 @@ import {
   AppBar,
   Box,
   Button,
+  Card,
+  CardContent,
   Chip,
   CircularProgress,
   Container,
@@ -12,6 +14,7 @@ import {
   FormControl,
   IconButton,
   InputLabel,
+  LinearProgress,
   MenuItem,
   Paper,
   Select,
@@ -22,6 +25,7 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  TableContainer,
   Tabs,
   TextField,
   Toolbar,
@@ -61,6 +65,83 @@ type DocumentTemplate = {
   companyAddress: string | null;
   footerText: string | null;
   active: boolean;
+};
+
+const analyticsMetricKeys = [
+  'grossSalesMinor',
+  'discountMinor',
+  'netMerchandiseMinor',
+  'shippingCollectedMinor',
+  'taxMinor',
+  'refundsMinor',
+  'collectedRevenueMinor',
+  'cogsMinor',
+  'actualShippingCostMinor',
+  'paymentFeesMinor',
+  'returnCostMinor',
+  'contributionProfitMinor',
+] as const;
+type AnalyticsMetricKey = (typeof analyticsMetricKeys)[number];
+type AnalyticsSource = 'woo' | 'manual' | 'combined';
+type AnalyticsFilterState = {
+  source: AnalyticsSource;
+  from: string;
+  to: string;
+  store: string;
+  status: string;
+  shippingMethod: string;
+  product: string;
+  category: string;
+  author: string;
+};
+type AnalyticsTotals = Record<AnalyticsMetricKey, string>;
+type AnalyticsDefinition = {
+  key: AnalyticsMetricKey;
+  label: string;
+  formula: string;
+  excludedStatuses: string[];
+};
+type AnalyticsCurrency = {
+  currency: string;
+  orderCount: number;
+  lineCount: number;
+  totals: AnalyticsTotals;
+};
+type AnalyticsSummary = {
+  source: AnalyticsSource;
+  from: string | null;
+  to: string | null;
+  excludedStatuses: string[];
+  metricsVersion: number;
+  definitions: AnalyticsDefinition[];
+  currencies: AnalyticsCurrency[];
+  freshness?: { lastRebuiltAt: string | null };
+  costCoverage?: {
+    coveredLines: number;
+    totalLines: number;
+    percentage: number | null;
+    scope?: 'account';
+  };
+};
+type AnalyticsTimeseriesItem = {
+  date: string;
+  currency: string;
+  source: Exclude<AnalyticsSource, 'combined'>;
+  orderCount: number;
+  lineCount: number;
+  totals: AnalyticsTotals;
+};
+type AnalyticsBreakdownItem = {
+  key: string;
+  currency: string;
+  orderCount: number;
+  lineCount: number;
+  totals: AnalyticsTotals;
+};
+type AnalyticsData = {
+  summary: AnalyticsSummary;
+  timeseries: AnalyticsTimeseriesItem[];
+  breakdown: AnalyticsBreakdownItem[];
 };
 
 const copy = {
@@ -191,6 +272,60 @@ const copy = {
     templateTokens: 'order.number, customer.name, shipping.address, order.totalMinor',
     noTemplates:
       '\u0644\u0627 \u062a\u0648\u062c\u062f \u0642\u0648\u0627\u0644\u0628 \u0628\u0639\u062f',
+    analyticsNav: '\u0627\u0644\u062a\u062d\u0644\u064a\u0644\u0627\u062a',
+    analyticsTitle:
+      '\u0644\u0648\u062d\u0629 \u062a\u062d\u0644\u064a\u0644 \u0627\u0644\u0645\u0628\u064a\u0639\u0627\u062a',
+    analyticsSubtitle:
+      '\u0642\u0631\u0627\u0621\u0629 \u0648\u0627\u0636\u062d\u0629 \u0644\u0644\u0625\u064a\u0631\u0627\u062f \u0648\u0627\u0644\u0631\u0628\u062d \u0645\u0646 \u0643\u0644 \u0627\u0644\u0645\u0635\u0627\u062f\u0631',
+    analyticsSource: '\u0645\u0635\u062f\u0631 \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a',
+    allSources: '\u0643\u0644 \u0627\u0644\u0645\u0635\u0627\u062f\u0631',
+    sourceWoo: 'WooCommerce',
+    sourceManual: '\u064a\u062f\u0648\u064a',
+    sourceCombined: '\u0645\u062c\u0645\u0639',
+    fromDate: '\u0645\u0646 \u062a\u0627\u0631\u064a\u062e',
+    toDate: '\u0625\u0644\u0649 \u062a\u0627\u0631\u064a\u062e',
+    storeFilter:
+      '\u0627\u0644\u0645\u062a\u062c\u0631 / \u0645\u0639\u0631\u0641 \u0627\u0644\u0631\u0628\u0637',
+    statusFilter: '\u062d\u0627\u0644\u0629 \u0627\u0644\u0637\u0644\u0628',
+    shippingFilter: '\u0637\u0631\u064a\u0642\u0629 \u0627\u0644\u0634\u062d\u0646',
+    productFilter: '\u0627\u0644\u0645\u0646\u062a\u062c / SKU',
+    categoryFilter: '\u0627\u0644\u062a\u0635\u0646\u064a\u0641',
+    authorFilter: '\u0627\u0644\u0645\u0624\u0644\u0641',
+    applyFilters: '\u062a\u0637\u0628\u064a\u0642 \u0627\u0644\u0641\u0644\u0627\u062a\u0631',
+    resetFilters: '\u0625\u0639\u0627\u062f\u0629 \u0636\u0628\u0637',
+    revenue: '\u0627\u0644\u0625\u064a\u0631\u0627\u062f \u0627\u0644\u0645\u062d\u0635\u0644',
+    profit: '\u0631\u0628\u062d \u0627\u0644\u0645\u0633\u0627\u0647\u0645\u0629',
+    ordersCount: '\u0627\u0644\u0637\u0644\u0628\u0627\u062a',
+    linesCount: '\u0627\u0644\u0633\u0637\u0648\u0631',
+    freshness: '\u062d\u062f\u0627\u062b\u0629 \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a',
+    lastRebuilt: '\u0622\u062e\u0631 \u0625\u0639\u0627\u062f\u0629 \u0628\u0646\u0627\u0621',
+    costCoverage: '\u062a\u063a\u0637\u064a\u0629 \u0627\u0644\u062a\u0643\u0627\u0644\u064a\u0641',
+    coverageUnavailable:
+      '\u0644\u0645 \u062a\u062a\u0645 \u062a\u0633\u0639\u064a\u0631 \u0643\u0644 \u0627\u0644\u0633\u0637\u0648\u0631 \u0628\u0639\u062f',
+    coverageScope:
+      '\u0645\u0646 \u0644\u0642\u0637\u0627\u062a \u0627\u0644\u062d\u0633\u0627\u0628',
+    trend: '\u0627\u0644\u0627\u062a\u062c\u0627\u0647 \u0627\u0644\u0632\u0645\u0646\u064a',
+    breakdown: '\u0627\u0644\u062a\u0648\u0632\u064a\u0639',
+    breakdownDimension: '\u0627\u0644\u062a\u0648\u0632\u064a\u0639 \u062d\u0633\u0628',
+    dimensionSource: '\u0627\u0644\u0645\u0635\u062f\u0631',
+    dimensionStore: '\u0627\u0644\u0645\u062a\u062c\u0631',
+    dimensionStatus: '\u0627\u0644\u062d\u0627\u0644\u0629',
+    dimensionShipping: '\u0627\u0644\u0634\u062d\u0646',
+    dimensionProduct: '\u0627\u0644\u0645\u0646\u062a\u062c',
+    dimensionCategory: '\u0627\u0644\u062a\u0635\u0646\u064a\u0641',
+    dimensionAuthor: '\u0627\u0644\u0645\u0624\u0644\u0641',
+    formulas:
+      '\u0627\u0644\u0635\u064a\u063a \u0648\u0627\u0644\u0627\u0633\u062a\u0628\u0639\u0627\u062f',
+    metrics: '\u0627\u0644\u0645\u0624\u0634\u0631',
+    formula: '\u0627\u0644\u0635\u064a\u063a\u0629',
+    excludedStatuses:
+      '\u0627\u0644\u062d\u0627\u0644\u0627\u062a \u0627\u0644\u0645\u0633\u062a\u0628\u0639\u062f\u0629',
+    currencySeparated:
+      '\u0627\u0644\u0639\u0645\u0644\u0627\u062a \u0645\u0639\u0631\u0648\u0636\u0629 \u0643\u0644 \u0645\u0646\u0647\u0627 \u0628\u0645\u0641\u0631\u062f\u0647\u0627',
+    noAnalytics:
+      '\u0644\u0627 \u062a\u0648\u062c\u062f \u0628\u064a\u0627\u0646\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629 \u0644\u0647\u0630\u0647 \u0627\u0644\u0641\u0644\u0627\u062a\u0631',
+    analyticsError:
+      '\u062a\u0639\u0630\u0631 \u062a\u062d\u0645\u064a\u0644 \u0627\u0644\u062a\u062d\u0644\u064a\u0644\u0627\u062a',
   },
   en: {
     app: 'Woo Ops',
@@ -308,6 +443,50 @@ const copy = {
       'Only allowlisted tokens are supported. HTML, scripts, and network loads are blocked.',
     templateTokens: 'order.number, customer.name, shipping.address, order.totalMinor',
     noTemplates: 'No templates yet',
+    analyticsNav: 'Analytics',
+    analyticsTitle: 'Sales analytics dashboard',
+    analyticsSubtitle: 'Explainable revenue and contribution profit across every source',
+    analyticsSource: 'Data source',
+    allSources: 'All sources',
+    sourceWoo: 'WooCommerce',
+    sourceManual: 'Manual orders',
+    sourceCombined: 'Combined',
+    fromDate: 'From date',
+    toDate: 'To date',
+    storeFilter: 'Store / connection ID',
+    statusFilter: 'Order status',
+    shippingFilter: 'Shipping method',
+    productFilter: 'Product / SKU',
+    categoryFilter: 'Category',
+    authorFilter: 'Author',
+    applyFilters: 'Apply filters',
+    resetFilters: 'Reset',
+    revenue: 'Collected revenue',
+    profit: 'Contribution profit',
+    ordersCount: 'Orders',
+    linesCount: 'Lines',
+    freshness: 'Data freshness',
+    lastRebuilt: 'Last rebuilt',
+    costCoverage: 'Cost coverage',
+    coverageUnavailable: 'Cost snapshots are not available yet',
+    coverageScope: 'account-wide snapshots',
+    trend: 'Trend over time',
+    breakdown: 'Breakdown',
+    breakdownDimension: 'Break down by',
+    dimensionSource: 'Source',
+    dimensionStore: 'Store',
+    dimensionStatus: 'Status',
+    dimensionShipping: 'Shipping',
+    dimensionProduct: 'Product',
+    dimensionCategory: 'Category',
+    dimensionAuthor: 'Author',
+    formulas: 'Formulas and exclusions',
+    metrics: 'Metric',
+    formula: 'Formula',
+    excludedStatuses: 'Excluded statuses',
+    currencySeparated: 'Currencies are shown separately and are never combined silently.',
+    noAnalytics: 'No analytics facts match these filters',
+    analyticsError: 'Could not load analytics. Try again',
   },
 } as const;
 
@@ -377,6 +556,501 @@ const addressLines = (addressValue: unknown): string[] => {
     valueText(address.country, ''),
   ].filter(Boolean);
 };
+
+const emptyAnalyticsFilters = (): AnalyticsFilterState => ({
+  source: 'combined',
+  from: '',
+  to: '',
+  store: '',
+  status: '',
+  shippingMethod: '',
+  product: '',
+  category: '',
+  author: '',
+});
+
+type AnalyticsDimension =
+  'source' | 'store' | 'status' | 'shippingMethod' | 'product' | 'category' | 'author';
+
+const analyticsMetricLabel = (key: AnalyticsMetricKey, t: (typeof copy)[Locale]): string =>
+  ({
+    grossSalesMinor: t.subtotal,
+    discountMinor: t.discount,
+    netMerchandiseMinor: t.merchandise,
+    shippingCollectedMinor: t.shippingCollected,
+    taxMinor: t.tax,
+    refundsMinor: t.refund,
+    collectedRevenueMinor: t.revenue,
+    cogsMinor: t.costCoverage,
+    actualShippingCostMinor: t.actualShipping,
+    paymentFeesMinor: t.fees,
+    returnCostMinor: t.refund,
+    contributionProfitMinor: t.profit,
+  })[key];
+
+const analyticsSourceLabel = (source: AnalyticsSource, t: (typeof copy)[Locale]): string =>
+  source === 'woo' ? t.sourceWoo : source === 'manual' ? t.sourceManual : t.sourceCombined;
+
+function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Locale] }) {
+  const [filters, setFilters] = useState<AnalyticsFilterState>(emptyAnalyticsFilters);
+  const [appliedFilters, setAppliedFilters] = useState<AnalyticsFilterState>(emptyAnalyticsFilters);
+  const [dimension, setDimension] = useState<AnalyticsDimension>('source');
+  const [data, setData] = useState<AnalyticsData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const loadAnalytics = async (
+    nextFilters: AnalyticsFilterState,
+    nextDimension: AnalyticsDimension,
+  ) => {
+    setLoading(true);
+    setError(false);
+    const payload = {
+      ...(nextFilters.source === 'combined' ? {} : { source: nextFilters.source }),
+      ...(nextFilters.from ? { from: nextFilters.from } : {}),
+      ...(nextFilters.to ? { to: nextFilters.to } : {}),
+      ...(nextFilters.store ? { store: nextFilters.store } : {}),
+      ...(nextFilters.status ? { status: nextFilters.status } : {}),
+      ...(nextFilters.shippingMethod ? { shippingMethod: nextFilters.shippingMethod } : {}),
+      ...(nextFilters.product ? { product: nextFilters.product } : {}),
+      ...(nextFilters.category ? { category: nextFilters.category } : {}),
+      ...(nextFilters.author ? { author: nextFilters.author } : {}),
+    };
+    try {
+      const requests = await Promise.all([
+        fetch('/api/v1/analytics/summary', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        }),
+        fetch('/api/v1/analytics/timeseries', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        }),
+        fetch('/api/v1/analytics/breakdown', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ...payload, dimension: nextDimension }),
+        }),
+      ]);
+      if (requests.some((response) => !response.ok)) throw new Error('ANALYTICS_LOAD_FAILED');
+      const [summaryResponse, timeseriesResponse, breakdownResponse] = requests;
+      const summary = (await summaryResponse.json()) as { summary: AnalyticsSummary };
+      const timeseries = (await timeseriesResponse.json()) as {
+        timeseries: { items: AnalyticsTimeseriesItem[] };
+      };
+      const breakdown = (await breakdownResponse.json()) as {
+        breakdown: { items: AnalyticsBreakdownItem[] };
+      };
+      setData({
+        summary: summary.summary,
+        timeseries: timeseries.timeseries.items,
+        breakdown: breakdown.breakdown.items,
+      });
+    } catch {
+      setError(true);
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadAnalytics(appliedFilters, dimension);
+  }, [appliedFilters, dimension]);
+
+  const summary = data?.summary;
+  const maxRevenue =
+    data?.timeseries.reduce((maximum, item) => {
+      try {
+        const value = BigInt(item.totals.collectedRevenueMinor);
+        return value > maximum ? value : maximum;
+      } catch {
+        return maximum;
+      }
+    }, 0n) ?? 0n;
+  const freshness = summary?.freshness?.lastRebuiltAt ?? null;
+  const coverage = summary?.costCoverage;
+
+  const updateFilter = <K extends keyof AnalyticsFilterState>(
+    key: K,
+    value: AnalyticsFilterState[K],
+  ) => setFilters((current) => ({ ...current, [key]: value }));
+
+  return (
+    <Stack gap={3} data-testid="analytics-workspace">
+      <Box>
+        <Typography variant="h4" component="h1" fontWeight={800}>
+          {t.analyticsTitle}
+        </Typography>
+        <Typography color="text.secondary">{t.analyticsSubtitle}</Typography>
+      </Box>
+
+      <Paper
+        component="form"
+        variant="outlined"
+        sx={{ p: 2 }}
+        data-testid="analytics-filters"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setAppliedFilters({ ...filters });
+        }}
+      >
+        <Stack gap={2}>
+          <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
+            <Chip
+              label={`${t.analyticsSource}: ${analyticsSourceLabel(appliedFilters.source, t)}`}
+            />
+            <Typography variant="body2" color="text.secondary">
+              {t.currencySeparated}
+            </Typography>
+          </Stack>
+          <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} flexWrap="wrap">
+            <FormControl size="small" sx={{ minWidth: 180 }}>
+              <InputLabel id="analytics-source-label">{t.analyticsSource}</InputLabel>
+              <Select
+                labelId="analytics-source-label"
+                value={filters.source}
+                label={t.analyticsSource}
+                onChange={(event) => updateFilter('source', event.target.value as AnalyticsSource)}
+              >
+                <MenuItem value="combined">{t.allSources}</MenuItem>
+                <MenuItem value="woo">{t.sourceWoo}</MenuItem>
+                <MenuItem value="manual">{t.sourceManual}</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              size="small"
+              type="date"
+              label={t.fromDate}
+              value={filters.from}
+              onChange={(event) => updateFilter('from', event.target.value)}
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              size="small"
+              type="date"
+              label={t.toDate}
+              value={filters.to}
+              onChange={(event) => updateFilter('to', event.target.value)}
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              size="small"
+              label={t.storeFilter}
+              value={filters.store}
+              onChange={(event) => updateFilter('store', event.target.value)}
+            />
+            <FormControl size="small" sx={{ minWidth: 160 }}>
+              <InputLabel id="analytics-status-label">{t.statusFilter}</InputLabel>
+              <Select
+                labelId="analytics-status-label"
+                value={filters.status}
+                label={t.statusFilter}
+                onChange={(event) => updateFilter('status', event.target.value)}
+              >
+                <MenuItem value="">{t.all}</MenuItem>
+                <MenuItem value="processing">{t.processing}</MenuItem>
+                <MenuItem value="completed">{t.completed}</MenuItem>
+                <MenuItem value="cancelled">cancelled</MenuItem>
+              </Select>
+            </FormControl>
+          </Stack>
+          <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} flexWrap="wrap">
+            <TextField
+              size="small"
+              label={t.shippingFilter}
+              value={filters.shippingMethod}
+              onChange={(event) => updateFilter('shippingMethod', event.target.value)}
+            />
+            <TextField
+              size="small"
+              label={t.productFilter}
+              value={filters.product}
+              onChange={(event) => updateFilter('product', event.target.value)}
+            />
+            <TextField
+              size="small"
+              label={t.categoryFilter}
+              value={filters.category}
+              onChange={(event) => updateFilter('category', event.target.value)}
+            />
+            <TextField
+              size="small"
+              label={t.authorFilter}
+              value={filters.author}
+              onChange={(event) => updateFilter('author', event.target.value)}
+            />
+            <Button type="submit" variant="contained" disabled={loading}>
+              {loading ? <CircularProgress size={18} aria-label={t.loading} /> : t.applyFilters}
+            </Button>
+            <Button
+              type="button"
+              variant="text"
+              onClick={() => {
+                const next = emptyAnalyticsFilters();
+                setFilters(next);
+                setAppliedFilters(next);
+              }}
+              disabled={loading}
+            >
+              {t.resetFilters}
+            </Button>
+          </Stack>
+        </Stack>
+      </Paper>
+
+      {error && <Alert severity="error">{t.analyticsError}</Alert>}
+      {loading && <LinearProgress aria-label={t.loading} />}
+      {!loading && data && data.summary.currencies.length === 0 && (
+        <Alert severity="info" data-testid="analytics-empty">
+          {t.noAnalytics}
+        </Alert>
+      )}
+
+      {summary && summary.currencies.length > 0 && (
+        <>
+          <Stack direction={{ xs: 'column', md: 'row' }} gap={2} flexWrap="wrap">
+            {summary.currencies.map((currency) => (
+              <Card
+                key={currency.currency}
+                variant="outlined"
+                sx={{ flex: '1 1 300px', minWidth: 260 }}
+                data-testid={`analytics-currency-${currency.currency}`}
+              >
+                <CardContent>
+                  <Stack gap={1.5}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                      <Typography variant="h6" component="h2" fontWeight={800}>
+                        {currency.currency}
+                      </Typography>
+                      <Chip size="small" label={analyticsSourceLabel(summary.source, t)} />
+                    </Stack>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} gap={2}>
+                      <Box flex={1} data-testid="analytics-revenue">
+                        <Typography variant="caption" color="text.secondary">
+                          {t.revenue}
+                        </Typography>
+                        <Typography variant="h5" component="div" fontWeight={800}>
+                          {formatMinor(
+                            currency.totals.collectedRevenueMinor,
+                            currency.currency,
+                            locale,
+                          )}
+                        </Typography>
+                      </Box>
+                      <Box flex={1} data-testid="analytics-profit">
+                        <Typography variant="caption" color="text.secondary">
+                          {t.profit}
+                        </Typography>
+                        <Typography
+                          variant="h5"
+                          component="div"
+                          fontWeight={800}
+                          color="success.main"
+                        >
+                          {formatMinor(
+                            currency.totals.contributionProfitMinor,
+                            currency.currency,
+                            locale,
+                          )}
+                        </Typography>
+                      </Box>
+                    </Stack>
+                    <Divider />
+                    <Stack direction="row" gap={3}>
+                      <Typography variant="body2">
+                        {t.ordersCount}: <strong>{currency.orderCount}</strong>
+                      </Typography>
+                      <Typography variant="body2">
+                        {t.linesCount}: <strong>{currency.lineCount}</strong>
+                      </Typography>
+                    </Stack>
+                  </Stack>
+                </CardContent>
+              </Card>
+            ))}
+          </Stack>
+
+          <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
+            <Paper variant="outlined" sx={{ p: 2, flex: 1 }}>
+              <Typography variant="h6" component="h2" fontWeight={800} gutterBottom>
+                {t.freshness}
+              </Typography>
+              <Typography variant="body2">
+                {t.lastRebuilt}: {freshness ? dateText(freshness, locale) : t.coverageUnavailable}
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 1 }}>
+                {t.costCoverage} ({t.coverageScope}):{' '}
+                {coverage?.percentage === null || coverage === undefined
+                  ? t.coverageUnavailable
+                  : `${coverage.percentage}% (${coverage.coveredLines}/${coverage.totalLines})`}
+              </Typography>
+            </Paper>
+            <Paper variant="outlined" sx={{ p: 2, flex: 2 }}>
+              <Typography variant="h6" component="h2" fontWeight={800} gutterBottom>
+                {t.trend}
+              </Typography>
+              <TableContainer data-testid="analytics-trend">
+                <Table size="small" aria-label={t.trend}>
+                  <caption
+                    style={{
+                      position: 'absolute',
+                      width: 1,
+                      height: 1,
+                      overflow: 'hidden',
+                      clip: 'rect(0 0 0 0)',
+                    }}
+                  >
+                    {t.trend}
+                  </caption>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>{t.created}</TableCell>
+                      <TableCell>{t.revenue}</TableCell>
+                      <TableCell>{t.profit}</TableCell>
+                      <TableCell>{t.ordersCount}</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {data.timeseries.map((item) => {
+                      let revenueMinor = 0n;
+                      try {
+                        revenueMinor = BigInt(item.totals.collectedRevenueMinor);
+                      } catch {
+                        revenueMinor = 0n;
+                      }
+                      const width =
+                        maxRevenue > 0n ? Number((revenueMinor * 100n) / maxRevenue) : 0;
+                      return (
+                        <TableRow key={`${item.date}-${item.currency}-${item.source}`}>
+                          <TableCell dir="ltr">{item.date}</TableCell>
+                          <TableCell>
+                            <Stack gap={0.5}>
+                              <span>
+                                {formatMinor(
+                                  item.totals.collectedRevenueMinor,
+                                  item.currency,
+                                  locale,
+                                )}
+                              </span>
+                              <LinearProgress
+                                variant="determinate"
+                                value={Math.min(width, 100)}
+                                aria-label={t.revenue}
+                              />
+                            </Stack>
+                          </TableCell>
+                          <TableCell>
+                            {formatMinor(
+                              item.totals.contributionProfitMinor,
+                              item.currency,
+                              locale,
+                            )}
+                          </TableCell>
+                          <TableCell>{item.orderCount}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
+          </Stack>
+
+          <Paper variant="outlined" sx={{ p: 2 }} data-testid="analytics-breakdown">
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              justifyContent="space-between"
+              alignItems={{ sm: 'center' }}
+              gap={2}
+              mb={2}
+            >
+              <Typography variant="h6" component="h2" fontWeight={800}>
+                {t.breakdown}
+              </Typography>
+              <FormControl size="small" sx={{ minWidth: 180 }}>
+                <InputLabel id="analytics-dimension-label">{t.breakdownDimension}</InputLabel>
+                <Select
+                  labelId="analytics-dimension-label"
+                  value={dimension}
+                  label={t.breakdownDimension}
+                  onChange={(event) => setDimension(event.target.value as AnalyticsDimension)}
+                >
+                  <MenuItem value="source">{t.dimensionSource}</MenuItem>
+                  <MenuItem value="store">{t.dimensionStore}</MenuItem>
+                  <MenuItem value="status">{t.dimensionStatus}</MenuItem>
+                  <MenuItem value="shippingMethod">{t.dimensionShipping}</MenuItem>
+                  <MenuItem value="product">{t.dimensionProduct}</MenuItem>
+                  <MenuItem value="category">{t.dimensionCategory}</MenuItem>
+                  <MenuItem value="author">{t.dimensionAuthor}</MenuItem>
+                </Select>
+              </FormControl>
+            </Stack>
+            <Table size="small" aria-label={t.breakdown}>
+              <TableHead>
+                <TableRow>
+                  <TableCell>{t.breakdownDimension}</TableCell>
+                  <TableCell>{t.currency}</TableCell>
+                  <TableCell>{t.revenue}</TableCell>
+                  <TableCell>{t.profit}</TableCell>
+                  <TableCell>{t.ordersCount}</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {data.breakdown.map((item) => (
+                  <TableRow key={`${item.key}-${item.currency}`}>
+                    <TableCell>{item.key}</TableCell>
+                    <TableCell>{item.currency}</TableCell>
+                    <TableCell>
+                      {formatMinor(item.totals.collectedRevenueMinor, item.currency, locale)}
+                    </TableCell>
+                    <TableCell>
+                      {formatMinor(item.totals.contributionProfitMinor, item.currency, locale)}
+                    </TableCell>
+                    <TableCell>{item.orderCount}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Paper>
+
+          <Paper variant="outlined" sx={{ p: 2 }}>
+            <Typography variant="h6" component="h2" fontWeight={800} gutterBottom>
+              {t.formulas}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              {t.excludedStatuses}: {summary.excludedStatuses.join(', ')} · v
+              {summary.metricsVersion}
+            </Typography>
+            <Table size="small" aria-label={t.formulas}>
+              <TableHead>
+                <TableRow>
+                  <TableCell>{t.metrics}</TableCell>
+                  <TableCell>{t.formula}</TableCell>
+                  <TableCell>{t.excludedStatuses}</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {summary.definitions.map((definition) => (
+                  <TableRow key={definition.key}>
+                    <TableCell>{analyticsMetricLabel(definition.key, t)}</TableCell>
+                    <TableCell>{definition.formula}</TableCell>
+                    <TableCell>{definition.excludedStatuses.join(', ')}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Paper>
+        </>
+      )}
+    </Stack>
+  );
+}
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
@@ -1279,7 +1953,7 @@ export function App({
   const [visibleColumns, setVisibleColumns] = useState<string[]>([...columns]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
-  const [view, setView] = useState<'orders' | 'manual' | 'documents'>('orders');
+  const [view, setView] = useState<'orders' | 'manual' | 'documents' | 'analytics'>('orders');
 
   const loadOrders = async (append = false) => {
     setLoading(true);
@@ -1374,6 +2048,9 @@ export function App({
           <Button variant="outlined" size="small" onClick={() => setView('documents')}>
             {t.documentsNav}
           </Button>
+          <Button variant="outlined" size="small" onClick={() => setView('analytics')}>
+            {t.analyticsNav}
+          </Button>
           <Button
             onClick={onToggleDirection}
             color="inherit"
@@ -1390,6 +2067,8 @@ export function App({
       <Container component="main" maxWidth="xl" sx={{ py: 4 }}>
         {view === 'documents' ? (
           <DocumentsWorkspace direction={direction} t={t} />
+        ) : view === 'analytics' ? (
+          <AnalyticsWorkspace locale={locale} t={t} />
         ) : view === 'manual' ? (
           <ManualOrderForm
             locale={locale}

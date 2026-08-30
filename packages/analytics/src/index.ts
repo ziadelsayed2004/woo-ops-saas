@@ -268,6 +268,21 @@ const lineValue = (line: Record<string, unknown>, keys: readonly string[]): unkn
 };
 const lineKey = (line: Record<string, unknown>, keys: readonly string[]): string =>
   text(lineValue(line, keys)) ?? '*';
+const textValues = (value: unknown): string[] => {
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === 'string' && item.trim()) return [item.trim()];
+    if (!isRecord(item)) return [];
+    const candidate =
+      text(item.id) ??
+      text(item.externalId) ??
+      text(item.slug) ??
+      text(item.name) ??
+      text(item.label);
+    return candidate && candidate.trim() ? [candidate.trim()] : [];
+  });
+};
 const lineId = (line: Record<string, unknown>, index: number): string =>
   text(line.lineId) ?? text(line.id) ?? `line-${index + 1}`;
 const lineSnapshotsFromOrder = (
@@ -326,10 +341,16 @@ const dimensionsFor = (order: AnalyticsOrder, source: OrderSource): Record<strin
       product: lineValue(line, ['productId', 'externalProductId', 'productRef']) ?? null,
       variation: lineValue(line, ['variationId', 'externalVariationId']) ?? null,
       sku: text(line.sku),
+      name: text(line.name),
+      categories: textValues(line.categories ?? line.category ?? line.categoryId),
+      authors: textValues(line.authors ?? line.author ?? line.authorId),
     }))
     .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  const categories = [...new Set(products.flatMap((product) => product.categories))].sort();
+  const authors = [...new Set(products.flatMap((product) => product.authors))].sort();
   return {
     source,
+    store: order.connectionId ?? normalized.connectionId ?? null,
     channel: normalized.channel ?? null,
     pos: normalized.posLocation ?? normalized.pos ?? null,
     location: normalized.location ?? null,
@@ -338,6 +359,8 @@ const dimensionsFor = (order: AnalyticsOrder, source: OrderSource): Record<strin
     exportState: order.exportState ?? null,
     shippingMethod: shippingMethod.methodId ?? shippingMethod.title ?? null,
     paymentMethod: payment.methodId ?? payment.method ?? null,
+    categories,
+    authors,
     products,
   };
 };
