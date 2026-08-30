@@ -37,7 +37,12 @@ for (const [id, email, account] of [
     .run(account, id, 'admin', now);
 }
 const context = { accountId, actorId, correlationId: randomUUID(), role: 'admin' };
-const otherContext = { accountId: otherAccountId, actorId: otherActorId, correlationId: randomUUID(), role: 'admin' };
+const otherContext = {
+  accountId: otherAccountId,
+  actorId: otherActorId,
+  correlationId: randomUUID(),
+  role: 'admin',
+};
 
 const order = store.createManualOrder(context, {
   currency: 'EGP',
@@ -96,19 +101,23 @@ test('export batches pin selection watermark, are idempotent, and retain counts/
   assert.equal(completed.status, 'completed');
   assert.equal(completed.checksum, 'a'.repeat(64));
   assert.equal(completed.rowCount, 1);
-  assert.equal(store.completeExportBatch(context, first.id, {
-    orderCount: 1,
-    rowCount: 1,
-    filename: 'courier.xlsx',
-    filePath: 'exports/account/export-request-1.xlsx',
-    checksum: 'a'.repeat(64),
-  }).id, first.id);
+  assert.equal(
+    store.completeExportBatch(context, first.id, {
+      orderCount: 1,
+      rowCount: 1,
+      filename: 'courier.xlsx',
+      filePath: 'exports/account/export-request-1.xlsx',
+      checksum: 'a'.repeat(64),
+    }).id,
+    first.id,
+  );
   assert.throws(
-    () => store.createExportBatch(otherContext, {
-      selectionId: selection.id,
-      profileVersionId: version.id,
-      idempotencyKey: 'other-request',
-    }),
+    () =>
+      store.createExportBatch(otherContext, {
+        selectionId: selection.id,
+        profileVersionId: version.id,
+        idempotencyKey: 'other-request',
+      }),
     /SELECTION_NOT_FOUND/,
   );
   assert.throws(() => store.deleteSelection(context, selection.id), /SELECTION_IN_USE/);
