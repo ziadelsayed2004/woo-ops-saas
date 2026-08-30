@@ -24,6 +24,68 @@ export type AccountContext = Readonly<{
   correlationId: string;
   role?: AccountRole;
 }>;
+export type ConnectionStatus = 'draft' | 'authorizing' | 'active' | 'degraded' | 'disabled';
+export type ConnectionHealthStatus = 'unknown' | 'healthy' | 'degraded';
+export type ConnectionSyncStatus = 'idle' | 'queued' | 'running' | 'succeeded' | 'failed';
+export type SyncRunType = 'initial' | 'incremental' | 'reconcile';
+export type SyncRunStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+export type SyncErrorCategory =
+  | 'auth'
+  | 'permission'
+  | 'network'
+  | 'rate'
+  | 'remote'
+  | 'schema'
+  | 'normalization'
+  | 'persistence'
+  | 'unknown';
+export type ConnectionSummary = Readonly<{
+  id: string;
+  accountId: string;
+  platform: string;
+  storeUrl: string;
+  displayName: string | null;
+  status: ConnectionStatus;
+  healthStatus: ConnectionHealthStatus;
+  healthLastCheckedAt: string | null;
+  healthLastSuccessAt: string | null;
+  healthLastErrorCategory: SyncErrorCategory | null;
+  platformVersion: string | null;
+  wordpressVersion: string | null;
+  capabilities: Readonly<Record<string, boolean>>;
+  sourceTimezone: string | null;
+  syncStatus: ConnectionSyncStatus;
+  syncCursor: string | null;
+  syncLastSuccessAt: string | null;
+  syncLastErrorCategory: SyncErrorCategory | null;
+  syncOrdersCount: number;
+  syncCatalogCount: number;
+  syncDeletedCount: number;
+  createdAt: string;
+  updatedAt: string;
+}>;
+export type ConnectionWorkerRecord = ConnectionSummary &
+  Readonly<{
+    encryptedCredentials: string | null;
+    encryptedWebhookSecret: string | null;
+  }>;
+export type SyncRunRecord = Readonly<{
+  id: string;
+  accountId: string;
+  connectionId: string;
+  type: SyncRunType;
+  status: SyncRunStatus;
+  cursor: string;
+  pages: number;
+  items: number;
+  deleted: number;
+  errorCategory: SyncErrorCategory | null;
+  errorCode: string | null;
+  retryAfterAt: string | null;
+  startedAt: string;
+  completedAt: string | null;
+  updatedAt: string;
+}>;
 export type JobSummary = Omit<DurableJob, 'payload'>;
 export type JobUsage = Readonly<{
   total: number;
@@ -65,6 +127,7 @@ export type NormalizedOrderInput = {
   refunds: readonly { externalRefundId: string; amountMinor: string; reason: unknown }[];
   sourceJson: string;
   sourceHash: string;
+  reconcileToken?: string;
 };
 export type ManualOrderLineInput = {
   name: string;
@@ -764,7 +827,7 @@ const compileFilter = (
   return { sql: `${column} ${sqlOperator} ?`, params: [filter.value] };
 };
 
-export const schemaVersion = 15;
+export const schemaVersion = 16;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -1150,6 +1213,50 @@ const migrations: readonly Migration[] = [
         ON account_invitations(account_id, expires_at, accepted_at, revoked_at);
     `,
   },
+  {
+    version: 16,
+    name: 'connection-lifecycle-and-sync-runs',
+    sql: `
+      ALTER TABLE connections ADD COLUMN display_name TEXT;
+      ALTER TABLE connections ADD COLUMN health_status TEXT NOT NULL DEFAULT 'unknown'
+        CHECK(health_status IN ('unknown', 'healthy', 'degraded'));
+      ALTER TABLE connections ADD COLUMN health_last_checked_at TEXT;
+      ALTER TABLE connections ADD COLUMN health_last_success_at TEXT;
+      ALTER TABLE connections ADD COLUMN health_last_error TEXT;
+      ALTER TABLE connections ADD COLUMN health_last_error_category TEXT;
+      ALTER TABLE connections ADD COLUMN platform_version TEXT;
+      ALTER TABLE connections ADD COLUMN wordpress_version TEXT;
+      ALTER TABLE connections ADD COLUMN capabilities_json TEXT NOT NULL DEFAULT '{}';
+      ALTER TABLE connections ADD COLUMN source_timezone TEXT;
+      ALTER TABLE connections ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'idle'
+        CHECK(sync_status IN ('idle', 'queued', 'running', 'succeeded', 'failed'));
+      ALTER TABLE connections ADD COLUMN sync_cursor TEXT;
+      ALTER TABLE connections ADD COLUMN sync_last_success_at TEXT;
+      ALTER TABLE connections ADD COLUMN sync_last_error TEXT;
+      ALTER TABLE connections ADD COLUMN sync_last_error_category TEXT;
+      ALTER TABLE connections ADD COLUMN sync_started_at TEXT;
+      ALTER TABLE connections ADD COLUMN sync_finished_at TEXT;
+      ALTER TABLE connections ADD COLUMN sync_orders_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE connections ADD COLUMN sync_catalog_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE connections ADD COLUMN sync_deleted_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE connections ADD COLUMN encrypted_webhook_secret TEXT;
+      ALTER TABLE orders ADD COLUMN reconcile_token TEXT;
+      CREATE INDEX connections_account_status_updated ON connections(account_id, status, updated_at, id);
+      CREATE TABLE connection_sync_runs (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id),
+        connection_id TEXT NOT NULL REFERENCES connections(id),
+        type TEXT NOT NULL CHECK(type IN ('initial', 'incremental', 'reconcile')),
+        status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'succeeded', 'failed')),
+        cursor TEXT NOT NULL DEFAULT '{}', pages INTEGER NOT NULL DEFAULT 0,
+        items INTEGER NOT NULL DEFAULT 0, deleted INTEGER NOT NULL DEFAULT 0,
+        error_category TEXT, error_code TEXT, retry_after_at TEXT,
+        started_at TEXT NOT NULL, completed_at TEXT, updated_at TEXT NOT NULL,
+        UNIQUE(account_id, id)
+      );
+      CREATE INDEX connection_sync_runs_account_status
+        ON connection_sync_runs(account_id, connection_id, status, updated_at, id);
+    `,
+  },
 ];
 
 const MAX_SELECTION_IDS = 5_000;
@@ -1175,6 +1282,7 @@ const BULK_ACTIONS: readonly BulkAction[] = [
   'print-documents',
   'resync',
 ];
+const SUPPORTED_WEBHOOK_TOPICS = new Set(['order.created', 'order.updated', 'order.deleted']);
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const isBulkAction = (value: unknown): value is BulkAction =>
@@ -1773,6 +1881,154 @@ type JobRow = {
   created_at: string;
   updated_at: string;
 };
+type ConnectionRow = {
+  id: string;
+  account_id: string;
+  platform: string;
+  store_url: string;
+  status: string;
+  display_name: string | null;
+  health_status: string;
+  health_last_checked_at: string | null;
+  health_last_success_at: string | null;
+  health_last_error: string | null;
+  health_last_error_category: string | null;
+  platform_version: string | null;
+  wordpress_version: string | null;
+  capabilities_json: string;
+  source_timezone: string | null;
+  sync_status: string;
+  sync_cursor: string | null;
+  sync_last_success_at: string | null;
+  sync_last_error: string | null;
+  sync_last_error_category: string | null;
+  sync_started_at: string | null;
+  sync_finished_at: string | null;
+  sync_orders_count: number;
+  sync_catalog_count: number;
+  sync_deleted_count: number;
+  encrypted_credentials: string | null;
+  encrypted_webhook_secret: string | null;
+  created_at: string;
+  updated_at: string;
+};
+type SyncRunRow = {
+  id: string;
+  account_id: string;
+  connection_id: string;
+  type: SyncRunType;
+  status: SyncRunStatus;
+  cursor: string;
+  pages: number;
+  items: number;
+  deleted: number;
+  error_category: string | null;
+  error_code: string | null;
+  retry_after_at: string | null;
+  started_at: string;
+  completed_at: string | null;
+  updated_at: string;
+};
+const connectionColumns = `id, account_id, platform, store_url, status, display_name,
+  health_status, health_last_checked_at, health_last_success_at, health_last_error,
+  health_last_error_category, platform_version, wordpress_version, capabilities_json,
+  source_timezone, sync_status, sync_cursor, sync_last_success_at, sync_last_error,
+  sync_last_error_category, sync_started_at, sync_finished_at, sync_orders_count,
+  sync_catalog_count, sync_deleted_count, encrypted_credentials, encrypted_webhook_secret,
+  created_at, updated_at`;
+const connectionStatus = (value: string): ConnectionStatus => {
+  if (value === 'connected') return 'active';
+  if (['draft', 'authorizing', 'active', 'degraded', 'disabled'].includes(value))
+    return value as ConnectionStatus;
+  return 'draft';
+};
+const healthStatus = (value: string): ConnectionHealthStatus =>
+  ['unknown', 'healthy', 'degraded'].includes(value)
+    ? (value as ConnectionHealthStatus)
+    : 'unknown';
+const syncStatus = (value: string): ConnectionSyncStatus =>
+  ['idle', 'queued', 'running', 'succeeded', 'failed'].includes(value)
+    ? (value as ConnectionSyncStatus)
+    : 'idle';
+const syncRunStatus = (value: string): SyncRunStatus =>
+  ['queued', 'running', 'succeeded', 'failed'].includes(value)
+    ? (value as SyncRunStatus)
+    : 'failed';
+const errorCategory = (value: string | null): SyncErrorCategory | null =>
+  value &&
+  [
+    'auth',
+    'permission',
+    'network',
+    'rate',
+    'remote',
+    'schema',
+    'normalization',
+    'persistence',
+    'unknown',
+  ].includes(value)
+    ? (value as SyncErrorCategory)
+    : null;
+const capabilities = (value: string): Readonly<Record<string, boolean>> => {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!isRecord(parsed)) return {};
+    const result: Record<string, boolean> = {};
+    for (const [key, item] of Object.entries(parsed)) {
+      if (typeof item === 'boolean') result[key] = item;
+    }
+    return result;
+  } catch {
+    return {};
+  }
+};
+const connectionSummary = (row: ConnectionRow): ConnectionSummary => ({
+  id: row.id,
+  accountId: row.account_id,
+  platform: row.platform,
+  storeUrl: row.store_url,
+  displayName: row.display_name,
+  status: connectionStatus(row.status),
+  healthStatus: healthStatus(row.health_status),
+  healthLastCheckedAt: row.health_last_checked_at,
+  healthLastSuccessAt: row.health_last_success_at,
+  healthLastErrorCategory: errorCategory(row.health_last_error_category),
+  platformVersion: row.platform_version,
+  wordpressVersion: row.wordpress_version,
+  capabilities: capabilities(row.capabilities_json),
+  sourceTimezone: row.source_timezone,
+  syncStatus: syncStatus(row.sync_status),
+  syncCursor: row.sync_cursor,
+  syncLastSuccessAt: row.sync_last_success_at,
+  syncLastErrorCategory: errorCategory(row.sync_last_error_category),
+  syncOrdersCount: row.sync_orders_count,
+  syncCatalogCount: row.sync_catalog_count,
+  syncDeletedCount: row.sync_deleted_count,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+const connectionWorker = (row: ConnectionRow): ConnectionWorkerRecord => ({
+  ...connectionSummary(row),
+  encryptedCredentials: row.encrypted_credentials,
+  encryptedWebhookSecret: row.encrypted_webhook_secret,
+});
+const syncRun = (row: SyncRunRow): SyncRunRecord => ({
+  id: row.id,
+  accountId: row.account_id,
+  connectionId: row.connection_id,
+  type: row.type,
+  status: syncRunStatus(row.status),
+  cursor: row.cursor,
+  pages: row.pages,
+  items: row.items,
+  deleted: row.deleted,
+  errorCategory: errorCategory(row.error_category),
+  errorCode: row.error_code,
+  retryAfterAt: row.retry_after_at,
+  startedAt: row.started_at,
+  completedAt: row.completed_at,
+  updatedAt: row.updated_at,
+});
 const parseJobPayload = (value: string): unknown =>
   parseStoredJson<unknown>(value, 'JOB_PAYLOAD_INVALID');
 const jobFromRow = (row: JobRow): DurableJob => ({
@@ -1906,6 +2162,458 @@ export class SqliteStore {
     const role = this.assertMember(context);
     if (role !== 'owner' && role !== 'admin') throw new Error('ACCOUNT_ADMIN_PERMISSION_DENIED');
     return context.actorId as string;
+  }
+
+  private connectionRow(context: AccountContext, connectionId: string): ConnectionRow {
+    this.assertContext(context);
+    if (!connectionId || connectionId.length > 256) throw new Error('CONNECTION_ID_INVALID');
+    const row = this.db
+      .prepare(`SELECT ${connectionColumns} FROM connections WHERE account_id = ? AND id = ?`)
+      .get(context.accountId, connectionId) as ConnectionRow | undefined;
+    if (!row) throw new Error('CONNECTION_NOT_FOUND');
+    return row;
+  }
+
+  private assertConnection(context: AccountContext, connectionId: string): ConnectionRow {
+    const row = this.connectionRow(context, connectionId);
+    if (row.platform !== 'woocommerce') throw new Error('CONNECTION_PLATFORM_UNSUPPORTED');
+    return row;
+  }
+
+  listConnections(context: AccountContext): ConnectionSummary[] {
+    this.assertMember(context);
+    const rows = this.db
+      .prepare(
+        `SELECT ${connectionColumns} FROM connections WHERE account_id = ? ORDER BY created_at DESC, id DESC LIMIT 100`,
+      )
+      .all(context.accountId) as ConnectionRow[];
+    return rows.map(connectionSummary);
+  }
+
+  getConnection(context: AccountContext, connectionId: string): ConnectionSummary {
+    this.assertMember(context);
+    return connectionSummary(this.connectionRow(context, connectionId));
+  }
+
+  getConnectionForWorker(context: AccountContext, connectionId: string): ConnectionWorkerRecord {
+    return connectionWorker(this.assertConnection(context, connectionId));
+  }
+
+  getConnectionForWebhook(connectionId: string): {
+    id: string;
+    accountId: string;
+    status: ConnectionStatus;
+    encryptedWebhookSecret: string | null;
+  } | null {
+    if (!connectionId || connectionId.length > 256) return null;
+    const row = this.db
+      .prepare(
+        'SELECT id, account_id, status, encrypted_webhook_secret FROM connections WHERE id = ? AND platform = ?',
+      )
+      .get(connectionId, 'woocommerce') as
+      | {
+          id: string;
+          account_id: string;
+          status: string;
+          encrypted_webhook_secret: string | null;
+        }
+      | undefined;
+    if (!row) return null;
+    return {
+      id: row.id,
+      accountId: row.account_id,
+      status: connectionStatus(row.status),
+      encryptedWebhookSecret: row.encrypted_webhook_secret,
+    };
+  }
+
+  createAuthorizationState(
+    context: AccountContext,
+    input: { stateHash: string; userId: string; storeUrl: string; expiresAt: string },
+  ): void {
+    this.assertMember(context);
+    if (input.userId !== context.actorId) throw new Error('AUTHORIZATION_STATE_OWNER_INVALID');
+    if (!/^[a-f0-9]{64}$/iu.test(input.stateHash) || input.storeUrl.length > 500)
+      throw new Error('AUTHORIZATION_STATE_INVALID');
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        'INSERT INTO authorization_states (state_hash, account_id, user_id, store_url, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(input.stateHash, context.accountId, input.userId, input.storeUrl, input.expiresAt, now);
+    this.audit(context, 'connection.authorization-started', 'connection', input.storeUrl, {});
+  }
+
+  completeAuthorization(input: {
+    stateHash: string;
+    encryptedCredentials: string;
+    now?: string;
+  }): ConnectionSummary {
+    if (
+      !/^[a-f0-9]{64}$/iu.test(input.stateHash) ||
+      !input.encryptedCredentials ||
+      input.encryptedCredentials.length > 16 * 1024
+    )
+      throw new Error('CONNECTOR_CALLBACK_INVALID');
+    const now = input.now ?? new Date().toISOString();
+    const row = this.db.transaction(() => {
+      const state = this.db
+        .prepare(
+          'SELECT account_id, user_id, store_url FROM authorization_states WHERE state_hash = ? AND used_at IS NULL AND expires_at > ?',
+        )
+        .get(input.stateHash, now) as
+        { account_id: string; user_id: string; store_url: string } | undefined;
+      if (!state) throw new Error('CONNECTOR_CALLBACK_REPLAYED');
+      const claimed = this.db
+        .prepare(
+          'UPDATE authorization_states SET used_at = ? WHERE state_hash = ? AND used_at IS NULL',
+        )
+        .run(now, input.stateHash);
+      if (claimed.changes !== 1) throw new Error('CONNECTOR_CALLBACK_REPLAYED');
+      const existing = this.db
+        .prepare(
+          'SELECT id FROM connections WHERE account_id = ? AND platform = ? AND store_url = ?',
+        )
+        .get(state.account_id, 'woocommerce', state.store_url) as { id: string } | undefined;
+      const connectionId = existing?.id ?? randomId();
+      this.db
+        .prepare(
+          `INSERT INTO connections (id, account_id, platform, store_url, status, encrypted_credentials, created_at, updated_at)
+           VALUES (?, ?, 'woocommerce', ?, 'active', ?, ?, ?)
+           ON CONFLICT(account_id, platform, store_url) DO UPDATE SET status = 'active', encrypted_credentials = excluded.encrypted_credentials, health_status = 'unknown', health_last_error = NULL, health_last_error_category = NULL, updated_at = excluded.updated_at`,
+        )
+        .run(connectionId, state.account_id, state.store_url, input.encryptedCredentials, now, now);
+      this.audit(
+        {
+          accountId: state.account_id,
+          actorId: state.user_id,
+          correlationId: 'connector-callback',
+        },
+        'connection.authorized',
+        'connection',
+        connectionId,
+        { platform: 'woocommerce' },
+      );
+      return this.db
+        .prepare(`SELECT ${connectionColumns} FROM connections WHERE account_id = ? AND id = ?`)
+        .get(state.account_id, connectionId) as ConnectionRow;
+    })();
+    return connectionSummary(row);
+  }
+
+  rotateConnection(
+    context: AccountContext,
+    connectionId: string,
+    encryptedCredentials: string,
+  ): ConnectionSummary {
+    const actorId = this.requireAccountAdmin(context);
+    this.assertConnection(context, connectionId);
+    if (!encryptedCredentials || encryptedCredentials.length > 16 * 1024)
+      throw new Error('CREDENTIAL_ENVELOPE_INVALID');
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE connections SET encrypted_credentials = ?, status = 'active', health_status = 'unknown',
+          health_last_error = NULL, health_last_error_category = NULL, updated_at = ?
+         WHERE account_id = ? AND id = ?`,
+      )
+      .run(encryptedCredentials, now, context.accountId, connectionId);
+    if (result.changes !== 1) throw new Error('CONNECTION_NOT_FOUND');
+    this.audit(context, 'connection.credentials-rotated', 'connection', connectionId, { actorId });
+    return connectionSummary(this.connectionRow(context, connectionId));
+  }
+
+  setWebhookSecret(
+    context: AccountContext,
+    connectionId: string,
+    encryptedWebhookSecret: string,
+  ): ConnectionSummary {
+    const actorId = this.requireAccountAdmin(context);
+    this.assertConnection(context, connectionId);
+    if (!encryptedWebhookSecret || encryptedWebhookSecret.length > 16 * 1024)
+      throw new Error('WEBHOOK_SECRET_INVALID');
+    const result = this.db
+      .prepare(
+        'UPDATE connections SET encrypted_webhook_secret = ?, updated_at = ? WHERE account_id = ? AND id = ?',
+      )
+      .run(encryptedWebhookSecret, new Date().toISOString(), context.accountId, connectionId);
+    if (result.changes !== 1) throw new Error('CONNECTION_NOT_FOUND');
+    this.audit(context, 'connection.webhook-secret-updated', 'connection', connectionId, {
+      actorId,
+    });
+    return connectionSummary(this.connectionRow(context, connectionId));
+  }
+
+  disableConnection(context: AccountContext, connectionId: string): ConnectionSummary {
+    const actorId = this.requireAccountAdmin(context);
+    this.assertConnection(context, connectionId);
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE connections SET status = 'disabled', sync_status = 'idle', sync_finished_at = ?, updated_at = ?
+         WHERE account_id = ? AND id = ? AND status <> 'disabled'`,
+      )
+      .run(now, now, context.accountId, connectionId);
+    if (result.changes === 1)
+      this.audit(context, 'connection.disabled', 'connection', connectionId, { actorId });
+    return connectionSummary(this.connectionRow(context, connectionId));
+  }
+
+  markConnectionSyncQueued(context: AccountContext, connectionId: string): ConnectionSummary {
+    this.requireMutationActor(context);
+    const connection = this.assertConnection(context, connectionId);
+    if (connection.status === 'disabled') throw new Error('CONNECTION_DISABLED');
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `UPDATE connections SET sync_status = CASE WHEN sync_status = 'running' THEN sync_status ELSE 'queued' END,
+          updated_at = ? WHERE account_id = ? AND id = ?`,
+      )
+      .run(now, context.accountId, connectionId);
+    this.audit(context, 'sync-run.queued', 'connection', connectionId, {});
+    return connectionSummary(this.connectionRow(context, connectionId));
+  }
+
+  recordConnectionHealth(
+    context: AccountContext,
+    connectionId: string,
+    input: {
+      status: 'healthy' | 'degraded';
+      platformVersion?: string | null;
+      wordpressVersion?: string | null;
+      capabilities: Readonly<Record<string, boolean>>;
+      sourceTimezone?: string | null;
+      errorCategory?: SyncErrorCategory | null;
+      error?: string | null;
+    },
+  ): ConnectionSummary {
+    const row = this.assertConnection(context, connectionId);
+    const now = new Date().toISOString();
+    const safeError = input.error ? redactedJobError(input.error) : null;
+    const nextStatus =
+      row.status === 'disabled' ? 'disabled' : input.status === 'healthy' ? 'active' : 'degraded';
+    this.db
+      .prepare(
+        `UPDATE connections SET status = ?, health_status = ?, health_last_checked_at = ?,
+          health_last_success_at = CASE WHEN ? = 'healthy' THEN ? ELSE health_last_success_at END,
+          health_last_error = ?, health_last_error_category = ?, platform_version = ?, wordpress_version = ?,
+          capabilities_json = ?, source_timezone = COALESCE(?, source_timezone), updated_at = ?
+         WHERE account_id = ? AND id = ?`,
+      )
+      .run(
+        nextStatus,
+        input.status,
+        now,
+        input.status,
+        now,
+        safeError,
+        input.errorCategory ?? null,
+        input.platformVersion ?? null,
+        input.wordpressVersion ?? null,
+        JSON.stringify(input.capabilities),
+        input.sourceTimezone ?? null,
+        now,
+        context.accountId,
+        connectionId,
+      );
+    this.audit(context, 'connection.health-recorded', 'connection', connectionId, {
+      status: input.status,
+      errorCategory: input.errorCategory ?? null,
+    });
+    return connectionSummary(this.connectionRow(context, connectionId));
+  }
+
+  beginSyncRun(
+    context: AccountContext,
+    input: { id: string; connectionId: string; type: SyncRunType },
+  ): SyncRunRecord {
+    const connection = this.assertConnection(context, input.connectionId);
+    if (!['initial', 'incremental', 'reconcile'].includes(input.type))
+      throw new Error('SYNC_TYPE_INVALID');
+    if (!input.id || input.id.length > 256) throw new Error('SYNC_RUN_ID_INVALID');
+    const now = new Date().toISOString();
+    this.db.transaction(() => {
+      const existing = this.db
+        .prepare(
+          'SELECT id, status, type, cursor FROM connection_sync_runs WHERE account_id = ? AND id = ?',
+        )
+        .get(context.accountId, input.id) as
+        { id: string; status: SyncRunStatus; type: SyncRunType; cursor: string } | undefined;
+      if (existing && existing.type !== input.type) throw new Error('SYNC_RUN_ID_CONFLICT');
+      if (!existing) {
+        this.db
+          .prepare(
+            `INSERT INTO connection_sync_runs (id, account_id, connection_id, type, status, cursor, started_at, updated_at)
+             VALUES (?, ?, ?, ?, 'running', ?, ?, ?)`,
+          )
+          .run(
+            input.id,
+            context.accountId,
+            input.connectionId,
+            input.type,
+            input.type === 'initial' ? '{}' : (connection.sync_cursor ?? '{}'),
+            now,
+            now,
+          );
+      } else if (existing.status !== 'succeeded') {
+        this.db
+          .prepare(
+            `UPDATE connection_sync_runs SET status = 'running', error_category = NULL, error_code = NULL,
+              retry_after_at = NULL, completed_at = NULL, updated_at = ?
+             WHERE account_id = ? AND id = ? AND status <> 'succeeded'`,
+          )
+          .run(now, context.accountId, input.id);
+      }
+      if (existing?.status !== 'succeeded')
+        this.db
+          .prepare(
+            `UPDATE connections SET sync_status = 'running', sync_started_at = ?,
+              sync_finished_at = NULL, sync_last_error = NULL, sync_last_error_category = NULL, updated_at = ?
+             WHERE account_id = ? AND id = ?`,
+          )
+          .run(now, now, context.accountId, input.connectionId);
+      if (existing?.status === 'succeeded') return;
+      this.audit(context, 'sync-run.started', 'sync_run', input.id, {
+        connectionId: input.connectionId,
+        type: input.type,
+        previousStatus: connection.sync_status,
+      });
+    })();
+    return this.getSyncRun(context, input.id);
+  }
+
+  getSyncRun(context: AccountContext, runId: string): SyncRunRecord {
+    this.assertContext(context);
+    const row = this.db
+      .prepare(
+        `SELECT id, account_id, connection_id, type, status, cursor, pages, items, deleted,
+          error_category, error_code, retry_after_at, started_at, completed_at, updated_at
+         FROM connection_sync_runs WHERE account_id = ? AND id = ?`,
+      )
+      .get(context.accountId, runId) as SyncRunRow | undefined;
+    if (!row) throw new Error('SYNC_RUN_NOT_FOUND');
+    return syncRun(row);
+  }
+
+  updateSyncRun(
+    context: AccountContext,
+    runId: string,
+    input: {
+      cursor: string;
+      pages?: number;
+      items?: number;
+      catalogItems?: number;
+      deleted?: number;
+    },
+  ): SyncRunRecord {
+    this.assertContext(context);
+    if (input.cursor.length > 4_096) throw new Error('SYNC_CURSOR_INVALID');
+    const pages = input.pages ?? 0;
+    const items = input.items ?? 0;
+    const catalogItems = input.catalogItems ?? 0;
+    const deleted = input.deleted ?? 0;
+    const values = [pages, items, catalogItems, deleted];
+    if (values.some((value) => !Number.isInteger(value) || value < 0 || value > 1_000_000))
+      throw new Error('SYNC_COUNTER_INVALID');
+    const now = new Date().toISOString();
+    const result = this.db.transaction(() => {
+      const run = this.getSyncRun(context, runId);
+      if (run.status !== 'running') throw new Error('SYNC_RUN_STATE_INVALID');
+      this.db
+        .prepare(
+          `UPDATE connection_sync_runs SET cursor = ?, pages = pages + ?, items = items + ?, deleted = deleted + ?, updated_at = ?
+           WHERE account_id = ? AND id = ? AND status = 'running'`,
+        )
+        .run(input.cursor, pages, items + catalogItems, deleted, now, context.accountId, runId);
+      this.db
+        .prepare(
+          `UPDATE connections SET sync_cursor = ?, sync_orders_count = sync_orders_count + ?,
+            sync_catalog_count = sync_catalog_count + ?, sync_deleted_count = sync_deleted_count + ?, updated_at = ?
+           WHERE account_id = ? AND id = ?`,
+        )
+        .run(input.cursor, items, catalogItems, deleted, now, context.accountId, run.connectionId);
+      return true;
+    })();
+    void result;
+    return this.getSyncRun(context, runId);
+  }
+
+  completeSyncRun(
+    context: AccountContext,
+    runId: string,
+    input: { cursor: string; deleted?: number },
+  ): SyncRunRecord {
+    this.assertContext(context);
+    const now = new Date().toISOString();
+    const result = this.db.transaction(() => {
+      const run = this.getSyncRun(context, runId);
+      if (run.status === 'succeeded') return run;
+      if (run.status !== 'running') throw new Error('SYNC_RUN_STATE_INVALID');
+      const deleted = input.deleted ?? 0;
+      if (!Number.isInteger(deleted) || deleted < 0 || deleted > 1_000_000)
+        throw new Error('SYNC_COUNTER_INVALID');
+      this.db
+        .prepare(
+          `UPDATE connection_sync_runs SET status = 'succeeded', cursor = ?, deleted = deleted + ?,
+            completed_at = ?, updated_at = ? WHERE account_id = ? AND id = ? AND status = 'running'`,
+        )
+        .run(input.cursor, deleted, now, now, context.accountId, runId);
+      this.db
+        .prepare(
+          `UPDATE connections SET sync_status = 'succeeded', sync_cursor = ?, sync_last_success_at = ?,
+            sync_finished_at = ?, sync_deleted_count = sync_deleted_count + ?, updated_at = ?
+           WHERE account_id = ? AND id = ?`,
+        )
+        .run(input.cursor, now, now, deleted, now, context.accountId, run.connectionId);
+      this.audit(context, 'sync-run.completed', 'sync_run', runId, {
+        connectionId: run.connectionId,
+        type: run.type,
+        deleted,
+      });
+      return this.getSyncRun(context, runId);
+    })();
+    return result;
+  }
+
+  failSyncRun(
+    context: AccountContext,
+    runId: string,
+    input: { errorCode: string; errorCategory: SyncErrorCategory; retryAfterAt?: string | null },
+  ): SyncRunRecord {
+    this.assertContext(context);
+    const now = new Date().toISOString();
+    const run = this.getSyncRun(context, runId);
+    if (run.status === 'failed') return run;
+    if (run.status !== 'running') throw new Error('SYNC_RUN_STATE_INVALID');
+    const safeCode = redactedJobError(input.errorCode);
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE connection_sync_runs SET status = 'failed', error_category = ?, error_code = ?, retry_after_at = ?,
+            updated_at = ? WHERE account_id = ? AND id = ? AND status = 'running'`,
+        )
+        .run(
+          input.errorCategory,
+          safeCode,
+          input.retryAfterAt ?? null,
+          now,
+          context.accountId,
+          runId,
+        );
+      this.db
+        .prepare(
+          `UPDATE connections SET status = CASE WHEN status = 'disabled' THEN status ELSE 'degraded' END,
+            sync_status = 'failed', sync_last_error = ?, sync_last_error_category = ?, sync_finished_at = ?, updated_at = ?
+           WHERE account_id = ? AND id = ?`,
+        )
+        .run(safeCode, input.errorCategory, now, now, context.accountId, run.connectionId);
+      this.audit(context, 'sync-run.failed', 'sync_run', runId, {
+        connectionId: run.connectionId,
+        type: run.type,
+        errorCategory: input.errorCategory,
+      });
+    })();
+    return this.getSyncRun(context, runId);
   }
 
   getAccount(context: AccountContext): AccountRecord {
@@ -5393,6 +6101,8 @@ export class SqliteStore {
       pages: number;
     },
   ): { insertedOrUpdated: number } {
+    const connection = this.assertConnection(context, input.connectionId);
+    if (connection.status === 'disabled') throw new Error('CONNECTION_DISABLED');
     const now = new Date().toISOString();
     const statement = this.db.prepare(
       `INSERT INTO catalog_items (id, account_id, connection_id, kind, external_id, parent_external_id, name, sku, source_json, source_hash, remote_modified_at, created_at, updated_at)
@@ -5435,6 +6145,8 @@ export class SqliteStore {
     connectionId: string,
     identities: readonly string[],
   ): number {
+    const connection = this.assertConnection(context, connectionId);
+    if (connection.status === 'disabled') throw new Error('CONNECTION_DISABLED');
     if (identities.length === 0) return 0;
     const now = new Date().toISOString();
     const placeholders = identities.map(() => '?').join(',');
@@ -5457,6 +6169,7 @@ export class SqliteStore {
     success: boolean,
     errorCode?: string,
   ): void {
+    this.assertConnection(context, connectionId);
     const now = new Date().toISOString();
     this.db
       .prepare(
@@ -5658,59 +6371,69 @@ export class SqliteStore {
     connectionId: string,
     input: NormalizedOrderInput,
   ): string {
+    const connection = this.assertConnection(context, connectionId);
+    if (connection.status === 'disabled') throw new Error('CONNECTION_DISABLED');
+    if (
+      input.reconcileToken !== undefined &&
+      (!input.reconcileToken || input.reconcileToken.length > 128)
+    )
+      throw new Error('SYNC_RECONCILE_TOKEN_INVALID');
     const now = new Date().toISOString();
     const id = `${context.accountId}:${connectionId}:order:${input.externalOrderId}`;
-    const existing = this.db
-      .prepare(
-        'SELECT source_hash, export_state FROM orders WHERE account_id = ? AND connection_id = ? AND external_order_id = ?',
-      )
-      .get(context.accountId, connectionId, input.externalOrderId) as
-      { source_hash: string | null; export_state: string } | undefined;
-    const stale = Boolean(
-      existing?.source_hash &&
-      existing.source_hash !== input.sourceHash &&
-      existing.export_state !== 'never-exported',
-    );
-    this.db
-      .prepare(
-        `INSERT INTO orders (id, account_id, connection_id, origin, order_number, external_order_id, remote_status, currency, grand_total_minor, source_hash, remote_modified_at, remote_payload_json, normalized_json, stale_export_at, created_at, updated_at)
-         VALUES (?, ?, ?, 'woo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(account_id, connection_id, external_order_id) DO UPDATE SET order_number = excluded.order_number, remote_status = excluded.remote_status, currency = excluded.currency, grand_total_minor = excluded.grand_total_minor, source_hash = excluded.source_hash, remote_modified_at = excluded.remote_modified_at, remote_payload_json = excluded.remote_payload_json, normalized_json = excluded.normalized_json, stale_export_at = CASE WHEN excluded.stale_export_at IS NOT NULL THEN excluded.stale_export_at ELSE orders.stale_export_at END, updated_at = excluded.updated_at`,
-      )
-      .run(
-        id,
-        context.accountId,
-        connectionId,
-        input.orderNumber,
-        input.externalOrderId,
-        input.remoteStatus,
-        input.currency,
-        input.grandTotalMinor,
-        input.sourceHash,
-        input.modifiedAt,
-        input.sourceJson,
-        JSON.stringify(input),
-        stale ? now : null,
-        now,
-        now,
+    return this.db.transaction(() => {
+      const existing = this.db
+        .prepare(
+          'SELECT source_hash, export_state FROM orders WHERE account_id = ? AND connection_id = ? AND external_order_id = ?',
+        )
+        .get(context.accountId, connectionId, input.externalOrderId) as
+        { source_hash: string | null; export_state: string } | undefined;
+      const stale = Boolean(
+        existing?.source_hash &&
+        existing.source_hash !== input.sourceHash &&
+        existing.export_state !== 'never-exported',
       );
-    for (const refund of input.refunds) {
       this.db
         .prepare(
-          `INSERT INTO order_refunds (id, account_id, order_id, external_refund_id, amount_minor, reason, source_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, order_id, external_refund_id) DO UPDATE SET amount_minor = excluded.amount_minor, reason = excluded.reason, source_json = excluded.source_json`,
+          `INSERT INTO orders (id, account_id, connection_id, origin, order_number, external_order_id, remote_status, currency, grand_total_minor, source_hash, remote_modified_at, remote_payload_json, normalized_json, stale_export_at, reconcile_token, created_at, updated_at)
+           VALUES (?, ?, ?, 'woo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(account_id, connection_id, external_order_id) DO UPDATE SET order_number = excluded.order_number, remote_status = excluded.remote_status, currency = excluded.currency, grand_total_minor = excluded.grand_total_minor, source_hash = excluded.source_hash, remote_modified_at = excluded.remote_modified_at, remote_payload_json = excluded.remote_payload_json, normalized_json = excluded.normalized_json, remote_deleted_at = NULL, reconcile_token = COALESCE(excluded.reconcile_token, orders.reconcile_token), stale_export_at = CASE WHEN excluded.stale_export_at IS NOT NULL THEN excluded.stale_export_at ELSE orders.stale_export_at END, updated_at = excluded.updated_at`,
         )
         .run(
-          `${id}:refund:${refund.externalRefundId}`,
-          context.accountId,
           id,
-          refund.externalRefundId,
-          refund.amountMinor,
-          typeof refund.reason === 'string' ? refund.reason : null,
-          JSON.stringify(refund),
+          context.accountId,
+          connectionId,
+          input.orderNumber,
+          input.externalOrderId,
+          input.remoteStatus,
+          input.currency,
+          input.grandTotalMinor,
+          input.sourceHash,
+          input.modifiedAt,
+          input.sourceJson,
+          JSON.stringify(input),
+          stale ? now : null,
+          input.reconcileToken ?? null,
+          now,
           now,
         );
-    }
-    return id;
+      for (const refund of input.refunds) {
+        this.db
+          .prepare(
+            `INSERT INTO order_refunds (id, account_id, order_id, external_refund_id, amount_minor, reason, source_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, order_id, external_refund_id) DO UPDATE SET amount_minor = excluded.amount_minor, reason = excluded.reason, source_json = excluded.source_json`,
+          )
+          .run(
+            `${id}:refund:${refund.externalRefundId}`,
+            context.accountId,
+            id,
+            refund.externalRefundId,
+            refund.amountMinor,
+            typeof refund.reason === 'string' ? refund.reason : null,
+            JSON.stringify(refund),
+            now,
+          );
+      }
+      return id;
+    })();
   }
 
   markRemoteOrderDeleted(
@@ -5718,6 +6441,7 @@ export class SqliteStore {
     connectionId: string,
     externalOrderId: string,
   ): boolean {
+    this.assertConnection(context, connectionId);
     const now = new Date().toISOString();
     const result = this.db
       .prepare(
@@ -5727,12 +6451,34 @@ export class SqliteStore {
     return result.changes === 1;
   }
 
+  markRemoteOrdersNotSeen(
+    context: AccountContext,
+    connectionId: string,
+    reconcileToken: string,
+    startedAt: string,
+  ): number {
+    const connection = this.assertConnection(context, connectionId);
+    if (connection.status === 'disabled') throw new Error('CONNECTION_DISABLED');
+    if (!reconcileToken || reconcileToken.length > 128)
+      throw new Error('SYNC_RECONCILE_TOKEN_INVALID');
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE orders SET remote_deleted_at = ?, updated_at = ?
+         WHERE account_id = ? AND connection_id = ? AND origin = 'woo' AND created_at <= ?
+           AND (reconcile_token IS NULL OR reconcile_token <> ?) AND remote_deleted_at IS NULL`,
+      )
+      .run(now, now, context.accountId, connectionId, startedAt, reconcileToken);
+    return result.changes;
+  }
+
   discoverOrderMetadata(
     context: AccountContext,
     connectionId: string,
     samples: readonly unknown[],
     scope = 'order',
   ): MetadataEntry[] {
+    this.assertConnection(context, connectionId);
     const entries = discoverMetadata(samples, scope);
     const now = new Date().toISOString();
     const statement = this.db.prepare(
@@ -5766,6 +6512,7 @@ export class SqliteStore {
       targetFacet?: string;
     },
   ): FieldMapping {
+    this.assertConnection(context, input.connectionId);
     if (
       !input.label.trim() ||
       input.label.length > 120 ||
@@ -5852,6 +6599,7 @@ export class SqliteStore {
       .get(mappingId, context.accountId) as
       { id: string; connection_id: string; source_key: string; type: MetadataType } | undefined;
     if (!mapping) throw new Error('FIELD_MAPPING_NOT_FOUND');
+    this.assertConnection(context, mapping.connection_id);
     const rows = this.db
       .prepare(
         `SELECT id, remote_payload_json FROM orders WHERE account_id = ? AND connection_id = ? AND id > ? ORDER BY id LIMIT ?`,
@@ -6254,10 +7002,15 @@ export class SqliteStore {
       !/^[a-f0-9]{64}$/iu.test(input.checksum)
     )
       throw new Error('WEBHOOK_INPUT_INVALID');
+    if (!SUPPORTED_WEBHOOK_TOPICS.has(input.topic)) throw new Error('WEBHOOK_TOPIC_UNSUPPORTED');
     const connection = this.db
-      .prepare('SELECT account_id FROM connections WHERE id = ? AND platform = ?')
-      .get(input.connectionId, 'woocommerce') as { account_id: string } | undefined;
-    if (!connection || connection.account_id !== input.accountId)
+      .prepare('SELECT account_id, status FROM connections WHERE id = ? AND platform = ?')
+      .get(input.connectionId, 'woocommerce') as { account_id: string; status: string } | undefined;
+    if (
+      !connection ||
+      connection.account_id !== input.accountId ||
+      connectionStatus(connection.status) === 'disabled'
+    )
       throw new Error('WEBHOOK_CONNECTION_NOT_FOUND');
     const body = Buffer.from(input.body);
     const actualChecksum = createHash('sha256').update(body).digest('hex');

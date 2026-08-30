@@ -118,6 +118,36 @@ test('webhook processing normalizes a read-only remote snapshot and is replay-sa
   );
 });
 
+test('webhook deletion marks the local remote snapshot without issuing a platform mutation', async () => {
+  const connectionId = store.db
+    .prepare('SELECT id FROM connections WHERE account_id = ? LIMIT 1')
+    .get(accountId).id;
+  const body = Buffer.from(JSON.stringify({ id: 901 }));
+  const inbox = store.acceptWebhook({
+    id: randomUUID(),
+    accountId,
+    connectionId,
+    deliveryKey: randomUUID(),
+    topic: 'order.deleted',
+    body,
+    checksum: createHash('sha256').update(body).digest('hex'),
+  });
+  const job = store.enqueueJob(worker, {
+    id: randomUUID(),
+    type: 'webhook.process',
+    idempotencyKey: inbox.inboxId,
+    payload: { inboxId: inbox.inboxId },
+    maxAttempts: 1,
+  });
+  await runner.drain({ maxJobs: 1 });
+  assert.equal(store.getJob(context, job.id).status, 'succeeded');
+  assert.equal(
+    store.db.prepare('SELECT remote_deleted_at FROM orders WHERE external_order_id = ?').get('901')
+      .remote_deleted_at !== null,
+    true,
+  );
+});
+
 test('unconfigured effect jobs fail visibly and never masquerade as completed work', async () => {
   const job = store.enqueueJob(worker, {
     id: randomUUID(),

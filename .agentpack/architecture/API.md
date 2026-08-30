@@ -48,21 +48,30 @@ tokens are single-use, expire after 30 minutes, and are never returned by the AP
 GET    /connections
 POST   /connections/woocommerce/authorize
 GET    /connections/woocommerce/return
-POST   /connections/woocommerce/callback
+GET    /connections/woocommerce/return
 GET    /connections/:id
 POST   /connections/:id/health-checks
 POST   /connections/:id/sync-runs
+POST   /connections/:id/sync-runs/incremental
 POST   /connections/:id/reconcile
 POST   /connections/:id/rotate
 POST   /connections/:id/disable
 GET    /connections/:id/fields
 PUT    /connections/:id/field-mappings
 POST   /connections/:id/field-mappings/backfill
-POST   /webhooks/woocommerce/:publicConnectionToken
+POST   /webhooks/woocommerce/:connectionId
 ```
 
 The authorization callback receiving Woo credentials is transport-isolated, strictly size-limited,
-state-bound, and never exposed to browser JavaScript or ordinary request logs.
+state-bound, and never exposes credentials in browser responses or ordinary request logs. The
+initial and incremental endpoints accept an idempotency key and enqueue durable read-only jobs;
+reconciliation uses the same job contract and records remote deletions locally. Health responses
+contain only safe version/capability and status data. Rotation and webhook-secret configuration
+are account-administrator operations; secrets remain encrypted at rest.
+
+The public Woo webhook endpoint accepts only verified `order.created`, `order.updated`, and
+`order.deleted` topics. It stores the raw checksum-bound inbox record before enqueueing an
+account-scoped processing job. Duplicate delivery IDs are acknowledged without a second effect.
 
 ## Orders
 

@@ -357,3 +357,17 @@ export const operationJobListSchema = z
     type: durableJobTypeSchema.optional(),
   })
   .strict();
+
+export const wooCredentialSchema = z
+  .object({
+    key: z.string().regex(/^ck_[A-Za-z0-9_-]{1,200}$/u),
+    secret: z.string().regex(/^cs_[A-Za-z0-9_-]{1,200}$/u),
+  })
+  .strict();
+export const connectionSyncRequestSchema = z
+  .object({ idempotencyKey: z.string().trim().min(1).max(200) })
+  .strict();
+export const connectionRotateSchema = wooCredentialSchema;
+export const connectionWebhookSecretSchema = z
+  .object({ secret: z.string().trim().min(16).max(512) })
+  .strict();

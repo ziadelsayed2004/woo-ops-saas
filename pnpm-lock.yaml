@@ -26,6 +26,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@woo-ops/application':
+        specifier: workspace:*
+        version: link:../../packages/application
       '@woo-ops/connectors':
         specifier: workspace:*
         version: link:../../packages/connectors

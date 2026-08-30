@@ -41,6 +41,9 @@ import {
   passwordResetConfirmSchema,
   sessionTargetSchema,
   operationJobListSchema,
+  connectionSyncRequestSchema,
+  connectionRotateSchema,
+  connectionWebhookSecretSchema,
 } from '@woo-ops/contracts';
 import { SqliteStore } from '@woo-ops/persistence';
 import type {
@@ -60,8 +63,11 @@ import type {
 } from '@woo-ops/persistence';
 import {
   canonicalizeStoreUrl,
+  assertPublicStoreUrl,
   createAuthorizationUrl,
   encryptCredentialEnvelope,
+  encryptSecretEnvelope,
+  decryptSecretEnvelope,
 } from '@woo-ops/connectors';
 import { AuthService, can, recordAudit } from './auth.js';
 import { verifyWebhookSignature } from '@woo-ops/connectors';
@@ -69,6 +75,7 @@ import { generateDocument } from '@woo-ops/documents';
 import type { DocumentFormat, DocumentOrder } from '@woo-ops/documents';
 import { readPrivatePdf, writePrivatePdf } from './document-files.js';
 import { createApiJobRunner } from './job-runner.js';
+import { createWooSyncEffect, healthCheckWooConnection } from './woo-sync.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const dataDirectory = resolve(process.env.WOO_OPS_DATA_DIR ?? './data');
@@ -110,6 +117,7 @@ const jobRunner = createApiJobRunner(store, {
   ...(configuredConcurrency === undefined ? {} : { concurrency: configuredConcurrency }),
   ...(configuredLeaseSeconds === undefined ? {} : { leaseSeconds: configuredLeaseSeconds }),
   ...(configuredPollIntervalMs === undefined ? {} : { pollIntervalMs: configuredPollIntervalMs }),
+  effects: { sync: createWooSyncEffect(store) },
 });
 const app: Express = express();
 const attempts = new Map<string, { count: number; resetAt: number }>();
@@ -177,6 +185,20 @@ const requireOperationWrite = (request: Request, response: Response): CurrentUse
   if (!user) return null;
   if (!can(user.role, 'operations:write') || !auth.csrfValid(request)) {
     sendApiError(response, 403, 'FORBIDDEN', 'Permission or CSRF validation failed');
+    return null;
+  }
+  return user;
+};
+const requireConnectionAdmin = (request: Request, response: Response): CurrentUser | null => {
+  const user = authenticatedUser(request, response);
+  if (!user) return null;
+  if (!can(user.role, 'account:write') || !auth.csrfValid(request)) {
+    sendApiError(
+      response,
+      403,
+      'FORBIDDEN',
+      'Administrator permission or CSRF validation required',
+    );
     return null;
   }
   return user;
@@ -541,13 +563,26 @@ app.patch('/api/v1/manual-orders/:orderId', (request, response) => {
 app.post('/api/v1/webhooks/woocommerce/:connectionId', (request, response) => {
   const rawBody = (request as Request & { rawBody?: Buffer }).rawBody;
   const connectionId = request.params.connectionId;
-  const connection = store.db
-    .prepare('SELECT id, account_id FROM connections WHERE id = ? AND platform = ?')
-    .get(connectionId, 'woocommerce') as { id: string; account_id: string } | undefined;
-  const secret = process.env.WOOCOMMERCE_WEBHOOK_SECRET;
+  const connection = store.getConnectionForWebhook(connectionId);
+  let secret = process.env.WOOCOMMERCE_WEBHOOK_SECRET ?? '';
+  if (connection?.encryptedWebhookSecret) {
+    const encryptionKey = process.env.TOKEN_ENCRYPTION_KEY;
+    if (!encryptionKey) secret = '';
+    else {
+      try {
+        secret = decryptSecretEnvelope(
+          JSON.parse(connection.encryptedWebhookSecret) as unknown,
+          encryptionKey,
+        );
+      } catch {
+        secret = '';
+      }
+    }
+  }
   const signature = request.header('x-wc-webhook-signature');
   if (
     !connection ||
+    connection.status === 'disabled' ||
     !rawBody ||
     !secret ||
     !signature ||
@@ -569,7 +604,7 @@ app.post('/api/v1/webhooks/woocommerce/:connectionId', (request, response) => {
   try {
     const accepted = store.acceptWebhook({
       id: randomUUID(),
-      accountId: connection.account_id,
+      accountId: connection.accountId,
       connectionId: connection.id,
       deliveryKey,
       topic: request.header('x-wc-webhook-topic') ?? 'unknown',
@@ -578,7 +613,7 @@ app.post('/api/v1/webhooks/woocommerce/:connectionId', (request, response) => {
     });
     if (accepted.accepted) {
       store.enqueueJob(
-        { accountId: connection.account_id, correlationId: randomUUID() },
+        { accountId: connection.accountId, correlationId: randomUUID() },
         {
           id: randomUUID(),
           type: 'webhook.process',
@@ -600,34 +635,20 @@ app.post('/api/v1/webhooks/woocommerce/:connectionId', (request, response) => {
     );
   }
 });
-app.post('/api/v1/connections/woocommerce/authorize', (request, response) => {
-  const user = auth.current(request);
-  if (!user) {
-    response.status(401).json({
-      error: {
-        code: 'AUTH_UNAUTHENTICATED',
-        message: 'Authentication required',
-        correlationId: response.getHeader('x-correlation-id'),
-      },
-    });
-    return;
-  }
+app.post('/api/v1/connections/woocommerce/authorize', async (request, response) => {
+  const user = requireConnectionAdmin(request, response);
+  if (!user) return;
   try {
     const storeUrl = canonicalizeStoreUrl(String(request.body?.storeUrl ?? ''));
+    await assertPublicStoreUrl(storeUrl);
     const nonce = randomBytes(24).toString('base64url');
     const now = new Date();
-    store.db
-      .prepare(
-        'INSERT INTO authorization_states (state_hash, account_id, user_id, store_url, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-      )
-      .run(
-        stateHash(nonce),
-        user.accountId,
-        user.id,
-        storeUrl.toString(),
-        new Date(now.getTime() + 600000).toISOString(),
-        now.toISOString(),
-      );
+    store.createAuthorizationState(operationContext(user, response), {
+      stateHash: stateHash(nonce),
+      userId: user.id,
+      storeUrl: storeUrl.toString(),
+      expiresAt: new Date(now.getTime() + 600000).toISOString(),
+    });
     const returnUrl = `${process.env.WEB_PUBLIC_URL ?? 'http://localhost:5173'}/connections/woocommerce/callback`;
     const callbackUrl = `${process.env.API_PUBLIC_URL ?? 'http://localhost:3000'}/api/v1/connections/woocommerce/return`;
     response.json({
@@ -665,29 +686,6 @@ app.get('/api/v1/connections/woocommerce/return', (request, response) => {
     });
     return;
   }
-  const row = store.db
-    .prepare(
-      'SELECT account_id, user_id, store_url, expires_at, used_at FROM authorization_states WHERE state_hash = ?',
-    )
-    .get(stateHash(nonce)) as
-    | {
-        account_id: string;
-        user_id: string;
-        store_url: string;
-        expires_at: string;
-        used_at: string | null;
-      }
-    | undefined;
-  if (!row || row.used_at || row.expires_at <= new Date().toISOString()) {
-    response.status(400).json({
-      error: {
-        code: 'CONNECTOR_CALLBACK_REPLAYED',
-        message: 'Authorization state expired or already used',
-        correlationId: response.getHeader('x-correlation-id'),
-      },
-    });
-    return;
-  }
   const encryptionKey = process.env.TOKEN_ENCRYPTION_KEY;
   if (!encryptionKey) {
     response.status(503).json({
@@ -699,30 +697,20 @@ app.get('/api/v1/connections/woocommerce/return', (request, response) => {
     });
     return;
   }
-  const now = new Date().toISOString();
   try {
-    store.db.transaction(() => {
-      const claimed = store.db
-        .prepare(
-          'UPDATE authorization_states SET used_at = ? WHERE state_hash = ? AND used_at IS NULL',
-        )
-        .run(now, stateHash(nonce));
-      if (claimed.changes !== 1) throw new Error('CONNECTOR_CALLBACK_REPLAYED');
-      store.db
-        .prepare(
-          'INSERT INTO connections (id, account_id, platform, store_url, status, encrypted_credentials, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, platform, store_url) DO UPDATE SET status = excluded.status, encrypted_credentials = excluded.encrypted_credentials, updated_at = excluded.updated_at',
-        )
-        .run(
-          randomBytes(16).toString('hex'),
-          row.account_id,
-          'woocommerce',
-          row.store_url,
-          'active',
-          JSON.stringify(encryptCredentialEnvelope({ key, secret }, encryptionKey)),
-          now,
-          now,
-        );
-    })();
+    const connection = store.completeAuthorization({
+      stateHash: stateHash(nonce),
+      encryptedCredentials: JSON.stringify(
+        encryptCredentialEnvelope({ key, secret }, encryptionKey),
+      ),
+    });
+    response.json({
+      connected: true,
+      connectionId: connection.id,
+      platform: connection.platform,
+      storeUrl: connection.storeUrl,
+    });
+    return;
   } catch (error) {
     const code = error instanceof Error ? error.message : 'CONNECTOR_CALLBACK_INVALID';
     response.status(code === 'CONNECTOR_CALLBACK_REPLAYED' ? 409 : 400).json({
@@ -734,7 +722,158 @@ app.get('/api/v1/connections/woocommerce/return', (request, response) => {
     });
     return;
   }
-  response.json({ connected: true, platform: 'woocommerce', storeUrl: row.store_url });
+});
+app.get('/api/v1/connections', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({ items: store.listConnections(operationContext(user, response)) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/connections/:connectionId', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({
+      connection: store.getConnection(
+        operationContext(user, response),
+        request.params.connectionId,
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/connections/:connectionId/health-checks', async (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  try {
+    const connection = await healthCheckWooConnection(
+      store,
+      operationContext(user, response),
+      request.params.connectionId,
+    );
+    response.json({ connection });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+const queueConnectionSync = (
+  request: Request,
+  response: Response,
+  type: 'sync.initial' | 'sync.incremental' | 'sync.reconcile',
+): void => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = connectionSyncRequestSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'SYNC_INPUT_INVALID', 'Sync request is invalid');
+    return;
+  }
+  const context = operationContext(user, response);
+  const connectionId = request.params.connectionId;
+  if (typeof connectionId !== 'string') {
+    sendApiError(response, 400, 'CONNECTION_ID_INVALID', 'Connection id is invalid');
+    return;
+  }
+  try {
+    store.markConnectionSyncQueued(context, connectionId);
+    const job = store.enqueueJob(context, {
+      id: randomUUID(),
+      type,
+      idempotencyKey: `connection:${connectionId}:${parsed.data.idempotencyKey}`,
+      payload: { connectionId },
+      maxAttempts: 5,
+    });
+    response.status(202).json({ job: store.getJob(context, job.id) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+};
+app.post('/api/v1/connections/:connectionId/sync-runs', (request, response) => {
+  queueConnectionSync(request, response, 'sync.initial');
+});
+app.post('/api/v1/connections/:connectionId/sync-runs/incremental', (request, response) => {
+  queueConnectionSync(request, response, 'sync.incremental');
+});
+app.post('/api/v1/connections/:connectionId/reconcile', (request, response) => {
+  queueConnectionSync(request, response, 'sync.reconcile');
+});
+app.post('/api/v1/connections/:connectionId/rotate', (request, response) => {
+  const user = requireConnectionAdmin(request, response);
+  if (!user) return;
+  const parsed = connectionRotateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'CREDENTIALS_INVALID', 'WooCommerce credentials are invalid');
+    return;
+  }
+  const encryptionKey = process.env.TOKEN_ENCRYPTION_KEY;
+  if (!encryptionKey) {
+    sendApiError(
+      response,
+      503,
+      'CREDENTIAL_ENCRYPTION_UNAVAILABLE',
+      'Connector encryption is not configured',
+    );
+    return;
+  }
+  try {
+    response.json({
+      connection: store.rotateConnection(
+        operationContext(user, response),
+        request.params.connectionId,
+        JSON.stringify(encryptCredentialEnvelope(parsed.data, encryptionKey)),
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/connections/:connectionId/webhook-secret', (request, response) => {
+  const user = requireConnectionAdmin(request, response);
+  if (!user) return;
+  const parsed = connectionWebhookSecretSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'WEBHOOK_SECRET_INVALID', 'Webhook secret is invalid');
+    return;
+  }
+  const encryptionKey = process.env.TOKEN_ENCRYPTION_KEY;
+  if (!encryptionKey) {
+    sendApiError(
+      response,
+      503,
+      'CREDENTIAL_ENCRYPTION_UNAVAILABLE',
+      'Connector encryption is not configured',
+    );
+    return;
+  }
+  try {
+    response.json({
+      connection: store.setWebhookSecret(
+        operationContext(user, response),
+        request.params.connectionId,
+        JSON.stringify(encryptSecretEnvelope(parsed.data.secret, encryptionKey)),
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/connections/:connectionId/disable', (request, response) => {
+  const user = requireConnectionAdmin(request, response);
+  if (!user) return;
+  try {
+    response.json({
+      connection: store.disableConnection(
+        operationContext(user, response),
+        request.params.connectionId,
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
 });
 app.post('/api/v1/auth/register', (request, response) => {
   try {

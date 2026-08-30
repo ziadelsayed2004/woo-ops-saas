@@ -62,7 +62,7 @@ const version = store.createExportProfileVersion(context, profile.id, {
 });
 
 test('versioned export metadata is migrated and scoped to the account', () => {
-  assert.equal(schemaVersion, 15);
+  assert.equal(schemaVersion, 16);
   assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 0);
   assert.deepEqual(profile.active, true);
   assert.equal(version.version, 1);
