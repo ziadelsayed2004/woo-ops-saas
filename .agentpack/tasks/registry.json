@@ -825,6 +825,198 @@
         "pnpm format:check",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0812",
+      "epic": "E01",
+      "title": "Complete account administration and security operations",
+      "type": "security",
+      "phase": 8,
+      "priority": "P0",
+      "estimate": "XL",
+      "parallelGroup": "identity",
+      "dependencies": ["T0806"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/architecture/API.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/DATA_MODEL.md"],
+      "scope": [
+        "Implement account-scoped member listing, invitations, role changes, membership revocation and session administration with capability checks",
+        "Add password change/reset primitives, session rotation/revocation, strict account-settings schemas, security headers, request limits and truthful readiness checks",
+        "Add versioned SQLite migration/indexes where needed, forward-fix/rollback notes, redacted audit events and account-isolation/security tests"
+      ],
+      "acceptance": [
+        "Every member/session/password/settings endpoint derives accountId from authenticated session, enforces owner/admin capability and prevents owner lockout or cross-account access",
+        "Password or privilege changes revoke affected sessions and reset tokens are single-use, short-lived, hashed at rest and never logged or returned",
+        "Mutating requests have CSRF/origin protection, production-safe headers and bounded validated bodies; health/readiness does not claim unavailable dependencies are connected",
+        "Migration and security evidence records indexes, retention, audit behavior, negative tests and exact validation results"
+      ],
+      "validation": ["pnpm test:unit --filter auth", "pnpm test:integration --filter administration", "pnpm test:security", "pnpm test:tenant-isolation", "pnpm typecheck", "pnpm lint", "pnpm format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+    },
+    {
+      "id": "T0807",
+      "epic": "E08",
+      "title": "Implement durable job dispatcher and operational queue APIs",
+      "type": "feat",
+      "phase": 8,
+      "priority": "P0",
+      "estimate": "XL",
+      "parallelGroup": "jobs-runtime",
+      "dependencies": ["T0806", "T0812"],
+      "references": ["AGENTS.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/TESTING.md", ".agentpack/workflows/release.md"],
+      "scope": [
+        "Create a typed in-process worker registry with bounded concurrency, start/stop/drain controls, cron-safe processing and deterministic job handlers",
+        "Execute webhook, sync, bulk, export, document and analytics jobs through lease-safe account contexts with retries, backoff, progress, cancellation and dead-letter replay",
+        "Add account-scoped operations health/jobs/dead-letter/usage APIs and queue observability without exposing payloads, credentials or client account authority"
+      ],
+      "acceptance": [
+        "Every queued job type has a real handler or is rejected before enqueue; restart and expired leases resume work exactly once at the effect boundary through idempotency",
+        "Bulk local actions, export/document generation and webhook processing execute asynchronously and never expose a remote Woo mutation method",
+        "Viewer/admin/operator permissions and account predicates apply to operations reads, replay, cancel and worker execution; poison jobs retain bounded redacted errors and become inspectable dead letters",
+        "Worker, retry, shutdown and failure-path tests include exact counts, timings, audit events and migration/index impact"
+      ],
+      "validation": ["pnpm test:unit --filter jobs", "pnpm test:integration --filter job-runner", "pnpm test:chaos --filter restart", "pnpm test:security --filter jobs", "pnpm test:tenant-isolation", "pnpm typecheck", "pnpm lint", "pnpm format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+    },
+    {
+      "id": "T0808",
+      "epic": "E02",
+      "title": "Complete Woo connection lifecycle and resumable synchronization",
+      "type": "feat",
+      "phase": 8,
+      "priority": "P0",
+      "estimate": "XL",
+      "parallelGroup": "woocommerce-runtime",
+      "dependencies": ["T0807"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/SYNC_AND_CONNECTORS.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/adr/ADR-002-read-only-connectors.md"],
+      "scope": [
+        "Add account-scoped connection repositories and lifecycle APIs for list/detail/health-check/sync/reconcile/disable/rotate, encrypted credential decryption and credential-safe health summaries",
+        "Run initial catalog/order/refund sync, incremental overlap polling, verified webhook processing and deletion reconciliation as durable resumable jobs with cursors, counters, retry-after/backoff and failure taxonomy",
+        "Extend the connector port only with read-only health/discovery/pull/normalization operations; add redacted Woo fixtures and certification evidence for pagination, currencies, refunds, metadata, schema drift and origin safety"
+      ],
+      "acceptance": [
+        "A connection can be authorized, listed, health-checked, synchronized, reconciled, disabled and rotated without any remote order/product/customer/stock/status mutation capability",
+        "Initial and incremental sync checkpoints only advance after durable effects, resume after interruption, deduplicate by account/connection/source identity, preserve local fields and mark stale exports",
+        "Webhook processing validates HMAC/raw checksum/topic/connection ownership before one idempotent normalized effect; invalid/schema-drift/rate/auth/network failures are observable and bounded",
+        "Connection data and credentials are account-isolated, credential-safe in logs/responses/jobs, and migration/index plus exact connector certification evidence is recorded"
+      ],
+      "validation": ["pnpm test:unit --filter connectors", "pnpm test:contract --filter woocommerce", "pnpm test:integration --filter sync", "pnpm test:chaos --filter webhook-replay", "pnpm test:security", "pnpm test:tenant-isolation", "pnpm typecheck", "pnpm lint", "pnpm format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+    },
+    {
+      "id": "T0809",
+      "epic": "E03",
+      "title": "Complete canonical order data and advanced operations workspace",
+      "type": "feat",
+      "phase": 8,
+      "priority": "P0",
+      "estimate": "XL",
+      "parallelGroup": "orders-runtime",
+      "dependencies": ["T0808"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/SECURITY.md"],
+      "scope": [
+        "Complete the canonical order schema and immutable line/product/payment/shipping/tax/fee/coupon/refund snapshots with account-first indexes and approved FTS/mapped-field search",
+        "Expand the typed filter catalog, facets, search and order timeline to cover store, source, POS, statuses, export, payment, shipping, price, tax, refund, product, variation, SKU, category, author, tag, coupon, dates, quantity and exceptions",
+        "Add local workflow/tag/note/assignment/resync APIs and a Material UI authenticated orders workspace with saved views, cross-page selection, preview/partial/error states, keyboard access and Arabic RTL/LTR behavior"
+      ],
+      "acceptance": [
+        "At least the supported standard Woo order fields are present, searchable/filterable/exportable from immutable snapshots while remote facts and local workflow remain visibly and technically separate",
+        "All filter AST values/operators/fields are server-catalogued and bounded, counts/facets and cursors are account-scoped, stable and performant at 100k fixtures, and no PII or raw SQL is exposed",
+        "Operators can update only local workflow through audited optimistic commands, while resync is read-only; saved views and selections survive page changes and exclude post-watermark arrivals",
+        "UI includes auth/loading/empty/error/partial/retry/accessibility states and tests prove no manual or local operation invokes a Woo mutation"
+      ],
+      "validation": ["pnpm test:unit --filter order-query", "pnpm test:integration --filter order-repository", "pnpm test:security --filter query-input", "pnpm test:tenant-isolation", "pnpm test:e2e --filter orders", "pnpm test:a11y --filter orders", "pnpm test:visual --filter orders", "pnpm test:performance", "pnpm typecheck", "pnpm lint", "pnpm format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+    },
+    {
+      "id": "T0810",
+      "epic": "E05",
+      "title": "Implement real export files, profiles and download workflows",
+      "type": "feat",
+      "phase": 8,
+      "priority": "P0",
+      "estimate": "XL",
+      "parallelGroup": "exports-runtime",
+      "dependencies": ["T0809"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/SECURITY.md"],
+      "scope": [
+        "Connect export batches to durable jobs and the XLSX/CSV engine, materialize immutable order snapshots in bounded chunks and store private checksum-bound files",
+        "Add profile/version list/update/preview, carrier validation, batch status/download/retry/error APIs and local exported-state marking only after a completed artifact",
+        "Build an Arabic/English export workspace with saved profiles, filter/selection preview, progress, failure retry, safe filenames and spreadsheet text/formula protections"
+      ],
+      "acceptance": [
+        "Creating an export returns a durable job/batch, generates the requested real XLSX/CSV bytes, stores them outside public root, and authenticated download verifies account, checksum and immutable snapshot metadata",
+        "Profiles support order/line/package/carrier modes and all supported canonical fields with bounded transforms/required-field validation; large exports resume without unbounded memory",
+        "Exported/changed-after-export state is derived only from successful local batches, re-export preserves history and unexport remains permissioned/audited without any remote write",
+        "XLSX/CSV semantic golden, injection, Arabic, account-isolation, retry and browser progress evidence plus migration/index/retention notes are current"
+      ],
+      "validation": ["pnpm test:unit --filter export-engine", "pnpm test:integration --filter exports", "pnpm test:golden --filter spreadsheets", "pnpm test:security --filter exports", "pnpm test:tenant-isolation", "pnpm test:e2e --filter exports", "pnpm typecheck", "pnpm lint", "pnpm format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+    },
+    {
+      "id": "T0811",
+      "epic": "E06",
+      "title": "Implement batch documents ZIP and thermal print operations",
+      "type": "feat",
+      "phase": 8,
+      "priority": "P0",
+      "estimate": "XL",
+      "parallelGroup": "documents-runtime",
+      "dependencies": ["T0810"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/API.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/TESTING.md"],
+      "scope": [
+        "Generate invoice/thermal/label documents from authenticated canonical order snapshots through durable bounded jobs, preserving template versions, checksums and per-order failures",
+        "Add batch merged-PDF/ZIP manifests, document lists/downloads/retries, print preview and exact A4/A5/80mm/100x150mm output without browser headers or public file exposure",
+        "Implement safe invoice identity/sequence configuration as an explicit local policy boundary and keep legal/tax approval external rather than inventing jurisdiction rules"
+      ],
+      "acceptance": [
+        "Batch generation is resumable/idempotent, successful pages remain downloadable when another page fails, and every artifact records account/order/template/snapshot/checksum metadata",
+        "Arabic shaping, RTL/LTR, barcode/QR, long addresses, many lines, mixed language and exact physical dimensions pass deterministic golden/visual assertions",
+        "Document files are authorized through authenticated account-scoped routes with checksum/path validation; templates cannot execute code or fetch network resources",
+        "No legal invoice claim is enabled without configured policy; the task records the exact external approval still required"
+      ],
+      "validation": ["pnpm test:unit --filter documents", "pnpm test:golden --filter thermal", "pnpm test:visual --filter documents", "pnpm test:integration --filter document-jobs", "pnpm test:security --filter documents", "pnpm test:tenant-isolation", "pnpm test:e2e --filter documents", "pnpm test:a11y --filter documents", "pnpm typecheck", "pnpm lint", "pnpm format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+    },
+    {
+      "id": "T0813",
+      "epic": "E07",
+      "title": "Complete analytics rebuild jobs and product administration workspaces",
+      "type": "feat",
+      "phase": 8,
+      "priority": "P1",
+      "estimate": "XL",
+      "parallelGroup": "analytics-admin-ui",
+      "dependencies": ["T0811"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/DEPLOYMENT.md"],
+      "scope": [
+        "Move analytics rebuilds, mapping backfills and maintenance into durable jobs with freshness/coverage/error progress and bounded date/currency scopes; add append-only cost overrides with reasons",
+        "Build authenticated Connections, Exports, Documents, Settings, Members, Operations and field-mapping workspaces, including login/session expiry and default Arabic RTL/LTR switch",
+        "Add route-level loading, empty, retry, forbidden and partial states, accessible navigation and smoke coverage for all locally supported operator journeys"
+      ],
+      "acceptance": [
+        "Analytics remains Woo/manual/combined and currency-separated, explainable and deterministic while rebuild requests return jobs and show freshness rather than blocking HTTP",
+        "All documented primary navigation routes have useful production behavior or a clearly labeled external-only action; no placeholder/no-op control claims completion",
+        "Administration and operations views respect roles, account scope, PII redaction and local-only connector direction; Arabic is default and direction preference persists safely",
+        "E2E, accessibility, visual, security, tenant and job-recovery evidence covers the critical operator journey and documents any external legal/live credentials"
+      ],
+      "validation": ["pnpm test:unit --filter analytics", "pnpm test:integration --filter analytics-facts", "pnpm test:e2e --filter admin", "pnpm test:a11y", "pnpm test:visual", "pnpm test:security", "pnpm test:tenant-isolation", "pnpm typecheck", "pnpm lint", "pnpm format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+    },
+    {
+      "id": "T0814",
+      "epic": "E08",
+      "title": "Certify production readiness and close release evidence gaps",
+      "type": "ops",
+      "phase": 8,
+      "priority": "P0",
+      "estimate": "XL",
+      "parallelGroup": "release",
+      "dependencies": ["T0813", "T0801", "T0802", "T0803", "T0804", "T0805"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/SYNC_AND_CONNECTORS.md", ".agentpack/architecture/DEPLOYMENT.md", ".agentpack/architecture/TESTING.md", ".agentpack/workflows/release.md"],
+      "scope": [
+        "Run fresh and repeated migration, security, isolation, connector certification, job restart, backup/restore, performance and complete critical E2E acceptance against the actual current implementation",
+        "Reconcile all audits, API/data/deployment docs, scripts and CI with delivered behavior; remove critical placeholders and record bounded follow-up or external launch checks",
+        "Inspect generated XLSX/PDF/thermal artifacts, worktree/branch state and main merge history, then publish the final release matrix and production runbook evidence"
+      ],
+      "acceptance": [
+        "Every locally implementable requirement is green with fresh truthful evidence, no unexplained failed/in-progress task remains, and all commits are merged to a clean main",
+        "No P0/P1 defect remains for account isolation, read-only Woo direction, local manual orders, money/time, idempotency, private files, jobs or generated artifact integrity",
+        "Only genuine external launch inputs remain explicitly pending: live Woo authorization/store, Hostinger/DNS/TLS credentials, carrier/legal/tax policy and owner product decisions",
+        "The final report states code-complete status, validation matrix, risks, external inputs, backup/restore status and exact commit/worktree state"
+      ],
+      "validation": ["pnpm install --frozen-lockfile", "pnpm agent:doctor", "pnpm agent:validate", "pnpm format:check", "pnpm lint", "pnpm typecheck", "pnpm test:unit", "pnpm test:integration", "pnpm test:contract", "pnpm test:security", "pnpm test:tenant-isolation", "pnpm test:e2e:critical", "pnpm test:e2e", "pnpm test:a11y", "pnpm test:visual", "pnpm test:golden", "pnpm test:performance", "pnpm test:hostinger", "pnpm security:scan", "pnpm security:audit", "pnpm build", "git diff --check"]
     }
   ]
 }
