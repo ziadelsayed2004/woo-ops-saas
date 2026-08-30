@@ -25,7 +25,14 @@ The API listens on `http://localhost:3000`; health is available at `/health`.
 Create a Node.js application and set its start command to `pnpm --filter @woo-ops/api start` (or
 `node apps/api/dist/index.js`). Set `WOO_OPS_DATA_DIR` to a writable directory outside the public web
 root, configure secrets from `.env.example`, run `pnpm db:migrate`, and expose `/health` as the health
-check. Optional Cron can invoke bounded maintenance for jobs and backups.
+check. Optional Cron can invoke bounded maintenance for jobs and backups. Backups include the SQLite
+snapshot and private generated files, with checksum manifests and dry-run restore:
+
+```text
+pnpm db:maintenance
+pnpm db:restore -- backup-<id>
+pnpm db:restore -- backup-<id> --apply
+```
 
 ## Agent-driven delivery
 

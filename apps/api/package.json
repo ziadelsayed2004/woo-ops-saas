@@ -12,7 +12,11 @@
     "test:e2e": "node --test tests/*.e2e.test.js",
     "start": "node dist/index.js",
     "db:migrate": "tsx src/db-cli.ts migrate",
-    "db:backup": "tsx src/db-cli.ts backup"
+    "db:backup": "tsx src/db-cli.ts backup",
+    "db:restore": "tsx src/db-cli.ts restore",
+    "db:maintenance": "tsx src/db-cli.ts maintenance",
+    "db:list": "tsx src/db-cli.ts list",
+    "test:integration": "tsx --test tests/*.integration.test.js"
   },
   "dependencies": {
     "@woo-ops/contracts": "workspace:*",

@@ -22,7 +22,22 @@ long work is durable and resumed from SQLite.
 
 Backups create a consistent SQLite snapshot, copy private generated files, write a manifest with
 application/schema versions, byte sizes and SHA-256 checksums, and prune only versions beyond the
-configured retention. Restore supports dry-run validation before replacing live data.
+configured retention. Restore supports dry-run validation before replacing live data. The commands
+are safe for Hostinger Cron because they use bounded file/byte limits and never expose the data
+directory through Express:
+
+```text
+pnpm db:backup
+pnpm db:maintenance -- --retention 7 --max-files 10000
+pnpm db:backup -- --retention 7 --max-bytes 1073741824
+pnpm db:restore -- backup-<id>                 # validate only
+pnpm db:restore -- backup-<id> --apply         # replace after validation
+```
+
+Restore validates the manifest, every checksum, SQLite integrity, schema version and foreign keys
+before it stages anything. Replacement happens only after validation; a failed replacement rolls
+the database and private files back to their previous paths. Keep the data directory private and
+run restore while the Node process is stopped so no open SQLite handle can race the replacement.
 
 ## Release gates
 

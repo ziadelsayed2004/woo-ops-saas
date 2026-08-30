@@ -33,7 +33,10 @@
     "test:a11y": "node tools/run-ui-tests.mjs a11y",
     "test:visual": "node tools/run-ui-tests.mjs visual",
     "db:migrate": "pnpm --filter @woo-ops/api db:migrate",
-    "db:backup": "pnpm --filter @woo-ops/api db:backup"
+    "db:backup": "pnpm --filter @woo-ops/api db:backup",
+    "db:restore": "pnpm --filter @woo-ops/api db:restore",
+    "db:maintenance": "pnpm --filter @woo-ops/api db:maintenance",
+    "db:list": "pnpm --filter @woo-ops/api db:list"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",
