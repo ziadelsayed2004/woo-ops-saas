@@ -748,6 +748,35 @@
         "node .agentpack/scripts/agentpack.mjs validate",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0805",
+      "epic": "E08",
+      "title": "Repair Agentpack doctor package-manager detection on Windows",
+      "type": "chore",
+      "phase": 8,
+      "priority": "P1",
+      "estimate": "S",
+      "parallelGroup": "release",
+      "dependencies": ["T0804"],
+      "references": [
+        ".agentpack/scripts/agentpack.mjs",
+        ".agentpack/scripts/lib.mjs",
+        ".agentpack/tasks/README.md"
+      ],
+      "scope": [
+        "Make the Agentpack doctor invoke the installed pnpm.cmd executable on Windows",
+        "Preserve the existing doctor checks and failure semantics on non-Windows platforms"
+      ],
+      "acceptance": [
+        "Agentpack doctor reports pnpm available on Windows when pnpm.cmd is installed",
+        "Agentpack validation and the complete task board remain valid without changing task state semantics"
+      ],
+      "validation": [
+        "node .agentpack/scripts/agentpack.mjs doctor",
+        "node .agentpack/scripts/agentpack.mjs validate",
+        "git diff --check"
+      ]
     }
   ]
 }
