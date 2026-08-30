@@ -40,6 +40,38 @@ export type NormalizedOrderInput = {
   sourceJson: string;
   sourceHash: string;
 };
+export type ManualOrderLineInput = {
+  name: string;
+  sku?: string;
+  productId?: string;
+  variationId?: string;
+  quantity: number;
+  unitPriceMinor: string;
+  discountMinor?: string;
+  taxMinor?: string;
+  notes?: string;
+};
+export type ManualOrderInput = {
+  currency: string;
+  customer?: Record<string, unknown>;
+  billing?: Record<string, unknown>;
+  shipping?: Record<string, unknown>;
+  payment?: Record<string, unknown>;
+  shippingMethod?: Record<string, unknown>;
+  lines: readonly ManualOrderLineInput[];
+  shippingCollectedMinor?: string;
+  taxMinor?: string;
+  discountMinor?: string;
+  feesMinor?: string;
+  localStatus?: string;
+  tags?: readonly string[];
+  notes?: string;
+  assigneeId?: string | null;
+};
+export type ManualOrderPatch = Partial<Omit<ManualOrderInput, 'lines'>> & {
+  lines?: readonly ManualOrderLineInput[];
+  version: number;
+};
 export type OrderFilter =
   | { op: 'and' | 'or'; children: readonly OrderFilter[] }
   | { field: OrderFilterField; operator: string; value?: unknown };
@@ -196,6 +228,126 @@ const serializeBoundedJson = (payload: unknown, maxLength: number, errorCode: st
 };
 const serializeJobPayload = (payload: unknown): string =>
   serializeBoundedJson(payload, 64 * 1024, 'JOB_PAYLOAD_TOO_LARGE');
+
+const parseManualMinor = (value: unknown, code = 'MANUAL_ORDER_AMOUNT_INVALID'): bigint => {
+  if (typeof value !== 'string' || !/^-?\d{1,18}$/.test(value)) throw new Error(code);
+  const amount = BigInt(value);
+  if (amount < 0n) throw new Error(code);
+  return amount;
+};
+const manualMinorText = (amount: bigint): string => amount.toString();
+const manualText = (value: unknown, code: string, maxLength: number): string => {
+  if (typeof value !== 'string' || !value.trim() || value.length > maxLength) throw new Error(code);
+  return value.trim();
+};
+const manualJsonObject = (value: unknown, code: string): Record<string, unknown> => {
+  if (!isRecord(value)) throw new Error(code);
+  serializeBoundedJson(value, 128 * 1024, code.replace('INVALID', 'TOO_LARGE'));
+  return value;
+};
+type NormalizedManualOrder = {
+  currency: string;
+  customer: Record<string, unknown>;
+  billing: Record<string, unknown>;
+  shipping: Record<string, unknown>;
+  payment: Record<string, unknown>;
+  shippingMethod: Record<string, unknown>;
+  lines: Array<Record<string, unknown>>;
+  amounts: Record<string, string>;
+  localStatus: string;
+  tags: string[];
+  notes: string;
+  assigneeId: string | null;
+};
+const normalizeManualOrder = (input: ManualOrderInput): NormalizedManualOrder => {
+  if (!/^[A-Za-z]{3}$/.test(input.currency)) throw new Error('MANUAL_ORDER_CURRENCY_INVALID');
+  if (!Array.isArray(input.lines) || input.lines.length < 1 || input.lines.length > 500)
+    throw new Error('MANUAL_ORDER_LINES_INVALID');
+  const lines: Array<Record<string, unknown>> = [];
+  let merchandiseSubtotal = 0n;
+  let lineDiscount = 0n;
+  let lineTax = 0n;
+  for (const [index, line] of input.lines.entries()) {
+    if (!isRecord(line)) throw new Error('MANUAL_ORDER_LINE_INVALID');
+    const lineRecord = line as Record<string, unknown>;
+    const name = manualText(line.name, 'MANUAL_ORDER_LINE_INVALID', 240);
+    if (typeof line.quantity !== 'number' || !Number.isInteger(line.quantity) || line.quantity < 1)
+      throw new Error('MANUAL_ORDER_LINE_INVALID');
+    if (line.quantity > 100000) throw new Error('MANUAL_ORDER_LINE_INVALID');
+    const unitPrice = parseManualMinor(line.unitPriceMinor, 'MANUAL_ORDER_LINE_AMOUNT_INVALID');
+    const discount = parseManualMinor(
+      line.discountMinor ?? '0',
+      'MANUAL_ORDER_LINE_AMOUNT_INVALID',
+    );
+    const tax = parseManualMinor(line.taxMinor ?? '0', 'MANUAL_ORDER_LINE_AMOUNT_INVALID');
+    const subtotal = unitPrice * BigInt(line.quantity);
+    if (discount > subtotal) throw new Error('MANUAL_ORDER_DISCOUNT_INVALID');
+    const total = subtotal - discount + tax;
+    const normalizedLine: Record<string, unknown> = {
+      lineId: `manual-line-${index + 1}`,
+      name,
+      quantity: line.quantity,
+      unitPriceMinor: manualMinorText(unitPrice),
+      subtotalMinor: manualMinorText(subtotal),
+      discountMinor: manualMinorText(discount),
+      taxMinor: manualMinorText(tax),
+      totalMinor: manualMinorText(total),
+    };
+    for (const key of ['sku', 'productId', 'variationId', 'notes']) {
+      const value = lineRecord[key];
+      if (value !== undefined)
+        normalizedLine[key] = manualText(value, 'MANUAL_ORDER_LINE_INVALID', 500);
+    }
+    lines.push(normalizedLine);
+    merchandiseSubtotal += subtotal;
+    lineDiscount += discount;
+    lineTax += tax;
+  }
+  const orderDiscount = parseManualMinor(input.discountMinor ?? '0');
+  const orderTax = parseManualMinor(input.taxMinor ?? '0');
+  const shipping = parseManualMinor(input.shippingCollectedMinor ?? '0');
+  const fees = parseManualMinor(input.feesMinor ?? '0');
+  const totalDiscount = lineDiscount + orderDiscount;
+  const merchandiseNet = merchandiseSubtotal - totalDiscount;
+  const totalTax = lineTax + orderTax;
+  const grandTotal = merchandiseNet + totalTax + shipping + fees;
+  const tags = [
+    ...new Set((input.tags ?? []).map((tag) => manualText(tag, 'MANUAL_ORDER_TAG_INVALID', 80))),
+  ];
+  if (tags.length > 50) throw new Error('MANUAL_ORDER_TAG_INVALID');
+  const localStatus = input.localStatus
+    ? manualText(input.localStatus, 'MANUAL_ORDER_STATUS_INVALID', 80)
+    : 'new';
+  const notes =
+    input.notes === undefined ? '' : manualText(input.notes, 'MANUAL_ORDER_NOTES_INVALID', 5000);
+  const assigneeId =
+    input.assigneeId === undefined || input.assigneeId === null
+      ? null
+      : manualText(input.assigneeId, 'MANUAL_ORDER_ASSIGNEE_INVALID', 256);
+  return {
+    currency: input.currency.toUpperCase(),
+    customer: manualJsonObject(input.customer ?? {}, 'MANUAL_ORDER_CUSTOMER_INVALID'),
+    billing: manualJsonObject(input.billing ?? {}, 'MANUAL_ORDER_ADDRESS_INVALID'),
+    shipping: manualJsonObject(input.shipping ?? {}, 'MANUAL_ORDER_ADDRESS_INVALID'),
+    payment: manualJsonObject(input.payment ?? {}, 'MANUAL_ORDER_PAYMENT_INVALID'),
+    shippingMethod: manualJsonObject(input.shippingMethod ?? {}, 'MANUAL_ORDER_SHIPPING_INVALID'),
+    lines,
+    amounts: {
+      merchandiseSubtotalMinor: manualMinorText(merchandiseSubtotal),
+      discountMinor: manualMinorText(totalDiscount),
+      merchandiseNetMinor: manualMinorText(merchandiseNet),
+      shippingCollectedMinor: manualMinorText(shipping),
+      taxMinor: manualMinorText(totalTax),
+      feesMinor: manualMinorText(fees),
+      grandTotalMinor: manualMinorText(grandTotal),
+      collectedMinor: manualMinorText(grandTotal),
+    },
+    localStatus,
+    tags,
+    notes,
+    assigneeId,
+  };
+};
 
 const requireHash = (value: string): string => createHash('sha256').update(value).digest('hex');
 const randomId = (): string => randomUUID();
@@ -395,7 +547,7 @@ const compileFilter = (
   return { sql: `${column} ${sqlOperator} ?`, params: [filter.value] };
 };
 
-export const schemaVersion = 9;
+export const schemaVersion = 10;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -605,6 +757,18 @@ const migrations: readonly Migration[] = [
         FOREIGN KEY(account_id, order_id) REFERENCES orders(account_id, id)
       );
       CREATE INDEX bulk_job_items_retry ON bulk_job_items(account_id, job_id, status, updated_at);
+    `,
+  },
+  {
+    version: 10,
+    name: 'manual-orders-and-local-workflow',
+    sql: `
+      ALTER TABLE accounts ADD COLUMN manual_order_sequence INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE orders ADD COLUMN assignee_id TEXT;
+      ALTER TABLE orders ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE orders ADD COLUMN notes_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE orders ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+      CREATE INDEX orders_account_assignee ON orders(account_id, assignee_id, local_status);
     `,
   },
 ];
@@ -1848,7 +2012,7 @@ export class SqliteStore {
     }
     const rows = this.db
       .prepare(
-        `SELECT o.id, o.order_number, o.external_order_id, o.origin, o.connection_id, o.remote_status, o.local_status, o.export_state, o.currency, o.grand_total_minor, o.remote_modified_at, o.updated_at, o.normalized_json, COALESCE(${sortColumn}, '') AS sort_value FROM orders o WHERE ${clauses.join(' AND ')} ORDER BY COALESCE(${sortColumn}, '') ${sort.direction}, o.id ${sort.direction} LIMIT ?`,
+        `SELECT o.id, o.order_number, o.external_order_id, o.origin, o.connection_id, o.remote_status, o.local_status, o.export_state, o.currency, o.grand_total_minor, o.remote_modified_at, o.updated_at, o.normalized_json, o.assignee_id, o.tags_json, o.notes_json, o.version, COALESCE(${sortColumn}, '') AS sort_value FROM orders o WHERE ${clauses.join(' AND ')} ORDER BY COALESCE(${sortColumn}, '') ${sort.direction}, o.id ${sort.direction} LIMIT ?`,
       )
       .all(...params, limit + 1) as Array<Record<string, unknown>>;
     const hasMore = rows.length > limit;
@@ -1860,6 +2024,15 @@ export class SqliteStore {
           normalized = JSON.parse(row.normalized_json) as Record<string, unknown>;
         } catch {
           normalized = {};
+        }
+      }
+      let tags: unknown[] = [];
+      if (typeof row.tags_json === 'string') {
+        try {
+          const parsed = JSON.parse(row.tags_json) as unknown;
+          if (Array.isArray(parsed)) tags = parsed;
+        } catch {
+          tags = [];
         }
       }
       return {
@@ -1876,6 +2049,9 @@ export class SqliteStore {
         grandTotalMinor: row.grand_total_minor,
         remoteCreatedAt: row.remote_modified_at,
         updatedAt: row.updated_at,
+        assigneeId: row.assignee_id,
+        tags,
+        version: row.version,
       };
     });
     const last = visible.at(-1);
@@ -1896,7 +2072,7 @@ export class SqliteStore {
         `SELECT o.id, o.order_number, o.external_order_id, o.origin, o.connection_id,
           o.remote_status, o.local_status, o.export_state, o.currency, o.grand_total_minor,
           o.remote_modified_at, o.remote_deleted_at, o.stale_export_at, o.updated_at,
-          o.normalized_json
+          o.assignee_id, o.tags_json, o.notes_json, o.version, o.normalized_json
          FROM orders o WHERE o.account_id = ? AND o.id = ?`,
       )
       .get(context.accountId, orderId) as Record<string, unknown> | undefined;
@@ -1917,6 +2093,17 @@ export class SqliteStore {
          FROM order_refunds WHERE account_id = ? AND order_id = ? ORDER BY created_at ASC, id ASC`,
       )
       .all(context.accountId, orderId) as Array<Record<string, unknown>>;
+    let tags: unknown[] = [];
+    let notes: unknown[] = [];
+    try {
+      const parsedTags = JSON.parse(String(row.tags_json ?? '[]')) as unknown;
+      if (Array.isArray(parsedTags)) tags = parsedTags;
+      const parsedNotes = JSON.parse(String(row.notes_json ?? '[]')) as unknown;
+      if (Array.isArray(parsedNotes)) notes = parsedNotes;
+    } catch {
+      tags = [];
+      notes = [];
+    }
 
     return {
       ...normalized,
@@ -1934,6 +2121,10 @@ export class SqliteStore {
       remoteDeletedAt: row.remote_deleted_at,
       staleExportAt: row.stale_export_at,
       updatedAt: row.updated_at,
+      assigneeId: row.assignee_id,
+      tags,
+      notesHistory: notes,
+      version: row.version,
       refunds: refunds.length > 0 ? refunds : normalized.refunds,
     };
   }
@@ -2161,6 +2352,186 @@ export class SqliteStore {
         connectionId,
         context.accountId,
       );
+  }
+
+  private assertManualAssignee(context: AccountContext, assigneeId: string | null): void {
+    if (
+      assigneeId &&
+      !this.db
+        .prepare('SELECT 1 FROM account_memberships WHERE account_id = ? AND user_id = ?')
+        .get(context.accountId, assigneeId)
+    )
+      throw new Error('MANUAL_ORDER_ASSIGNEE_INVALID');
+  }
+
+  createManualOrder(context: AccountContext, input: ManualOrderInput): Record<string, unknown> {
+    const actorId = this.requireMutationActor(context);
+    const normalized = normalizeManualOrder(input);
+    this.assertManualAssignee(context, normalized.assigneeId);
+    const now = new Date().toISOString();
+    const id = randomId();
+    const notes = normalized.notes
+      ? [{ id: randomId(), text: normalized.notes, createdAt: now, createdBy: actorId }]
+      : [];
+    const payload = {
+      ...normalized,
+      origin: 'manual',
+      syncPolicy: 'never',
+      inventoryPolicy: 'ignore',
+      createdAt: now,
+      modifiedAt: now,
+      notes: normalized.notes,
+      noteHistory: notes,
+    };
+    const payloadJson = serializeBoundedJson(payload, 512 * 1024, 'MANUAL_ORDER_TOO_LARGE');
+    const result = this.db.transaction(() => {
+      const account = this.db
+        .prepare('SELECT manual_order_sequence FROM accounts WHERE id = ?')
+        .get(context.accountId) as { manual_order_sequence: number } | undefined;
+      if (!account) throw new Error('ACCOUNT_NOT_FOUND');
+      const sequence = account.manual_order_sequence + 1;
+      this.db
+        .prepare('UPDATE accounts SET manual_order_sequence = ?, updated_at = ? WHERE id = ?')
+        .run(sequence, now, context.accountId);
+      const orderNumber = `MAN-${String(sequence).padStart(6, '0')}`;
+      this.db
+        .prepare(
+          `INSERT INTO orders (id, account_id, connection_id, origin, order_number, external_order_id, remote_status, local_status, export_state, currency, grand_total_minor, source_hash, remote_modified_at, remote_payload_json, normalized_json, stale_export_at, assignee_id, tags_json, notes_json, version, created_at, updated_at)
+           VALUES (?, ?, NULL, 'manual', ?, NULL, NULL, ?, 'never-exported', ?, ?, ?, NULL, NULL, ?, NULL, ?, ?, ?, 1, ?, ?)`,
+        )
+        .run(
+          id,
+          context.accountId,
+          orderNumber,
+          normalized.localStatus,
+          normalized.currency,
+          normalized.amounts.grandTotalMinor,
+          requireHash(payloadJson),
+          payloadJson,
+          normalized.assigneeId,
+          JSON.stringify(normalized.tags),
+          JSON.stringify(notes),
+          now,
+          now,
+        );
+      return { id, orderNumber };
+    })();
+    this.audit(context, 'manual-order.created', 'order', result.id, {
+      orderNumber: result.orderNumber,
+      lineCount: normalized.lines.length,
+      currency: normalized.currency,
+    });
+    return this.getOrder(context, result.id) as Record<string, unknown>;
+  }
+
+  updateManualOrder(
+    context: AccountContext,
+    orderId: string,
+    input: ManualOrderPatch,
+  ): Record<string, unknown> {
+    const actorId = this.requireMutationActor(context);
+    if (!Number.isInteger(input.version) || input.version < 1)
+      throw new Error('MANUAL_ORDER_VERSION_INVALID');
+    const row = this.db
+      .prepare(
+        'SELECT origin, export_state, normalized_json, local_status, assignee_id, tags_json, notes_json, version FROM orders WHERE account_id = ? AND id = ?',
+      )
+      .get(context.accountId, orderId) as
+      | {
+          origin: string;
+          export_state: string;
+          normalized_json: string | null;
+          local_status: string;
+          assignee_id: string | null;
+          tags_json: string;
+          notes_json: string;
+          version: number;
+        }
+      | undefined;
+    if (!row || row.origin !== 'manual') throw new Error('MANUAL_ORDER_NOT_FOUND');
+    if (row.version !== input.version) throw new Error('MANUAL_ORDER_VERSION_CONFLICT');
+    const existing = row.normalized_json
+      ? parseStoredJson<Record<string, unknown>>(row.normalized_json, 'MANUAL_ORDER_DATA_INVALID')
+      : {};
+    const current: ManualOrderInput = {
+      currency: String(existing.currency ?? 'EGP'),
+      customer: isRecord(existing.customer) ? existing.customer : {},
+      billing: isRecord(existing.billing) ? existing.billing : {},
+      shipping: isRecord(existing.shipping) ? existing.shipping : {},
+      payment: isRecord(existing.payment) ? existing.payment : {},
+      shippingMethod: isRecord(existing.shippingMethod) ? existing.shippingMethod : {},
+      lines: Array.isArray(existing.lines)
+        ? (existing.lines as unknown as ManualOrderLineInput[])
+        : [],
+      shippingCollectedMinor: String(
+        isRecord(existing.amounts) ? (existing.amounts.shippingCollectedMinor ?? '0') : '0',
+      ),
+      taxMinor: String(isRecord(existing.amounts) ? (existing.amounts.taxMinor ?? '0') : '0'),
+      discountMinor: String(
+        isRecord(existing.amounts) ? (existing.amounts.discountMinor ?? '0') : '0',
+      ),
+      feesMinor: String(isRecord(existing.amounts) ? (existing.amounts.feesMinor ?? '0') : '0'),
+      localStatus: row.local_status,
+      tags: parseStoredJson<unknown[]>(row.tags_json, 'MANUAL_ORDER_DATA_INVALID') as string[],
+      notes: typeof existing.notes === 'string' ? existing.notes : '',
+      assigneeId: row.assignee_id,
+    };
+    const merged: ManualOrderInput = {
+      ...current,
+      ...input,
+      lines: input.lines ?? current.lines,
+    };
+    const normalized = normalizeManualOrder(merged);
+    this.assertManualAssignee(context, normalized.assigneeId);
+    const now = new Date().toISOString();
+    const noteHistory = parseStoredJson<unknown[]>(row.notes_json, 'MANUAL_ORDER_DATA_INVALID');
+    if (input.notes !== undefined && input.notes.trim()) {
+      noteHistory.push({
+        id: randomId(),
+        text: input.notes.trim(),
+        createdAt: now,
+        createdBy: actorId,
+      });
+    }
+    const payload = {
+      ...normalized,
+      origin: 'manual',
+      syncPolicy: 'never',
+      inventoryPolicy: 'ignore',
+      createdAt: existing.createdAt ?? now,
+      modifiedAt: now,
+      noteHistory,
+    };
+    const payloadJson = serializeBoundedJson(payload, 512 * 1024, 'MANUAL_ORDER_TOO_LARGE');
+    const hasDocuments = Array.isArray(existing.documents) && existing.documents.length > 0;
+    const isStale = row.export_state !== 'never-exported' || hasDocuments;
+    const updated = this.db
+      .prepare(
+        `UPDATE orders SET local_status = ?, currency = ?, grand_total_minor = ?, assignee_id = ?, tags_json = ?, notes_json = ?, normalized_json = ?, source_hash = ?, stale_export_at = CASE WHEN ? = 1 THEN COALESCE(stale_export_at, ?) ELSE stale_export_at END, version = version + 1, updated_at = ? WHERE account_id = ? AND id = ? AND origin = 'manual' AND version = ?`,
+      )
+      .run(
+        normalized.localStatus,
+        normalized.currency,
+        normalized.amounts.grandTotalMinor,
+        normalized.assigneeId,
+        JSON.stringify(normalized.tags),
+        JSON.stringify(noteHistory),
+        payloadJson,
+        requireHash(payloadJson),
+        isStale ? 1 : 0,
+        now,
+        now,
+        context.accountId,
+        orderId,
+        input.version,
+      );
+    if (updated.changes !== 1) throw new Error('MANUAL_ORDER_VERSION_CONFLICT');
+    this.audit(context, 'manual-order.updated', 'order', orderId, {
+      version: input.version + 1,
+      stale: isStale,
+      lineCount: normalized.lines.length,
+    });
+    return this.getOrder(context, orderId) as Record<string, unknown>;
   }
 
   upsertRemoteOrder(

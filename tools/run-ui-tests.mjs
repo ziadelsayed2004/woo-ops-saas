@@ -44,7 +44,7 @@ if (result.error) {
   console.error(`Unable to start Playwright: ${result.error.message}`);
   process.exitCode = 1;
 } else {
-  if ((result.status ?? 1) !== 0 || filter || mode !== 'e2e') {
+  if ((result.status ?? 1) !== 0 || mode !== 'e2e') {
     process.exitCode = result.status ?? 1;
   } else {
     process.exitCode = runApiEndToEnd();

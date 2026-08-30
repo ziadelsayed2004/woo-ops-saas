@@ -11,6 +11,8 @@ import {
   savedViewUpdateSchema,
   selectionCreateSchema,
   selectionResolveSchema,
+  manualOrderCreateSchema,
+  manualOrderUpdateSchema,
   healthResponseSchema,
 } from '@woo-ops/contracts';
 import { SqliteStore } from '@woo-ops/persistence';
@@ -18,6 +20,8 @@ import type {
   AccountContext,
   AccountRole,
   BulkAction,
+  ManualOrderInput,
+  ManualOrderPatch,
   OrderQueryInput,
   OrderSort,
   SavedViewVisibility,
@@ -206,6 +210,43 @@ app.get('/api/v1/orders/:orderId', (request, response) => {
     return;
   }
   response.json({ order });
+});
+app.post('/api/v1/manual-orders', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = manualOrderCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'MANUAL_ORDER_INVALID', 'Manual order data is invalid');
+    return;
+  }
+  try {
+    const order = store.createManualOrder(
+      operationContext(user, response),
+      parsed.data as ManualOrderInput,
+    );
+    response.status(201).json({ order });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.patch('/api/v1/manual-orders/:orderId', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = manualOrderUpdateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'MANUAL_ORDER_INVALID', 'Manual order data is invalid');
+    return;
+  }
+  try {
+    const order = store.updateManualOrder(
+      operationContext(user, response),
+      request.params.orderId,
+      parsed.data as ManualOrderPatch,
+    );
+    response.json({ order });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
 });
 app.post('/api/v1/webhooks/woocommerce/:connectionId', (request, response) => {
   const rawBody = (request as Request & { rawBody?: Buffer }).rawBody;
