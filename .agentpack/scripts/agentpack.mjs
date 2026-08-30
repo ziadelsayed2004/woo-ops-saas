@@ -37,7 +37,6 @@ function usage() {
   agentpack.mjs worktree list
   agentpack.mjs worktree prune`);
 }
-
 function assertPackValid() {
   const result = validatePack();
   if (!result.ok) {
@@ -76,7 +75,11 @@ function doctor() {
   checks.push({ name: "Git available", ok: gitVersion.status === 0, detail: gitVersion.stdout.trim() || gitVersion.stderr.trim() });
   checks.push({ name: "Git repository", ok: isGitRepository(), detail: isGitRepository() ? repositoryRoot : "run git init -b main and commit" });
 
-  const pnpm = run("pnpm", ["--version"], { check: false });
+  const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+  const pnpm = run(pnpmCommand, ["--version"], {
+    check: false,
+    shell: process.platform === "win32"
+  });
   checks.push({ name: "pnpm available", ok: pnpm.status === 0, detail: pnpm.stdout?.trim() || "install through Corepack" });
 
   let baseBranchOk = false;

@@ -16,7 +16,6 @@ export function readJson(filePath) {
     throw new Error(`Unable to read JSON ${filePath}: ${error.message}`);
   }
 }
-
 export function loadManifest() {
   return readJson(path.join(agentpackRoot, "manifest.json"));
 }
@@ -30,7 +29,8 @@ export function run(command, args, options = {}) {
     cwd: options.cwd ?? repositoryRoot,
     encoding: "utf8",
     env: options.env ?? process.env,
-    stdio: options.stdio ?? "pipe"
+    stdio: options.stdio ?? "pipe",
+    shell: options.shell ?? false
   });
 
   if (result.error) {
