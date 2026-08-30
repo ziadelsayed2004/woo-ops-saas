@@ -1,6 +1,6 @@
 import express, { type Express, type Request, type Response } from 'express';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import {
   bulkCreateSchema,
@@ -59,6 +59,16 @@ const port = Number(process.env.PORT ?? 3000);
 const dataDirectory = resolve(process.env.WOO_OPS_DATA_DIR ?? './data');
 const databasePath = resolve(process.env.WOO_OPS_DATABASE ?? `${dataDirectory}/woo-ops.sqlite`);
 const documentStorageRoot = resolve(dataDirectory, 'private-documents');
+const webDistCandidates = [
+  process.env.WOO_OPS_WEB_DIST_DIR ? resolve(process.env.WOO_OPS_WEB_DIST_DIR) : undefined,
+  resolve(process.cwd(), 'apps/web/dist'),
+  resolve(process.cwd(), '../web/dist'),
+  resolve(process.cwd(), '../../apps/web/dist'),
+].filter((candidate): candidate is string => candidate !== undefined);
+
+const webDistDirectory = webDistCandidates.find((candidate) =>
+  existsSync(resolve(candidate, 'index.html')),
+);
 const documentFontBytes = process.env.WOO_OPS_DOCUMENT_FONT_PATH
   ? new Uint8Array(readFileSync(resolve(process.env.WOO_OPS_DOCUMENT_FONT_PATH)))
   : undefined;
@@ -1563,6 +1573,25 @@ app.post('/api/v1/analytics/rebuilds', (request, response) => {
 app.get('/api/v1/meta', (_request, response) =>
   response.json({ locale: 'ar-EG', direction: 'rtl', readOnlyConnector: true }),
 );
+
+if (webDistDirectory) {
+  app.use(
+    express.static(webDistDirectory, {
+      dotfiles: 'deny',
+      index: 'index.html',
+      redirect: false,
+    }),
+  );
+  app.get('/{*splat}', (request, response, next) => {
+    if (request.path.startsWith('/api/') || request.path === '/health') {
+      next();
+      return;
+    }
+    response.sendFile(resolve(webDistDirectory, 'index.html'), (error) => {
+      if (error) next(error);
+    });
+  });
+}
 
 app.listen(port, () => console.log(`Woo Ops API listening on ${port}`));
 
