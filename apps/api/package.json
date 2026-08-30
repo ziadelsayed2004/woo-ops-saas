@@ -17,10 +17,11 @@
     "db:maintenance": "tsx src/db-cli.ts maintenance",
     "db:list": "tsx src/db-cli.ts list",
     "test:integration": "tsx --test tests/*.integration.test.js",
-    "test:security": "tsx --test tests/security.integration.test.js",
+    "test:security": "tsx --test tests/*security*.integration.test.js",
     "test:tenant-isolation": "tsx --test tests/tenant-isolation.integration.test.js"
   },
   "dependencies": {
+    "@woo-ops/application": "workspace:*",
     "@woo-ops/contracts": "workspace:*",
     "@woo-ops/connectors": "workspace:*",
     "@woo-ops/documents": "workspace:*",

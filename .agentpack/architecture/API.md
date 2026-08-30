@@ -221,10 +221,22 @@ explicitly without implying that coverage is a date/facet-level estimate.
 GET    /operations/health
 GET    /operations/sync-runs
 GET    /operations/jobs
+GET    /operations/jobs/:id
+POST   /operations/jobs/:id/cancel
 GET    /operations/dead-letters
 POST   /operations/dead-letters/:id/replay
 GET    /operations/usage
 ```
+
+Operations job list/detail responses contain only account-scoped summaries: ID, type, status,
+attempts, progress, lease/cancellation state, timestamps, and a bounded redacted error. They never
+return `payload_json`, raw webhook bodies, credentials, or a client-selected `accountId`. List
+queries use a bounded cursor, limit, closed job-type catalog, and stable `updatedAt/id` ordering.
+`POST /operations/jobs/:id/cancel` requires an owner/admin/operator session and CSRF; dead-letter
+replay has the same permission and resets attempts while preserving the original idempotency key.
+Worker execution derives its account context from the claimed row and has no remote Woo mutation
+port. `/operations/health` reports the authenticated account's queue counts and runner registration
+state; `/operations/usage` reports counts and payload byte totals, not payload values.
 
 `GET /health` and `GET /ready` report database connectivity, applied schema version, private
 storage accessibility, and queue counts. They return `503` with `status: degraded` when a
