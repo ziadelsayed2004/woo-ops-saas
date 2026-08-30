@@ -24,8 +24,21 @@ const runApiEndToEnd = () => {
   return apiTests.status ?? 1;
 };
 
+const runPackageVisual = (packageName) => {
+  const packageManager = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+  const result = spawnSync(packageManager, ['--filter', packageName, 'test:visual'], {
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+  });
+  return result.status ?? 1;
+};
+
 if (filter === 'bulk' || filter === 'api') {
   process.exitCode = runApiEndToEnd();
+  process.exit();
+}
+if (filter === 'documents') {
+  process.exitCode = runPackageVisual('@woo-ops/documents');
   process.exit();
 }
 
