@@ -777,6 +777,54 @@
         "node .agentpack/scripts/agentpack.mjs validate",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0806",
+      "epic": "E08",
+      "title": "Audit production gaps and recover the implementation task graph",
+      "type": "ops",
+      "phase": 8,
+      "priority": "P0",
+      "estimate": "L",
+      "parallelGroup": "release",
+      "dependencies": ["T0805"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/manifest.json",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/API.md",
+        ".agentpack/architecture/DATA_MODEL.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/SYNC_AND_CONNECTORS.md",
+        ".agentpack/architecture/DEPLOYMENT.md",
+        ".agentpack/architecture/TESTING.md",
+        ".agentpack/tasks/README.md",
+        ".agentpack/tasks/registry.json",
+        ".agentpack/prompts/orchestrator.md",
+        ".agentpack/prompts/task-executor.md",
+        ".agentpack/workflows/task-execution.md",
+        ".agentpack/workflows/worktrees.md",
+        ".agentpack/workflows/review.md",
+        ".agentpack/workflows/release.md"
+      ],
+      "scope": [
+        "Compare every PRD/API/UI/architecture requirement with the actual routes, persistence, connector, job, web and test implementation",
+        "Create production-gap, Woo certification and release-acceptance audit matrices with evidence paths and external-only blockers",
+        "Add dependency-ordered recovery tasks for every locally implementable material gap without changing runtime task state manually"
+      ],
+      "acceptance": [
+        "Every functional and non-functional requirement is mapped to implementation evidence, an existing task/result, a new recovery task, or an explicitly external launch check",
+        "The audit identifies route, job-runner, synchronization, connector, export/document, administration, UI and release gaps from the current source rather than trusting completed labels",
+        "The registry remains schema-valid, dependency-ordered, and all new task definitions contain exact validations, security considerations, migration impact and evidence requirements in their scope/acceptance"
+      ],
+      "validation": [
+        "node .agentpack/scripts/agentpack.mjs validate",
+        "node .agentpack/scripts/agentpack.mjs task board",
+        "pnpm format:check",
+        "git diff --check"
+      ]
     }
   ]
 }
