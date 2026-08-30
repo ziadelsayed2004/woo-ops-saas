@@ -18,6 +18,7 @@ export type DocumentTemplate = Readonly<{
   locale?: DocumentLocale;
   direction?: DocumentDirection;
   fontBytes?: Uint8Array;
+  body?: string;
 }>;
 export type DocumentRequest = Readonly<{
   order: DocumentOrder;
@@ -66,6 +67,33 @@ const DOCUMENT_LOCALES: readonly DocumentLocale[] = ['ar-EG', 'en-US'];
 const DOCUMENT_DIRECTIONS: readonly DocumentDirection[] = ['rtl', 'ltr'];
 const MAX_BATCH_DOCUMENTS = 500;
 const MAX_LINES = 100;
+const MAX_TEMPLATE_BODY = 5_000;
+const templateTokenPattern = /\{\{\s*([A-Za-z][A-Za-z0-9_.-]*)\s*\}\}/gu;
+const allowedTemplateTokens = new Set([
+  'order.id',
+  'order.number',
+  'order.orderNumber',
+  'order.currency',
+  'order.totalMinor',
+  'order.grandTotalMinor',
+  'customer.name',
+  'customer.email',
+  'customer.phone',
+  'billing.address',
+  'billing.address_1',
+  'billing.city',
+  'billing.postcode',
+  'shipping.address',
+  'shipping.address_1',
+  'shipping.city',
+  'shipping.postcode',
+  'shipping.country',
+  'document.number',
+  'document.format',
+  'company.name',
+  'company.address',
+  'footer',
+]);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -90,6 +118,63 @@ const orderValue = (order: DocumentOrder, ...paths: string[]): string => {
     if (value !== undefined && value !== null && valueText(value).trim()) return valueText(value);
   }
   return '';
+};
+export type SafeTemplateAnalysis = Readonly<{
+  source: string;
+  tokens: readonly string[];
+}>;
+
+const templateTokenValue = (order: DocumentOrder, token: string): string => {
+  const direct: Record<string, readonly string[]> = {
+    'order.id': ['id', 'orderId'],
+    'order.number': ['orderNumber', 'number', 'id'],
+    'order.orderNumber': ['orderNumber', 'number', 'id'],
+    'order.currency': ['currency'],
+    'order.totalMinor': ['grandTotalMinor', 'total'],
+    'order.grandTotalMinor': ['grandTotalMinor', 'total'],
+    'customer.name': ['customer.name', 'billing.name', 'billing.first_name'],
+    'customer.email': ['customer.email', 'billing.email'],
+    'customer.phone': ['customer.phone', 'billing.phone'],
+    'billing.address': ['billing.address', 'billing.address_1'],
+    'billing.address_1': ['billing.address_1', 'billing.address'],
+    'billing.city': ['billing.city'],
+    'billing.postcode': ['billing.postcode'],
+    'shipping.address': ['shipping.address', 'shipping.address_1'],
+    'shipping.address_1': ['shipping.address_1', 'shipping.address'],
+    'shipping.city': ['shipping.city'],
+    'shipping.postcode': ['shipping.postcode'],
+    'shipping.country': ['shipping.country'],
+  };
+  return orderValue(order, ...(direct[token] ?? []));
+};
+
+export const validateSafeTemplate = (source: string): SafeTemplateAnalysis => {
+  if (
+    typeof source !== 'string' ||
+    source.length > MAX_TEMPLATE_BODY ||
+    /[<>]|javascript\s*:|data\s*:|https?\s*:|url\s*\(|@import|expression\s*\(/iu.test(source) ||
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(source)
+  )
+    throw new Error('DOCUMENT_TEMPLATE_UNSAFE');
+  const tokens: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = templateTokenPattern.exec(source)) !== null) {
+    const token = match[1];
+    if (!token) throw new Error('DOCUMENT_TEMPLATE_TOKEN_INVALID');
+    if (!allowedTemplateTokens.has(token)) throw new Error('DOCUMENT_TEMPLATE_TOKEN_INVALID');
+    tokens.push(token);
+  }
+  templateTokenPattern.lastIndex = 0;
+  if (source.replace(templateTokenPattern, '').includes('{{'))
+    throw new Error('DOCUMENT_TEMPLATE_TOKEN_INVALID');
+  return { source: source.trim(), tokens: [...new Set(tokens)] };
+};
+
+export const renderSafeTemplate = (source: string, order: DocumentOrder): string => {
+  const analysis = validateSafeTemplate(source);
+  return analysis.source.replace(templateTokenPattern, (_match, token: string) =>
+    templateTokenValue(order, token),
+  );
 };
 const assertText = (value: unknown, code: string, max: number, required = true): string => {
   if (typeof value !== 'string' || value.length > max || (required && !value.trim()))
@@ -122,6 +207,7 @@ const normalizeTemplate = (template: DocumentTemplate): DocumentTemplate => {
     ...(template.footerText === undefined
       ? {}
       : { footerText: assertText(template.footerText, 'DOCUMENT_FOOTER_INVALID', 500) }),
+    ...(template.body === undefined ? {} : { body: validateSafeTemplate(template.body).source }),
     locale,
     direction,
     ...(template.fontBytes === undefined ? {} : { fontBytes: template.fontBytes }),
@@ -156,7 +242,17 @@ const snapshotSource = (request: DocumentRequest): string =>
   JSON.stringify({
     orderId: request.orderId ?? orderValue(request.order, 'id', 'orderId', 'orderNumber'),
     format: request.format,
-    template: { id: request.template.id ?? null, version: request.template.version },
+    template: {
+      id: request.template.id ?? null,
+      version: request.template.version,
+      name: request.template.name,
+      companyName: request.template.companyName,
+      companyAddress: request.template.companyAddress ?? null,
+      footerText: request.template.footerText ?? null,
+      body: request.template.body ?? null,
+      locale: request.template.locale ?? null,
+      direction: request.template.direction ?? null,
+    },
     order: request.order,
   }) ?? '{}';
 const rtlText = (value: string, direction: DocumentDirection): string =>
@@ -280,6 +376,18 @@ const drawDocument = async (
     y -= drawWrapped(
       page,
       normalized.template.companyAddress,
+      margin,
+      y,
+      width - margin * 2,
+      font,
+      size,
+      direction,
+    );
+  }
+  if (normalized.template.body) {
+    y -= drawWrapped(
+      page,
+      renderSafeTemplate(normalized.template.body, normalized.order),
       margin,
       y,
       width - margin * 2,
@@ -469,6 +577,8 @@ export const documentPageSize = (
   thermalHeightMm = 150,
 ): readonly [number, number] => {
   if (!DOCUMENT_FORMATS.includes(format)) throw new Error('DOCUMENT_FORMAT_INVALID');
+  if (!Number.isFinite(thermalHeightMm) || thermalHeightMm < 50 || thermalHeightMm > 500)
+    throw new Error('DOCUMENT_THERMAL_HEIGHT_INVALID');
   if (format === 'thermal-80mm') return [80 * MM_TO_POINTS, thermalHeightMm * MM_TO_POINTS];
   return PAGE_SIZES[format];
 };

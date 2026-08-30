@@ -49,6 +49,19 @@ type Order = JsonRecord & {
 };
 type QueryResponse = { items: Order[]; nextCursor: string | null; hasMore: boolean };
 type OrderResponse = { order: Order };
+type DocumentTemplate = {
+  id: string;
+  name: string;
+  format: 'a4' | 'a5' | 'thermal-80mm' | 'label-100x150mm';
+  locale: 'ar-EG' | 'en-US';
+  direction: Direction;
+  version: number;
+  body: string;
+  companyName: string;
+  companyAddress: string | null;
+  footerText: string | null;
+  active: boolean;
+};
 
 const copy = {
   ar: {
@@ -161,6 +174,23 @@ const copy = {
       '\u062a\u062d\u0642\u0642 \u0645\u0646 \u062d\u0642\u0648\u0644 \u0627\u0644\u0637\u0644\u0628',
     createdManual:
       '\u062a\u0645 \u062d\u0641\u0638 \u0627\u0644\u0637\u0644\u0628 \u0627\u0644\u0645\u062d\u0644\u064a',
+    documentsNav: '\u0627\u0644\u0645\u0633\u062a\u0646\u062f\u0627\u062a',
+    documentsTitle:
+      '\u0642\u0648\u0627\u0644\u0628 \u0627\u0644\u0645\u0633\u062a\u0646\u062f\u0627\u062a \u0648\u0627\u0644\u0637\u0628\u0627\u0639\u0629',
+    documentTemplateName: '\u0627\u0633\u0645 \u0627\u0644\u0642\u0627\u0644\u0628',
+    documentCompany: '\u0627\u0633\u0645 \u0627\u0644\u0634\u0631\u0643\u0629',
+    documentBody:
+      '\u0646\u0635 \u0627\u0644\u0642\u0627\u0644\u0628 \u0627\u0644\u0622\u0645\u0646',
+    documentFormat: '\u0627\u0644\u0645\u0642\u0627\u0633',
+    saveTemplate: '\u062d\u0641\u0638 \u0627\u0644\u0642\u0627\u0644\u0628',
+    previewDocument:
+      '\u0645\u0639\u0627\u064a\u0646\u0629 \u0627\u0644\u0645\u0633\u062a\u0646\u062f',
+    printDocument: '\u0637\u0628\u0627\u0639\u0629',
+    templateSafety:
+      '\u064a\u0645\u0643\u0646 \u0627\u0633\u062a\u062e\u062f\u0627\u0645 tokens \u0645\u062d\u062f\u062f\u0629 \u0641\u0642\u0637\u060c \u0648\u0644\u0627 \u064a\u064f\u0633\u0645\u062d HTML \u0623\u0648 \u062c\u0644\u0628 \u0634\u0628\u0643\u064a.',
+    templateTokens: 'order.number, customer.name, shipping.address, order.totalMinor',
+    noTemplates:
+      '\u0644\u0627 \u062a\u0648\u062c\u062f \u0642\u0648\u0627\u0644\u0628 \u0628\u0639\u062f',
   },
   en: {
     app: 'Woo Ops',
@@ -265,6 +295,19 @@ const copy = {
     cancel: 'Cancel',
     invalidManual: 'Check the manual order fields',
     createdManual: 'Manual order saved locally',
+    documentsNav: 'Documents',
+    documentsTitle: 'Document templates & printing',
+    documentTemplateName: 'Template name',
+    documentCompany: 'Company name',
+    documentBody: 'Safe template text',
+    documentFormat: 'Physical size',
+    saveTemplate: 'Save template',
+    previewDocument: 'Preview PDF',
+    printDocument: 'Print',
+    templateSafety:
+      'Only allowlisted tokens are supported. HTML, scripts, and network loads are blocked.',
+    templateTokens: 'order.number, customer.name, shipping.address, order.totalMinor',
+    noTemplates: 'No templates yet',
   },
 } as const;
 
@@ -963,6 +1006,258 @@ function ManualOrderForm({
   );
 }
 
+function DocumentsWorkspace({ direction, t }: { direction: Direction; t: (typeof copy)[Locale] }) {
+  const defaultBody =
+    '{{order.number}}\n{{customer.name}}\n{{shipping.address}}\n{{order.totalMinor}}';
+  const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
+  const [templateId, setTemplateId] = useState('');
+  const [name, setName] = useState('Default invoice');
+  const [companyName, setCompanyName] = useState('Woo Ops');
+  const [body, setBody] = useState(defaultBody);
+  const [format, setFormat] = useState<DocumentTemplate['format']>('a4');
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    void fetch('/api/v1/document-templates', { credentials: 'include' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('DOCUMENT_TEMPLATES_LOAD_FAILED');
+        return (await response.json()) as { items: DocumentTemplate[] };
+      })
+      .then((result) => {
+        if (!active) return;
+        setTemplates(result.items);
+        const first = result.items[0];
+        if (first) {
+          setTemplateId(first.id);
+          setName(first.name);
+          setCompanyName(first.companyName);
+          setBody(first.body);
+          setFormat(first.format);
+        }
+      })
+      .catch(() => {
+        if (active) setError('DOCUMENT_TEMPLATES_LOAD_FAILED');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    },
+    [previewUrl],
+  );
+
+  const csrfToken = () => document.cookie.match(/(?:^|;\s*)woo_ops_csrf=([^;]+)/u)?.[1] ?? '';
+  const save = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const payload = {
+        name,
+        format,
+        direction,
+        locale: direction === 'rtl' ? 'ar-EG' : 'en-US',
+        body,
+        companyName,
+      };
+      const response = await fetch(
+        templateId
+          ? `/api/v1/document-templates/${encodeURIComponent(templateId)}`
+          : '/api/v1/document-templates',
+        {
+          method: templateId ? 'PATCH' : 'POST',
+          credentials: 'include',
+          headers: {
+            'content-type': 'application/json',
+            ...(csrfToken() ? { 'x-csrf-token': csrfToken() } : {}),
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+      if (!response.ok) throw new Error('DOCUMENT_TEMPLATE_SAVE_FAILED');
+      const result = (await response.json()) as { template: DocumentTemplate };
+      setTemplates((current) =>
+        templateId
+          ? current.map((item) => (item.id === result.template.id ? result.template : item))
+          : [result.template, ...current],
+      );
+      setTemplateId(result.template.id);
+    } catch {
+      setError('DOCUMENT_TEMPLATE_SAVE_FAILED');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const preview = async () => {
+    if (!templateId) {
+      setError('DOCUMENT_TEMPLATE_SAVE_FIRST');
+      return;
+    }
+    setError('');
+    try {
+      const response = await fetch(
+        `/api/v1/document-templates/${encodeURIComponent(templateId)}/preview`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'content-type': 'application/json',
+            ...(csrfToken() ? { 'x-csrf-token': csrfToken() } : {}),
+          },
+          body: JSON.stringify({
+            format,
+            order: {
+              id: 'preview-order',
+              orderNumber: 'PREVIEW-001',
+              currency: 'EGP',
+              grandTotalMinor: '12500',
+              billing: { first_name: 'Preview customer', phone: '01000000000' },
+              shipping: { address_1: 'Preview street', city: 'Cairo' },
+            },
+          }),
+        },
+      );
+      if (!response.ok) throw new Error('DOCUMENT_PREVIEW_FAILED');
+      const nextUrl = URL.createObjectURL(await response.blob());
+      setPreviewUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return nextUrl;
+      });
+    } catch {
+      setError('DOCUMENT_PREVIEW_FAILED');
+    }
+  };
+
+  return (
+    <Stack gap={3} data-testid="documents-workspace">
+      <Box>
+        <Typography variant="h4" component="h1" fontWeight={800}>
+          {t.documentsTitle}
+        </Typography>
+        <Typography color="text.secondary">{t.templateSafety}</Typography>
+        <Typography variant="caption" color="text.secondary" dir="ltr">
+          {t.templateTokens}
+        </Typography>
+      </Box>
+      {error && <Alert severity="error">{error}</Alert>}
+      {loading ? (
+        <CircularProgress aria-label={t.loading} />
+      ) : (
+        <Stack direction={{ xs: 'column', lg: 'row' }} gap={3} alignItems="stretch">
+          <Paper variant="outlined" sx={{ p: 3, flex: 1, minWidth: 0 }}>
+            <Stack gap={2}>
+              {templates.length > 0 && (
+                <FormControl size="small">
+                  <InputLabel id="document-template-label">{t.documentTemplateName}</InputLabel>
+                  <Select
+                    labelId="document-template-label"
+                    value={templateId}
+                    label={t.documentTemplateName}
+                    onChange={(event) => {
+                      const selectedTemplate = templates.find(
+                        (item) => item.id === event.target.value,
+                      );
+                      setTemplateId(event.target.value);
+                      if (selectedTemplate) {
+                        setName(selectedTemplate.name);
+                        setCompanyName(selectedTemplate.companyName);
+                        setBody(selectedTemplate.body);
+                        setFormat(selectedTemplate.format);
+                      }
+                    }}
+                  >
+                    {templates.map((item) => (
+                      <MenuItem key={item.id} value={item.id}>
+                        {item.name} v{item.version}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+              <TextField
+                label={t.documentTemplateName}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                required
+              />
+              <TextField
+                label={t.documentCompany}
+                value={companyName}
+                onChange={(event) => setCompanyName(event.target.value)}
+                required
+              />
+              <FormControl size="small">
+                <InputLabel id="document-format-label">{t.documentFormat}</InputLabel>
+                <Select
+                  labelId="document-format-label"
+                  value={format}
+                  label={t.documentFormat}
+                  onChange={(event) => setFormat(event.target.value as DocumentTemplate['format'])}
+                >
+                  <MenuItem value="a4">A4</MenuItem>
+                  <MenuItem value="a5">A5</MenuItem>
+                  <MenuItem value="thermal-80mm">80mm</MenuItem>
+                  <MenuItem value="label-100x150mm">100x150mm</MenuItem>
+                </Select>
+              </FormControl>
+              <TextField
+                label={t.documentBody}
+                value={body}
+                onChange={(event) => setBody(event.target.value)}
+                multiline
+                minRows={8}
+                inputProps={{ 'aria-label': t.documentBody }}
+                helperText={t.templateTokens}
+              />
+              <Stack direction="row" gap={1} flexWrap="wrap">
+                <Button variant="contained" onClick={() => void save()} disabled={saving}>
+                  {saving ? <CircularProgress size={18} aria-label={t.loading} /> : t.saveTemplate}
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={() => void preview()}
+                  disabled={!templateId || saving}
+                >
+                  {t.previewDocument}
+                </Button>
+                <Button variant="text" onClick={() => window.print()} disabled={!previewUrl}>
+                  {t.printDocument}
+                </Button>
+              </Stack>
+            </Stack>
+          </Paper>
+          <Paper variant="outlined" sx={{ p: 2, flex: 1, minHeight: 620 }}>
+            {previewUrl ? (
+              <Box
+                component="iframe"
+                title={t.previewDocument}
+                src={previewUrl}
+                width="100%"
+                height="600px"
+                sx={{ border: 0 }}
+              />
+            ) : (
+              <Box display="grid" minHeight={580} sx={{ placeItems: 'center' }}>
+                <Typography color="text.secondary">{t.noTemplates}</Typography>
+              </Box>
+            )}
+          </Paper>
+        </Stack>
+      )}
+    </Stack>
+  );
+}
+
 export function App({
   locale,
   direction,
@@ -984,7 +1279,7 @@ export function App({
   const [visibleColumns, setVisibleColumns] = useState<string[]>([...columns]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
-  const [view, setView] = useState<'orders' | 'manual'>('orders');
+  const [view, setView] = useState<'orders' | 'manual' | 'documents'>('orders');
 
   const loadOrders = async (append = false) => {
     setLoading(true);
@@ -1076,6 +1371,9 @@ export function App({
           <Button variant="contained" size="small" onClick={() => setView('manual')}>
             {t.manualOrders}
           </Button>
+          <Button variant="outlined" size="small" onClick={() => setView('documents')}>
+            {t.documentsNav}
+          </Button>
           <Button
             onClick={onToggleDirection}
             color="inherit"
@@ -1090,7 +1388,9 @@ export function App({
         </Toolbar>
       </AppBar>
       <Container component="main" maxWidth="xl" sx={{ py: 4 }}>
-        {view === 'manual' ? (
+        {view === 'documents' ? (
+          <DocumentsWorkspace direction={direction} t={t} />
+        ) : view === 'manual' ? (
           <ManualOrderForm
             locale={locale}
             t={t}

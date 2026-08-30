@@ -75,6 +75,49 @@ export const exportMarkOrdersSchema = z
   })
   .strict();
 
+const documentFormatSchema = z.enum(['a4', 'a5', 'thermal-80mm', 'label-100x150mm']);
+const documentLocaleSchema = z.enum(['ar-EG', 'en-US']);
+const documentDirectionSchema = z.enum(['rtl', 'ltr']);
+const documentOrderSchema = z
+  .record(z.string(), z.unknown())
+  .refine((value) => JSON.stringify(value).length <= 128 * 1024, 'Document order is too large');
+export const documentTemplateCreateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    format: documentFormatSchema,
+    locale: documentLocaleSchema.optional(),
+    direction: documentDirectionSchema.optional(),
+    body: z.string().max(5_000).optional(),
+    companyName: z.string().trim().min(1).max(240),
+    companyAddress: z.string().max(500).optional(),
+    footerText: z.string().max(500).optional(),
+  })
+  .strict();
+export const documentTemplateUpdateSchema = documentTemplateCreateSchema
+  .partial()
+  .extend({ active: z.boolean().optional() })
+  .strict();
+export const documentPreviewSchema = z
+  .object({
+    order: documentOrderSchema.default({}),
+    format: documentFormatSchema.optional(),
+    orderId: z.string().trim().min(1).max(256).optional(),
+    documentNumber: z.string().trim().min(1).max(120).optional(),
+    barcodeValue: z.string().trim().min(1).max(120).optional(),
+    qrValue: z.string().trim().min(1).max(500).optional(),
+    thermalHeightMm: z.number().finite().min(50).max(500).optional(),
+  })
+  .strict();
+export const documentJobCreateSchema = z
+  .object({
+    selectionId: z.string().trim().min(1).max(256),
+    action: z.enum(['generate-invoice', 'generate-thermal', 'generate-label', 'print-documents']),
+    templateId: z.string().trim().min(1).max(256),
+    format: documentFormatSchema.optional(),
+    idempotencyKey: z.string().trim().min(1).max(200),
+  })
+  .strict();
+
 const minorAmountSchema = z.string().regex(/^-?\d{1,18}$/);
 const manualJsonObjectSchema = z.record(z.string(), z.unknown());
 const manualLineSchema = z

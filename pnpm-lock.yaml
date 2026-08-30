@@ -29,6 +29,9 @@ importers:
       '@woo-ops/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@woo-ops/documents':
+        specifier: workspace:*
+        version: link:../../packages/documents
       '@woo-ops/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence
@@ -150,6 +153,9 @@ importers:
       '@woo-ops/application':
         specifier: workspace:*
         version: link:../application
+      '@woo-ops/documents':
+        specifier: workspace:*
+        version: link:../documents
       better-sqlite3:
         specifier: ^12.4.1
         version: 12.11.1

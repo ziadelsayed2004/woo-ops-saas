@@ -37,7 +37,7 @@ if (filter === 'bulk' || filter === 'api') {
   process.exitCode = runApiEndToEnd();
   process.exit();
 }
-if (filter === 'documents') {
+if (filter === 'documents' && mode === 'visual') {
   process.exitCode = runPackageVisual('@woo-ops/documents');
   process.exit();
 }

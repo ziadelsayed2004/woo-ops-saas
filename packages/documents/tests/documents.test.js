@@ -6,6 +6,8 @@ import {
   documentPageSize,
   generateDocument,
   generateDocumentBatch,
+  renderSafeTemplate,
+  validateSafeTemplate,
 } from '../dist/index.js';
 
 const fontPath = [
@@ -40,6 +42,29 @@ test('document page presets use exact physical dimensions', () => {
   assert.deepEqual(documentPageSize('a5'), [148 * mm, 210 * mm]);
   assert.deepEqual(documentPageSize('thermal-80mm'), [80 * mm, 150 * mm]);
   assert.deepEqual(documentPageSize('label-100x150mm'), [100 * mm, 150 * mm]);
+  assert.throws(() => documentPageSize('thermal-80mm', 20), /DOCUMENT_THERMAL_HEIGHT_INVALID/);
+});
+
+test('safe templates allowlisted tokens only and never evaluate markup or URLs', () => {
+  const input = {
+    id: 'order-100',
+    orderNumber: '100',
+    currency: 'EGP',
+    grandTotalMinor: '125050',
+    billing: { first_name: 'Template Customer', phone: '0100' },
+  };
+  const analysis = validateSafeTemplate('Order {{order.number}} — {{customer.name}}');
+  assert.deepEqual(analysis.tokens, ['order.number', 'customer.name']);
+  assert.equal(renderSafeTemplate(analysis.source, input), 'Order 100 — Template Customer');
+  assert.throws(
+    () => validateSafeTemplate('{{order.password}}'),
+    /DOCUMENT_TEMPLATE_TOKEN_INVALID/,
+  );
+  assert.throws(
+    () => validateSafeTemplate('<img src="https://evil.test">'),
+    /DOCUMENT_TEMPLATE_UNSAFE/,
+  );
+  assert.throws(() => validateSafeTemplate('{{order.number}'), /DOCUMENT_TEMPLATE_TOKEN_INVALID/);
 });
 
 test('Arabic A4 document embeds a font, QR/barcode assets, and is reproducible', async (t) => {
@@ -47,7 +72,13 @@ test('Arabic A4 document embeds a font, QR/barcode assets, and is reproducible',
     t.skip('No Arabic-capable system font is available in this test environment');
     return;
   }
-  const request = { order, format: 'a4', template, orderId: 'order-100', qrValue: 'https://example.test/o/100' };
+  const request = {
+    order,
+    format: 'a4',
+    template,
+    orderId: 'order-100',
+    qrValue: 'https://example.test/o/100',
+  };
   const first = await generateDocument(request);
   const second = await generateDocument(request);
   assert.equal(first.pageCount, 1);

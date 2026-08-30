@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
+import { validateSafeTemplate } from '@woo-ops/documents';
 
 export type AccountRole = 'owner' | 'admin' | 'operator' | 'viewer';
 export type AccountContext = Readonly<{
@@ -266,6 +267,38 @@ export type OrderExportEvent = Readonly<{
   type: ExportEventType;
   snapshotHash: string | null;
   reason: string | null;
+  createdBy: string;
+  createdAt: string;
+}>;
+export type DocumentTemplateFormat = 'a4' | 'a5' | 'thermal-80mm' | 'label-100x150mm';
+export type DocumentTemplateRecord = Readonly<{
+  id: string;
+  accountId: string;
+  name: string;
+  format: DocumentTemplateFormat;
+  locale: 'ar-EG' | 'en-US';
+  direction: 'rtl' | 'ltr';
+  version: number;
+  body: string;
+  companyName: string;
+  companyAddress: string | null;
+  footerText: string | null;
+  active: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}>;
+export type DocumentFileRecord = Readonly<{
+  id: string;
+  accountId: string;
+  orderId: string;
+  templateId: string;
+  format: DocumentTemplateFormat;
+  relativePath: string;
+  filename: string;
+  mimeType: 'application/pdf';
+  byteSize: number;
+  checksum: string;
   createdBy: string;
   createdAt: string;
 }>;
@@ -611,7 +644,7 @@ const compileFilter = (
   return { sql: `${column} ${sqlOperator} ?`, params: [filter.value] };
 };
 
-export const schemaVersion = 12;
+export const schemaVersion = 13;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -890,6 +923,45 @@ const migrations: readonly Migration[] = [
       CREATE INDEX order_export_events_account_batch ON order_export_events(account_id, batch_id, created_at, id);
     `,
   },
+  {
+    version: 13,
+    name: 'document-templates-and-private-files',
+    sql: `
+      CREATE TABLE document_templates (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id),
+        name TEXT NOT NULL, format TEXT NOT NULL CHECK(format IN ('a4', 'a5', 'thermal-80mm', 'label-100x150mm')),
+        locale TEXT NOT NULL CHECK(locale IN ('ar-EG', 'en-US')),
+        direction TEXT NOT NULL CHECK(direction IN ('rtl', 'ltr')),
+        version INTEGER NOT NULL CHECK(version >= 1), body TEXT NOT NULL DEFAULT '',
+        company_name TEXT NOT NULL, company_address TEXT, footer_text TEXT,
+        active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
+        created_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE(account_id, name), UNIQUE(account_id, id)
+      );
+      CREATE TABLE document_template_revisions (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), template_id TEXT NOT NULL,
+        version INTEGER NOT NULL CHECK(version >= 1), format TEXT NOT NULL CHECK(format IN ('a4', 'a5', 'thermal-80mm', 'label-100x150mm')),
+        locale TEXT NOT NULL CHECK(locale IN ('ar-EG', 'en-US')),
+        direction TEXT NOT NULL CHECK(direction IN ('rtl', 'ltr')),
+        body TEXT NOT NULL DEFAULT '', company_name TEXT NOT NULL, company_address TEXT, footer_text TEXT,
+        created_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL,
+        UNIQUE(account_id, template_id, version), UNIQUE(account_id, id),
+        FOREIGN KEY(account_id, template_id) REFERENCES document_templates(account_id, id)
+      );
+      CREATE INDEX document_template_revisions_account_template ON document_template_revisions(account_id, template_id, version DESC);
+      CREATE TABLE document_files (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), order_id TEXT NOT NULL,
+        template_id TEXT NOT NULL, format TEXT NOT NULL CHECK(format IN ('a4', 'a5', 'thermal-80mm', 'label-100x150mm')),
+        relative_path TEXT NOT NULL, filename TEXT NOT NULL, mime_type TEXT NOT NULL CHECK(mime_type = 'application/pdf'),
+        byte_size INTEGER NOT NULL CHECK(byte_size >= 1 AND byte_size <= 50 * 1024 * 1024),
+        checksum TEXT NOT NULL, created_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL,
+        UNIQUE(account_id, id), UNIQUE(account_id, checksum),
+        FOREIGN KEY(account_id, order_id) REFERENCES orders(account_id, id),
+        FOREIGN KEY(account_id, template_id) REFERENCES document_templates(account_id, id)
+      );
+      CREATE INDEX document_files_account_order ON document_files(account_id, order_id, created_at DESC, id);
+    `,
+  },
 ];
 
 const MAX_SELECTION_IDS = 5_000;
@@ -1071,8 +1143,45 @@ type OrderExportEventRow = {
   created_by: string;
   created_at: string;
 };
+type DocumentTemplateRow = {
+  id: string;
+  account_id: string;
+  name: string;
+  format: DocumentTemplateFormat;
+  locale: 'ar-EG' | 'en-US';
+  direction: 'rtl' | 'ltr';
+  version: number;
+  body: string;
+  company_name: string;
+  company_address: string | null;
+  footer_text: string | null;
+  active: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+type DocumentFileRow = {
+  id: string;
+  account_id: string;
+  order_id: string;
+  template_id: string;
+  format: DocumentTemplateFormat;
+  relative_path: string;
+  filename: string;
+  mime_type: 'application/pdf';
+  byte_size: number;
+  checksum: string;
+  created_by: string;
+  created_at: string;
+};
 const exportFormats: readonly ExportFormat[] = ['csv', 'xlsx'];
 const exportRowModes: readonly ExportRowMode[] = ['order', 'line', 'package', 'carrier'];
+const documentFormats: readonly DocumentTemplateFormat[] = [
+  'a4',
+  'a5',
+  'thermal-80mm',
+  'label-100x150mm',
+];
 const exportColumnTypes: readonly NonNullable<ExportColumn['type']>[] = [
   'text',
   'number',
@@ -1120,6 +1229,65 @@ const normalizeExportRowMode = (value: unknown): ExportRowMode => {
     throw new Error('EXPORT_ROW_MODE_INVALID');
   return value as ExportRowMode;
 };
+const normalizeDocumentText = (
+  value: unknown,
+  code: string,
+  max: number,
+  optional = false,
+): string => {
+  if (optional && value === undefined) return '';
+  if (typeof value !== 'string' || value.length > max || (!optional && !value.trim()))
+    throw new Error(code);
+  return value.trim();
+};
+const normalizeDocumentFormat = (value: unknown): DocumentTemplateFormat => {
+  if (typeof value !== 'string' || !documentFormats.includes(value as DocumentTemplateFormat))
+    throw new Error('DOCUMENT_FORMAT_INVALID');
+  return value as DocumentTemplateFormat;
+};
+const normalizeDocumentLocale = (value: unknown): 'ar-EG' | 'en-US' => {
+  if (value !== 'ar-EG' && value !== 'en-US') throw new Error('DOCUMENT_LOCALE_INVALID');
+  return value;
+};
+const normalizeDocumentDirection = (value: unknown): 'rtl' | 'ltr' => {
+  if (value !== 'rtl' && value !== 'ltr') throw new Error('DOCUMENT_DIRECTION_INVALID');
+  return value;
+};
+const normalizeDocumentBody = (value: unknown): string => {
+  const body = normalizeDocumentText(value, 'DOCUMENT_TEMPLATE_BODY_INVALID', 5_000, true);
+  return validateSafeTemplate(body).source;
+};
+const documentTemplate = (row: DocumentTemplateRow): DocumentTemplateRecord => ({
+  id: row.id,
+  accountId: row.account_id,
+  name: row.name,
+  format: row.format,
+  locale: row.locale,
+  direction: row.direction,
+  version: row.version,
+  body: row.body,
+  companyName: row.company_name,
+  companyAddress: row.company_address,
+  footerText: row.footer_text,
+  active: row.active === 1,
+  createdBy: row.created_by,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+const documentFile = (row: DocumentFileRow): DocumentFileRecord => ({
+  id: row.id,
+  accountId: row.account_id,
+  orderId: row.order_id,
+  templateId: row.template_id,
+  format: row.format,
+  relativePath: row.relative_path,
+  filename: row.filename,
+  mimeType: row.mime_type,
+  byteSize: row.byte_size,
+  checksum: row.checksum,
+  createdBy: row.created_by,
+  createdAt: row.created_at,
+});
 const exportProfile = (row: ExportProfileRow): ExportProfile => ({
   id: row.id,
   accountId: row.account_id,
@@ -1918,6 +2086,324 @@ export class SqliteStore {
         )
         .get(context.accountId, eventId) as OrderExportEventRow,
     );
+  }
+
+  private documentTemplateRow(context: AccountContext, templateId: string): DocumentTemplateRow {
+    this.assertMember(context);
+    const row = this.db
+      .prepare(
+        `SELECT id, account_id, name, format, locale, direction, version, body,
+          company_name, company_address, footer_text, active, created_by, created_at, updated_at
+         FROM document_templates WHERE account_id = ? AND id = ?`,
+      )
+      .get(context.accountId, templateId) as DocumentTemplateRow | undefined;
+    if (!row) throw new Error('DOCUMENT_TEMPLATE_NOT_FOUND');
+    return row;
+  }
+
+  createDocumentTemplate(
+    context: AccountContext,
+    input: {
+      name: string;
+      format: DocumentTemplateFormat;
+      locale?: 'ar-EG' | 'en-US';
+      direction?: 'rtl' | 'ltr';
+      body?: string;
+      companyName: string;
+      companyAddress?: string;
+      footerText?: string;
+    },
+  ): DocumentTemplateRecord {
+    const actorId = this.requireMutationActor(context);
+    const name = normalizeDocumentText(input.name, 'DOCUMENT_TEMPLATE_NAME_INVALID', 120);
+    const format = normalizeDocumentFormat(input.format);
+    const locale = normalizeDocumentLocale(input.locale ?? 'ar-EG');
+    const direction = normalizeDocumentDirection(
+      input.direction ?? (locale === 'ar-EG' ? 'rtl' : 'ltr'),
+    );
+    const body = normalizeDocumentBody(input.body);
+    const companyName = normalizeDocumentText(input.companyName, 'DOCUMENT_COMPANY_INVALID', 240);
+    const companyAddress =
+      input.companyAddress === undefined
+        ? null
+        : normalizeDocumentText(input.companyAddress, 'DOCUMENT_COMPANY_ADDRESS_INVALID', 500);
+    const footerText =
+      input.footerText === undefined
+        ? null
+        : normalizeDocumentText(input.footerText, 'DOCUMENT_FOOTER_INVALID', 500);
+    const existing = this.db
+      .prepare('SELECT id FROM document_templates WHERE account_id = ? AND name = ?')
+      .get(context.accountId, name);
+    if (existing) throw new Error('DOCUMENT_TEMPLATE_NAME_EXISTS');
+    const id = randomId();
+    const revisionId = randomId();
+    const now = new Date().toISOString();
+    this.db.transaction(() => {
+      const updated = this.db
+        .prepare(
+          `INSERT INTO document_templates
+            (id, account_id, name, format, locale, direction, version, body, company_name,
+             company_address, footer_text, active, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 1, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          context.accountId,
+          name,
+          format,
+          locale,
+          direction,
+          body,
+          companyName,
+          companyAddress,
+          footerText,
+          actorId,
+          now,
+          now,
+        );
+      this.db
+        .prepare(
+          `INSERT INTO document_template_revisions
+            (id, account_id, template_id, version, format, locale, direction, body,
+             company_name, company_address, footer_text, created_by, created_at)
+           VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          revisionId,
+          context.accountId,
+          id,
+          format,
+          locale,
+          direction,
+          body,
+          companyName,
+          companyAddress,
+          footerText,
+          actorId,
+          now,
+        );
+    })();
+    this.audit(context, 'document-template.created', 'document_template', id, { version: 1 });
+    return documentTemplate(this.documentTemplateRow(context, id));
+  }
+
+  listDocumentTemplates(context: AccountContext): DocumentTemplateRecord[] {
+    this.assertMember(context);
+    const rows = this.db
+      .prepare(
+        `SELECT id, account_id, name, format, locale, direction, version, body,
+          company_name, company_address, footer_text, active, created_by, created_at, updated_at
+         FROM document_templates WHERE account_id = ? ORDER BY name COLLATE NOCASE, id`,
+      )
+      .all(context.accountId) as DocumentTemplateRow[];
+    return rows.map(documentTemplate);
+  }
+
+  getDocumentTemplate(context: AccountContext, templateId: string): DocumentTemplateRecord {
+    return documentTemplate(this.documentTemplateRow(context, templateId));
+  }
+
+  updateDocumentTemplate(
+    context: AccountContext,
+    templateId: string,
+    input: Partial<{
+      name: string;
+      format: DocumentTemplateFormat;
+      locale: 'ar-EG' | 'en-US';
+      direction: 'rtl' | 'ltr';
+      body: string;
+      companyName: string;
+      companyAddress: string | null;
+      footerText: string | null;
+      active: boolean;
+    }>,
+  ): DocumentTemplateRecord {
+    const actorId = this.requireMutationActor(context);
+    const current = this.documentTemplateRow(context, templateId);
+    const name =
+      input.name === undefined
+        ? current.name
+        : normalizeDocumentText(input.name, 'DOCUMENT_TEMPLATE_NAME_INVALID', 120);
+    const format =
+      input.format === undefined ? current.format : normalizeDocumentFormat(input.format);
+    const locale =
+      input.locale === undefined ? current.locale : normalizeDocumentLocale(input.locale);
+    const direction =
+      input.direction === undefined
+        ? current.direction
+        : normalizeDocumentDirection(input.direction);
+    const body = input.body === undefined ? current.body : normalizeDocumentBody(input.body);
+    const companyName =
+      input.companyName === undefined
+        ? current.company_name
+        : normalizeDocumentText(input.companyName, 'DOCUMENT_COMPANY_INVALID', 240);
+    const companyAddress =
+      input.companyAddress === undefined
+        ? current.company_address
+        : input.companyAddress === null
+          ? null
+          : normalizeDocumentText(input.companyAddress, 'DOCUMENT_COMPANY_ADDRESS_INVALID', 500);
+    const footerText =
+      input.footerText === undefined
+        ? current.footer_text
+        : input.footerText === null
+          ? null
+          : normalizeDocumentText(input.footerText, 'DOCUMENT_FOOTER_INVALID', 500);
+    if (name !== current.name) {
+      const existing = this.db
+        .prepare('SELECT id FROM document_templates WHERE account_id = ? AND name = ? AND id <> ?')
+        .get(context.accountId, name, templateId);
+      if (existing) throw new Error('DOCUMENT_TEMPLATE_NAME_EXISTS');
+    }
+    const version = current.version + 1;
+    const now = new Date().toISOString();
+    this.db.transaction(() => {
+      const updated = this.db
+        .prepare(
+          `UPDATE document_templates SET name = ?, format = ?, locale = ?, direction = ?,
+            version = ?, body = ?, company_name = ?, company_address = ?, footer_text = ?,
+            active = ?, updated_at = ? WHERE account_id = ? AND id = ? AND version = ?`,
+        )
+        .run(
+          name,
+          format,
+          locale,
+          direction,
+          version,
+          body,
+          companyName,
+          companyAddress,
+          footerText,
+          input.active === undefined ? current.active : input.active ? 1 : 0,
+          now,
+          context.accountId,
+          templateId,
+          current.version,
+        );
+      if (updated.changes !== 1) throw new Error('DOCUMENT_TEMPLATE_VERSION_CONFLICT');
+      this.db
+        .prepare(
+          `INSERT INTO document_template_revisions
+            (id, account_id, template_id, version, format, locale, direction, body,
+             company_name, company_address, footer_text, created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          randomId(),
+          context.accountId,
+          templateId,
+          version,
+          format,
+          locale,
+          direction,
+          body,
+          companyName,
+          companyAddress,
+          footerText,
+          actorId,
+          now,
+        );
+    })();
+    this.audit(context, 'document-template.updated', 'document_template', templateId, { version });
+    return documentTemplate(this.documentTemplateRow(context, templateId));
+  }
+
+  registerDocumentFile(
+    context: AccountContext,
+    input: {
+      id: string;
+      orderId: string;
+      templateId: string;
+      format: DocumentTemplateFormat;
+      relativePath: string;
+      filename: string;
+      byteSize: number;
+      checksum: string;
+    },
+  ): DocumentFileRecord {
+    const actorId = this.requireMutationActor(context);
+    if (!/^[A-Za-z0-9_-]{1,80}(?:\/[A-Za-z0-9_-]{1,80})*\.pdf$/u.test(input.relativePath))
+      throw new Error('DOCUMENT_FILE_PATH_INVALID');
+    const filename = normalizeDocumentText(input.filename, 'DOCUMENT_FILE_NAME_INVALID', 180);
+    if (/[\r\n]/u.test(filename) || !filename.toLowerCase().endsWith('.pdf'))
+      throw new Error('DOCUMENT_FILE_NAME_INVALID');
+    if (
+      !Number.isInteger(input.byteSize) ||
+      input.byteSize < 1 ||
+      input.byteSize > 50 * 1024 * 1024
+    )
+      throw new Error('DOCUMENT_FILE_SIZE_INVALID');
+    if (!/^[a-f0-9]{64}$/iu.test(input.checksum)) throw new Error('DOCUMENT_FILE_CHECKSUM_INVALID');
+    this.documentTemplateRow(context, input.templateId);
+    const order = this.db
+      .prepare('SELECT id FROM orders WHERE account_id = ? AND id = ?')
+      .get(context.accountId, input.orderId);
+    if (!order) throw new Error('ORDER_NOT_FOUND');
+    const now = new Date().toISOString();
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO document_files
+            (id, account_id, order_id, template_id, format, relative_path, filename,
+             mime_type, byte_size, checksum, created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'application/pdf', ?, ?, ?, ?)`,
+        )
+        .run(
+          input.id,
+          context.accountId,
+          input.orderId,
+          input.templateId,
+          normalizeDocumentFormat(input.format),
+          input.relativePath,
+          filename,
+          input.byteSize,
+          input.checksum.toLowerCase(),
+          actorId,
+          now,
+        );
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE')) {
+        const existing = this.db
+          .prepare(
+            `SELECT id, account_id, order_id, template_id, format, relative_path, filename,
+              mime_type, byte_size, checksum, created_by, created_at
+             FROM document_files WHERE account_id = ? AND id = ?`,
+          )
+          .get(context.accountId, input.id) as DocumentFileRow | undefined;
+        if (existing && existing.checksum === input.checksum.toLowerCase())
+          return documentFile(existing);
+      }
+      throw error;
+    }
+    this.audit(context, 'document-file.created', 'document_file', input.id, {
+      orderId: input.orderId,
+    });
+    return this.getDocumentFile(context, input.id);
+  }
+
+  getDocumentFile(context: AccountContext, fileId: string): DocumentFileRecord {
+    this.assertMember(context);
+    const row = this.db
+      .prepare(
+        `SELECT id, account_id, order_id, template_id, format, relative_path, filename,
+          mime_type, byte_size, checksum, created_by, created_at
+         FROM document_files WHERE account_id = ? AND id = ?`,
+      )
+      .get(context.accountId, fileId) as DocumentFileRow | undefined;
+    if (!row) throw new Error('DOCUMENT_FILE_NOT_FOUND');
+    return documentFile(row);
+  }
+
+  listDocumentFiles(context: AccountContext, orderId: string): DocumentFileRecord[] {
+    this.assertMember(context);
+    const rows = this.db
+      .prepare(
+        `SELECT id, account_id, order_id, template_id, format, relative_path, filename,
+          mime_type, byte_size, checksum, created_by, created_at
+         FROM document_files WHERE account_id = ? AND order_id = ? ORDER BY created_at DESC, id DESC`,
+      )
+      .all(context.accountId, orderId) as DocumentFileRow[];
+    return rows.map(documentFile);
   }
 
   private normalizeColumns(value: unknown): string[] {

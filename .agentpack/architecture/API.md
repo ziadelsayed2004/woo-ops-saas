@@ -160,15 +160,17 @@ POST   /orders/:orderId/export-state/unexport
 ```text
 GET    /document-templates
 POST   /document-templates
-POST   /document-templates/:id/versions
+PATCH  /document-templates/:id
 POST   /document-templates/:id/preview
+POST   /document-templates/:id/orders/:orderId
 
 POST   /document-jobs
-GET    /document-jobs/:id
-GET    /documents
-GET    /documents/:id
-GET    /documents/:id/download
-POST   /documents/:id/supersede
+GET    /orders/:orderId/documents
+GET    /document-files/:fileId
+
+Document file responses are private, account-scoped, authenticated, checksum-verified PDF
+streams; they are not served from the public data directory. Template bodies accept only the
+allowlisted tokens described in the UI specification and cannot load HTML, scripts, or URLs.
 ```
 
 ## Analytics
