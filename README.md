@@ -22,17 +22,24 @@ The API listens on `http://localhost:3000`; health is available at `/health`.
 
 ## Hostinger deployment
 
-Create a Node.js application and set its start command to `pnpm --filter @woo-ops/api start` (or
-`node apps/api/dist/index.js`). Set `WOO_OPS_DATA_DIR` to a writable directory outside the public web
-root, configure secrets from `.env.example`, run `pnpm db:migrate`, and expose `/health` as the health
-check. Optional Cron can invoke bounded maintenance for jobs and backups. Backups include the SQLite
-snapshot and private generated files, with checksum manifests and dry-run restore:
+Create a Node.js application and set its start command to `node apps/api/dist/index.js` from the
+repository root (or `node dist/index.js` when the application root is `apps/api`). Set
+`WOO_OPS_DATA_DIR` to a writable directory outside the public web root, configure production secrets
+from `.env.example`, run `pnpm db:migrate`, and expose `/health` as the health check. The API serves
+the built Vite application from `apps/web/dist`; set `WOO_OPS_WEB_DIST_DIR` when Hostinger uses a
+different working directory. Optional Cron can invoke bounded maintenance for jobs and backups.
+Backups include the SQLite snapshot and private generated files, with checksum manifests and dry-run
+restore:
 
 ```text
 pnpm db:maintenance
 pnpm db:restore -- backup-<id>
 pnpm db:restore -- backup-<id> --apply
 ```
+
+Before release, run `pnpm test:hostinger`, `pnpm test:e2e:critical`, and `pnpm test:performance`.
+These verify the production start/health/backup path, repeat the fixture-only critical operator
+journey, and enforce documented 10k/100k-order SQLite performance budgets.
 
 ## Agent-driven delivery
 

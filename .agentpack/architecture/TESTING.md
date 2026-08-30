@@ -101,6 +101,21 @@ pnpm test:tenant-isolation
 pnpm build
 ```
 
+The release-readiness gate also runs the repeated critical journey, SQLite capacity checks, and a
+production-style Hostinger start/health/backup smoke test:
+
+```bash
+pnpm test:e2e:critical
+pnpm test:performance
+pnpm test:hostinger
+```
+
+`test:e2e:critical` builds the monorepo, runs the API E2E suite, and repeats the complete fixture
+journey in isolated temporary data directories. `test:performance` seeds 10k and 100k synthetic
+orders and enforces p95 budgets for list, filter, search, cross-page selection, and job round trips.
+`test:hostinger` starts the built single Node process in production mode, checks `/health` and the
+served web shell, then validates backup listing and restore dry-run behavior.
+
 The security certification gate is:
 
 ```bash
