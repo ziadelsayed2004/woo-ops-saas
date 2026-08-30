@@ -150,6 +150,9 @@ importers:
 
   packages/persistence:
     dependencies:
+      '@woo-ops/analytics':
+        specifier: workspace:*
+        version: link:../analytics
       '@woo-ops/application':
         specifier: workspace:*
         version: link:../application

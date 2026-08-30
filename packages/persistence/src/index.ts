@@ -1,6 +1,19 @@
 import Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
 import { validateSafeTemplate } from '@woo-ops/documents';
+import {
+  calculateOrderMetrics,
+  dateKeyInTimezone,
+  dimensionsFingerprint,
+  metricDefinitions,
+} from '@woo-ops/analytics';
+import type {
+  AnalyticsSource,
+  CostRule,
+  CostRuleScope,
+  MetricTotals,
+  OrderMetricResult,
+} from '@woo-ops/analytics';
 
 export type AccountRole = 'owner' | 'admin' | 'operator' | 'viewer';
 export type AccountContext = Readonly<{
@@ -72,6 +85,54 @@ export type ManualOrderInput = {
 export type ManualOrderPatch = Partial<Omit<ManualOrderInput, 'lines'>> & {
   lines?: readonly ManualOrderLineInput[];
   version: number;
+};
+export type CostRuleRecord = CostRule & {
+  accountId: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+export type OrderCostSnapshotRecord = {
+  id: string;
+  accountId: string;
+  orderId: string;
+  lineId: string;
+  ruleId: string | null;
+  currency: string;
+  source: string;
+  effectiveAt: string | null;
+  quantity: number;
+  unitCostMinor: string;
+  totalCostMinor: string;
+  sourceHash: string | null;
+  createdAt: string;
+};
+export type DailyAnalyticsFactRecord = {
+  accountId: string;
+  date: string;
+  currency: string;
+  source: Exclude<AnalyticsSource, 'combined'>;
+  dimensions: Record<string, unknown>;
+  orderCount: number;
+  lineCount: number;
+  totals: MetricTotals;
+  metricsVersion: number;
+  rebuiltAt: string;
+};
+export type AnalyticsFilter = {
+  from?: string;
+  to?: string;
+  source?: AnalyticsSource;
+  currency?: string;
+};
+export type AnalyticsRebuildResult = {
+  from: string | null;
+  to: string | null;
+  factsWritten: number;
+  ordersIncluded: number;
+  ordersExcluded: number;
+  snapshotsWritten: number;
+  rebuiltAt: string;
 };
 export type OrderFilter =
   | { op: 'and' | 'or'; children: readonly OrderFilter[] }
@@ -644,7 +705,7 @@ const compileFilter = (
   return { sql: `${column} ${sqlOperator} ?`, params: [filter.value] };
 };
 
-export const schemaVersion = 13;
+export const schemaVersion = 14;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -962,6 +1023,46 @@ const migrations: readonly Migration[] = [
       CREATE INDEX document_files_account_order ON document_files(account_id, order_id, created_at DESC, id);
     `,
   },
+  {
+    version: 14,
+    name: 'analytics-cost-rules-and-daily-facts',
+    sql: `
+      CREATE TABLE cost_rules (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id),
+        scope TEXT NOT NULL CHECK(scope IN ('product', 'variation', 'shipping', 'payment', 'return')),
+        rule_key TEXT NOT NULL, currency TEXT NOT NULL CHECK(length(currency) = 3),
+        amount_minor TEXT NOT NULL, source TEXT NOT NULL, effective_from TEXT NOT NULL,
+        effective_to TEXT, version INTEGER NOT NULL CHECK(version >= 1),
+        active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
+        created_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE(account_id, id), UNIQUE(account_id, scope, rule_key, currency, effective_from)
+      );
+      CREATE INDEX cost_rules_account_lookup ON cost_rules(account_id, scope, rule_key, currency, effective_from DESC);
+      CREATE TABLE order_cost_snapshots (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), order_id TEXT NOT NULL,
+        line_id TEXT NOT NULL, rule_id TEXT, currency TEXT NOT NULL CHECK(length(currency) = 3),
+        source TEXT NOT NULL, effective_at TEXT, quantity INTEGER NOT NULL CHECK(quantity >= 0),
+        unit_cost_minor TEXT NOT NULL, total_cost_minor TEXT NOT NULL, source_hash TEXT,
+        created_at TEXT NOT NULL, UNIQUE(account_id, id), UNIQUE(account_id, order_id, line_id),
+        FOREIGN KEY(account_id, order_id) REFERENCES orders(account_id, id),
+        FOREIGN KEY(account_id, rule_id) REFERENCES cost_rules(account_id, id)
+      );
+      CREATE INDEX order_cost_snapshots_account_order ON order_cost_snapshots(account_id, order_id, line_id);
+      CREATE TABLE daily_order_facts (
+        account_id TEXT NOT NULL REFERENCES accounts(id), fact_date TEXT NOT NULL,
+        currency TEXT NOT NULL CHECK(length(currency) = 3), source TEXT NOT NULL CHECK(source IN ('woo', 'manual')),
+        dimension_hash TEXT NOT NULL, dimensions_json TEXT NOT NULL,
+        order_count INTEGER NOT NULL CHECK(order_count >= 0), line_count INTEGER NOT NULL CHECK(line_count >= 0),
+        gross_sales_minor TEXT NOT NULL, discount_minor TEXT NOT NULL, net_merchandise_minor TEXT NOT NULL,
+        shipping_collected_minor TEXT NOT NULL, tax_minor TEXT NOT NULL, refunds_minor TEXT NOT NULL,
+        collected_revenue_minor TEXT NOT NULL, cogs_minor TEXT NOT NULL, actual_shipping_cost_minor TEXT NOT NULL,
+        payment_fees_minor TEXT NOT NULL, return_cost_minor TEXT NOT NULL, contribution_profit_minor TEXT NOT NULL,
+        metrics_version INTEGER NOT NULL DEFAULT 1 CHECK(metrics_version >= 1), rebuilt_at TEXT NOT NULL,
+        PRIMARY KEY(account_id, fact_date, currency, source, dimension_hash)
+      );
+      CREATE INDEX daily_order_facts_account_date ON daily_order_facts(account_id, fact_date, currency, source);
+    `,
+  },
 ];
 
 const MAX_SELECTION_IDS = 5_000;
@@ -1174,6 +1275,61 @@ type DocumentFileRow = {
   created_by: string;
   created_at: string;
 };
+type CostRuleRow = {
+  id: string;
+  account_id: string;
+  scope: CostRuleScope;
+  rule_key: string;
+  currency: string;
+  amount_minor: string;
+  source: string;
+  effective_from: string;
+  effective_to: string | null;
+  version: number;
+  active: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+type OrderCostSnapshotRow = {
+  id: string;
+  account_id: string;
+  order_id: string;
+  line_id: string;
+  rule_id: string | null;
+  currency: string;
+  source: string;
+  effective_at: string | null;
+  quantity: number;
+  unit_cost_minor: string;
+  total_cost_minor: string;
+  source_hash: string | null;
+  created_at: string;
+};
+type DailyAnalyticsFactRow = {
+  account_id: string;
+  fact_date: string;
+  currency: string;
+  source: 'woo' | 'manual';
+  dimension_hash: string;
+  dimensions_json: string;
+  order_count: number;
+  line_count: number;
+  gross_sales_minor: string;
+  discount_minor: string;
+  net_merchandise_minor: string;
+  shipping_collected_minor: string;
+  tax_minor: string;
+  refunds_minor: string;
+  collected_revenue_minor: string;
+  cogs_minor: string;
+  actual_shipping_cost_minor: string;
+  payment_fees_minor: string;
+  return_cost_minor: string;
+  contribution_profit_minor: string;
+  metrics_version: number;
+  rebuilt_at: string;
+};
 const exportFormats: readonly ExportFormat[] = ['csv', 'xlsx'];
 const exportRowModes: readonly ExportRowMode[] = ['order', 'line', 'package', 'carrier'];
 const documentFormats: readonly DocumentTemplateFormat[] = [
@@ -1257,6 +1413,73 @@ const normalizeDocumentBody = (value: unknown): string => {
   const body = normalizeDocumentText(value, 'DOCUMENT_TEMPLATE_BODY_INVALID', 5_000, true);
   return validateSafeTemplate(body).source;
 };
+const analyticsScopes: readonly CostRuleScope[] = [
+  'product',
+  'variation',
+  'shipping',
+  'payment',
+  'return',
+];
+const normalizeAnalyticsScope = (value: unknown): CostRuleScope => {
+  if (typeof value !== 'string' || !analyticsScopes.includes(value as CostRuleScope))
+    throw new Error('COST_RULE_SCOPE_INVALID');
+  return value as CostRuleScope;
+};
+const normalizeAnalyticsCurrency = (value: unknown): string => {
+  if (typeof value !== 'string' || !/^[A-Za-z]{3}$/u.test(value))
+    throw new Error('ANALYTICS_CURRENCY_INVALID');
+  return value.toUpperCase();
+};
+const normalizeAnalyticsMinor = (value: unknown): string => {
+  if (typeof value !== 'string' || !/^(?:0|[1-9]\d{0,17})$/u.test(value))
+    throw new Error('COST_RULE_AMOUNT_INVALID');
+  return BigInt(value).toString();
+};
+const normalizeAnalyticsDate = (value: unknown, code: string): string => {
+  if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) throw new Error(code);
+  return new Date(value).toISOString();
+};
+const normalizeAnalyticsKey = (value: unknown): string => {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 256)
+    throw new Error('COST_RULE_KEY_INVALID');
+  if (!/^[A-Za-z0-9_:.\-/*]+$/u.test(value)) throw new Error('COST_RULE_KEY_INVALID');
+  return value;
+};
+const normalizeAnalyticsDateKey = (value: unknown): string => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/u.test(value))
+    throw new Error('ANALYTICS_DATE_INVALID');
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value)
+    throw new Error('ANALYTICS_DATE_INVALID');
+  return value;
+};
+const analyticsMetricKeys: readonly (keyof MetricTotals)[] = [
+  'grossSalesMinor',
+  'discountMinor',
+  'netMerchandiseMinor',
+  'shippingCollectedMinor',
+  'taxMinor',
+  'refundsMinor',
+  'collectedRevenueMinor',
+  'cogsMinor',
+  'actualShippingCostMinor',
+  'paymentFeesMinor',
+  'returnCostMinor',
+  'contributionProfitMinor',
+];
+const analyticsMinor = (value: string): bigint => {
+  if (!/^-?\d{1,18}$/u.test(value)) throw new Error('ANALYTICS_DATA_INVALID');
+  return BigInt(value);
+};
+const emptyAnalyticsTotals = (): MetricTotals =>
+  Object.fromEntries(analyticsMetricKeys.map((key) => [key, '0'])) as MetricTotals;
+const addAnalyticsTotals = (left: MetricTotals, right: MetricTotals): MetricTotals =>
+  Object.fromEntries(
+    analyticsMetricKeys.map((key) => [
+      key,
+      (analyticsMinor(left[key]) + analyticsMinor(right[key])).toString(),
+    ]),
+  ) as MetricTotals;
 const documentTemplate = (row: DocumentTemplateRow): DocumentTemplateRecord => ({
   id: row.id,
   accountId: row.account_id,
@@ -1287,6 +1510,65 @@ const documentFile = (row: DocumentFileRow): DocumentFileRecord => ({
   checksum: row.checksum,
   createdBy: row.created_by,
   createdAt: row.created_at,
+});
+const costRule = (row: CostRuleRow): CostRuleRecord => ({
+  id: row.id,
+  accountId: row.account_id,
+  scope: row.scope,
+  key: row.rule_key,
+  currency: row.currency,
+  amountMinor: row.amount_minor,
+  source: row.source,
+  effectiveFrom: row.effective_from,
+  effectiveTo: row.effective_to,
+  version: row.version,
+  active: row.active === 1,
+  createdBy: row.created_by,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+const orderCostSnapshot = (row: OrderCostSnapshotRow): OrderCostSnapshotRecord => ({
+  id: row.id,
+  accountId: row.account_id,
+  orderId: row.order_id,
+  lineId: row.line_id,
+  ruleId: row.rule_id,
+  currency: row.currency,
+  source: row.source,
+  effectiveAt: row.effective_at,
+  quantity: row.quantity,
+  unitCostMinor: row.unit_cost_minor,
+  totalCostMinor: row.total_cost_minor,
+  sourceHash: row.source_hash,
+  createdAt: row.created_at,
+});
+const dailyAnalyticsFact = (row: DailyAnalyticsFactRow): DailyAnalyticsFactRecord => ({
+  accountId: row.account_id,
+  date: row.fact_date,
+  currency: row.currency,
+  source: row.source,
+  dimensions: parseStoredJson<Record<string, unknown>>(
+    row.dimensions_json,
+    'ANALYTICS_DATA_INVALID',
+  ),
+  orderCount: row.order_count,
+  lineCount: row.line_count,
+  totals: {
+    grossSalesMinor: row.gross_sales_minor,
+    discountMinor: row.discount_minor,
+    netMerchandiseMinor: row.net_merchandise_minor,
+    shippingCollectedMinor: row.shipping_collected_minor,
+    taxMinor: row.tax_minor,
+    refundsMinor: row.refunds_minor,
+    collectedRevenueMinor: row.collected_revenue_minor,
+    cogsMinor: row.cogs_minor,
+    actualShippingCostMinor: row.actual_shipping_cost_minor,
+    paymentFeesMinor: row.payment_fees_minor,
+    returnCostMinor: row.return_cost_minor,
+    contributionProfitMinor: row.contribution_profit_minor,
+  },
+  metricsVersion: row.metrics_version,
+  rebuiltAt: row.rebuilt_at,
 });
 const exportProfile = (row: ExportProfileRow): ExportProfile => ({
   id: row.id,
@@ -2086,6 +2368,580 @@ export class SqliteStore {
         )
         .get(context.accountId, eventId) as OrderExportEventRow,
     );
+  }
+
+  listCostRules(
+    context: AccountContext,
+    input: { scope?: CostRuleScope; currency?: string } = {},
+  ): CostRuleRecord[] {
+    this.assertMember(context);
+    const clauses = ['account_id = ?'];
+    const params: (string | number)[] = [context.accountId];
+    if (input.scope !== undefined) {
+      clauses.push('scope = ?');
+      params.push(normalizeAnalyticsScope(input.scope));
+    }
+    if (input.currency !== undefined) {
+      clauses.push('currency = ?');
+      params.push(normalizeAnalyticsCurrency(input.currency));
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT id, account_id, scope, rule_key, currency, amount_minor, source,
+          effective_from, effective_to, version, active, created_by, created_at, updated_at
+         FROM cost_rules WHERE ${clauses.join(' AND ')} ORDER BY effective_from DESC, id DESC`,
+      )
+      .all(...params) as CostRuleRow[];
+    return rows.map(costRule);
+  }
+
+  createCostRule(
+    context: AccountContext,
+    input: {
+      scope: CostRuleScope;
+      key: string;
+      currency: string;
+      amountMinor: string;
+      source: string;
+      effectiveFrom: string;
+      effectiveTo?: string | null;
+      active?: boolean;
+    },
+  ): CostRuleRecord {
+    const actorId = this.requireMutationActor(context);
+    const scope = normalizeAnalyticsScope(input.scope);
+    const key = normalizeAnalyticsKey(input.key);
+    const currency = normalizeAnalyticsCurrency(input.currency);
+    const amountMinor = normalizeAnalyticsMinor(input.amountMinor);
+    const source = normalizeDocumentText(input.source, 'COST_RULE_SOURCE_INVALID', 120);
+    const effectiveFrom = normalizeAnalyticsDate(input.effectiveFrom, 'COST_RULE_DATE_INVALID');
+    const effectiveTo =
+      input.effectiveTo === undefined || input.effectiveTo === null
+        ? null
+        : normalizeAnalyticsDate(input.effectiveTo, 'COST_RULE_DATE_INVALID');
+    if (effectiveTo !== null && effectiveTo <= effectiveFrom)
+      throw new Error('COST_RULE_DATE_RANGE_INVALID');
+    const active = input.active ?? true;
+    if (active) {
+      const overlap = this.db
+        .prepare(
+          `SELECT id FROM cost_rules
+           WHERE account_id = ? AND scope = ? AND rule_key = ? AND currency = ? AND active = 1
+             AND effective_from < COALESCE(?, '9999-12-31T23:59:59.999Z')
+             AND COALESCE(effective_to, '9999-12-31T23:59:59.999Z') > ? LIMIT 1`,
+        )
+        .get(context.accountId, scope, key, currency, effectiveTo, effectiveFrom);
+      if (overlap) throw new Error('COST_RULE_DATE_OVERLAP');
+    }
+    const versionRow = this.db
+      .prepare(
+        'SELECT COALESCE(MAX(version), 0) AS version FROM cost_rules WHERE account_id = ? AND scope = ? AND rule_key = ? AND currency = ?',
+      )
+      .get(context.accountId, scope, key, currency) as { version: number };
+    const version = versionRow.version + 1;
+    const id = randomId();
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO cost_rules
+          (id, account_id, scope, rule_key, currency, amount_minor, source, effective_from,
+           effective_to, version, active, created_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        context.accountId,
+        scope,
+        key,
+        currency,
+        amountMinor,
+        source,
+        effectiveFrom,
+        effectiveTo,
+        version,
+        active ? 1 : 0,
+        actorId,
+        now,
+        now,
+      );
+    this.audit(context, 'cost-rule.created', 'cost_rule', id, {
+      scope,
+      key,
+      currency,
+      effectiveFrom,
+      version,
+    });
+    return costRule(
+      this.db
+        .prepare(
+          `SELECT id, account_id, scope, rule_key, currency, amount_minor, source,
+            effective_from, effective_to, version, active, created_by, created_at, updated_at
+           FROM cost_rules WHERE account_id = ? AND id = ?`,
+        )
+        .get(context.accountId, id) as CostRuleRow,
+    );
+  }
+
+  updateCostRule(
+    context: AccountContext,
+    ruleId: string,
+    input: { active?: boolean; effectiveTo?: string | null },
+  ): CostRuleRecord {
+    const role = this.assertMember(context);
+    if (role !== 'owner' && role !== 'admin') throw new Error('COST_RULE_PERMISSION_DENIED');
+    const actorId = this.requireMutationActor(context);
+    const current = this.db
+      .prepare(
+        `SELECT id, account_id, scope, rule_key, currency, amount_minor, source,
+          effective_from, effective_to, version, active, created_by, created_at, updated_at
+         FROM cost_rules WHERE account_id = ? AND id = ?`,
+      )
+      .get(context.accountId, ruleId) as CostRuleRow | undefined;
+    if (!current) throw new Error('COST_RULE_NOT_FOUND');
+    const active = input.active === undefined ? current.active === 1 : input.active;
+    const effectiveTo =
+      input.effectiveTo === undefined
+        ? current.effective_to
+        : input.effectiveTo === null
+          ? null
+          : normalizeAnalyticsDate(input.effectiveTo, 'COST_RULE_DATE_INVALID');
+    if (effectiveTo !== null && effectiveTo <= current.effective_from)
+      throw new Error('COST_RULE_DATE_RANGE_INVALID');
+    if (active) {
+      const overlap = this.db
+        .prepare(
+          `SELECT id FROM cost_rules
+           WHERE account_id = ? AND scope = ? AND rule_key = ? AND currency = ? AND active = 1 AND id <> ?
+             AND effective_from < COALESCE(?, '9999-12-31T23:59:59.999Z')
+             AND COALESCE(effective_to, '9999-12-31T23:59:59.999Z') > ? LIMIT 1`,
+        )
+        .get(
+          context.accountId,
+          current.scope,
+          current.rule_key,
+          current.currency,
+          ruleId,
+          effectiveTo,
+          current.effective_from,
+        );
+      if (overlap) throw new Error('COST_RULE_DATE_OVERLAP');
+    }
+    const now = new Date().toISOString();
+    const changed = this.db
+      .prepare(
+        `UPDATE cost_rules SET active = ?, effective_to = ?, version = version + 1, updated_at = ?
+         WHERE account_id = ? AND id = ?`,
+      )
+      .run(active ? 1 : 0, effectiveTo, now, context.accountId, ruleId);
+    if (changed.changes !== 1) throw new Error('COST_RULE_NOT_FOUND');
+    this.audit(context, 'cost-rule.updated', 'cost_rule', ruleId, {
+      active,
+      effectiveTo,
+      actorId,
+    });
+    return costRule(
+      this.db
+        .prepare(
+          `SELECT id, account_id, scope, rule_key, currency, amount_minor, source,
+            effective_from, effective_to, version, active, created_by, created_at, updated_at
+           FROM cost_rules WHERE account_id = ? AND id = ?`,
+        )
+        .get(context.accountId, ruleId) as CostRuleRow,
+    );
+  }
+
+  listOrderCostSnapshots(context: AccountContext, orderId: string): OrderCostSnapshotRecord[] {
+    this.assertMember(context);
+    const rows = this.db
+      .prepare(
+        `SELECT id, account_id, order_id, line_id, rule_id, currency, source, effective_at,
+          quantity, unit_cost_minor, total_cost_minor, source_hash, created_at
+         FROM order_cost_snapshots WHERE account_id = ? AND order_id = ? ORDER BY line_id`,
+      )
+      .all(context.accountId, orderId) as OrderCostSnapshotRow[];
+    return rows.map(orderCostSnapshot);
+  }
+
+  private analyticsFactRows(
+    context: AccountContext,
+    input: AnalyticsFilter = {},
+  ): DailyAnalyticsFactRow[] {
+    this.assertMember(context);
+    const clauses = ['account_id = ?'];
+    const params: (string | number)[] = [context.accountId];
+    if (input.from !== undefined) {
+      clauses.push('fact_date >= ?');
+      params.push(normalizeAnalyticsDateKey(input.from));
+    }
+    if (input.to !== undefined) {
+      clauses.push('fact_date <= ?');
+      params.push(normalizeAnalyticsDateKey(input.to));
+    }
+    if (input.source !== undefined && input.source !== 'combined') {
+      clauses.push('source = ?');
+      params.push(input.source);
+    }
+    if (input.currency !== undefined) {
+      clauses.push('currency = ?');
+      params.push(normalizeAnalyticsCurrency(input.currency));
+    }
+    return this.db
+      .prepare(
+        `SELECT account_id, fact_date, currency, source, dimension_hash, dimensions_json,
+          order_count, line_count, gross_sales_minor, discount_minor, net_merchandise_minor,
+          shipping_collected_minor, tax_minor, refunds_minor, collected_revenue_minor, cogs_minor,
+          actual_shipping_cost_minor, payment_fees_minor, return_cost_minor, contribution_profit_minor,
+          metrics_version, rebuilt_at FROM daily_order_facts WHERE ${clauses.join(' AND ')}
+         ORDER BY fact_date ASC, currency ASC, source ASC, dimension_hash ASC`,
+      )
+      .all(...params) as DailyAnalyticsFactRow[];
+  }
+
+  listAnalyticsFacts(
+    context: AccountContext,
+    input: AnalyticsFilter = {},
+  ): DailyAnalyticsFactRecord[] {
+    return this.analyticsFactRows(context, input).map(dailyAnalyticsFact);
+  }
+
+  getAnalyticsSummary(context: AccountContext, input: AnalyticsFilter = {}) {
+    const rows = this.analyticsFactRows(context, input);
+    const byCurrency = new Map<
+      string,
+      { orderCount: number; lineCount: number; totals: MetricTotals }
+    >();
+    for (const row of rows) {
+      const current = byCurrency.get(row.currency) ?? {
+        orderCount: 0,
+        lineCount: 0,
+        totals: emptyAnalyticsTotals(),
+      };
+      current.orderCount += row.order_count;
+      current.lineCount += row.line_count;
+      current.totals = addAnalyticsTotals(current.totals, dailyAnalyticsFact(row).totals);
+      byCurrency.set(row.currency, current);
+    }
+    return {
+      source: input.source ?? 'combined',
+      from: input.from ?? null,
+      to: input.to ?? null,
+      excludedStatuses: ['cancelled', 'failed', 'trash'],
+      metricsVersion: 1,
+      definitions: metricDefinitions(),
+      currencies: [...byCurrency.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([currency, value]) => ({ currency, ...value })),
+    };
+  }
+
+  getAnalyticsTimeseries(context: AccountContext, input: AnalyticsFilter = {}) {
+    const rows = this.analyticsFactRows(context, input);
+    const values = new Map<
+      string,
+      {
+        date: string;
+        currency: string;
+        source: 'woo' | 'manual';
+        orderCount: number;
+        lineCount: number;
+        totals: MetricTotals;
+      }
+    >();
+    for (const row of rows) {
+      const key = `${row.fact_date}|${row.currency}|${row.source}`;
+      const current = values.get(key) ?? {
+        date: row.fact_date,
+        currency: row.currency,
+        source: row.source,
+        orderCount: 0,
+        lineCount: 0,
+        totals: emptyAnalyticsTotals(),
+      };
+      current.orderCount += row.order_count;
+      current.lineCount += row.line_count;
+      current.totals = addAnalyticsTotals(current.totals, dailyAnalyticsFact(row).totals);
+      values.set(key, current);
+    }
+    return { source: input.source ?? 'combined', items: [...values.values()] };
+  }
+
+  getAnalyticsBreakdown(
+    context: AccountContext,
+    input: AnalyticsFilter & {
+      dimension?:
+        'source' | 'currency' | 'channel' | 'pos' | 'shippingMethod' | 'paymentMethod' | 'status';
+    } = {},
+  ) {
+    const dimension = input.dimension ?? 'source';
+    const rows = this.analyticsFactRows(context, input);
+    const values = new Map<
+      string,
+      { key: string; currency: string; orderCount: number; lineCount: number; totals: MetricTotals }
+    >();
+    for (const row of rows) {
+      const dimensions = dailyAnalyticsFact(row).dimensions;
+      const value =
+        dimension === 'source'
+          ? row.source
+          : dimension === 'currency'
+            ? row.currency
+            : dimension === 'status'
+              ? String(dimensions.remoteStatus ?? dimensions.localStatus ?? 'unknown')
+              : String(dimensions[dimension] ?? 'unknown');
+      const mapKey = `${row.currency}|${value}`;
+      const current = values.get(mapKey) ?? {
+        key: value,
+        currency: row.currency,
+        orderCount: 0,
+        lineCount: 0,
+        totals: emptyAnalyticsTotals(),
+      };
+      current.orderCount += row.order_count;
+      current.lineCount += row.line_count;
+      current.totals = addAnalyticsTotals(current.totals, dailyAnalyticsFact(row).totals);
+      values.set(mapKey, current);
+    }
+    return {
+      dimension,
+      source: input.source ?? 'combined',
+      items: [...values.values()].sort((left, right) => left.key.localeCompare(right.key)),
+    };
+  }
+
+  rebuildAnalyticsFacts(
+    context: AccountContext,
+    input: AnalyticsFilter = {},
+  ): AnalyticsRebuildResult {
+    this.assertMember(context);
+    const from = input.from === undefined ? null : normalizeAnalyticsDateKey(input.from);
+    const to = input.to === undefined ? null : normalizeAnalyticsDateKey(input.to);
+    if (from !== null && to !== null && from > to) throw new Error('ANALYTICS_DATE_RANGE_INVALID');
+    const currency =
+      input.currency === undefined ? undefined : normalizeAnalyticsCurrency(input.currency);
+    const source = input.source ?? 'combined';
+    const account = this.db
+      .prepare('SELECT timezone FROM accounts WHERE id = ?')
+      .get(context.accountId) as { timezone: string } | undefined;
+    if (!account) throw new Error('ACCOUNT_NOT_FOUND');
+    const rules = this.listCostRules(context);
+    const orderRows = this.db
+      .prepare(
+        `SELECT id, origin, connection_id, order_number, external_order_id, remote_status,
+          local_status, export_state, stale_export_at, currency, grand_total_minor, source_hash,
+          remote_modified_at, normalized_json, created_at FROM orders WHERE account_id = ? ORDER BY id ASC`,
+      )
+      .all(context.accountId) as Array<Record<string, unknown>>;
+    const snapshotSelect = this.db.prepare(
+      `SELECT id, account_id, order_id, line_id, rule_id, currency, source, effective_at,
+        quantity, unit_cost_minor, total_cost_minor, source_hash, created_at
+       FROM order_cost_snapshots WHERE account_id = ? AND order_id = ? ORDER BY line_id`,
+    );
+    const snapshotsInsert = this.db.prepare(
+      `INSERT OR IGNORE INTO order_cost_snapshots
+        (id, account_id, order_id, line_id, rule_id, currency, source, effective_at, quantity,
+         unit_cost_minor, total_cost_minor, source_hash, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const facts = new Map<
+      string,
+      {
+        date: string;
+        currency: string;
+        source: 'woo' | 'manual';
+        dimensions: Record<string, unknown>;
+        orderCount: number;
+        lineCount: number;
+        totals: MetricTotals;
+      }
+    >();
+    let included = 0;
+    let excluded = 0;
+    let snapshotsWritten = 0;
+    const rebuiltAt = new Date().toISOString();
+    const results: Array<{ row: Record<string, unknown>; result: OrderMetricResult }> = [];
+    for (const row of orderRows) {
+      const rowSource = row.origin === 'manual' ? 'manual' : 'woo';
+      if (source !== 'combined' && source !== rowSource) continue;
+      if (currency !== undefined && row.currency !== currency) continue;
+      const normalized = row.normalized_json
+        ? parseStoredJson<Record<string, unknown>>(
+            String(row.normalized_json),
+            'ANALYTICS_DATA_INVALID',
+          )
+        : {};
+      const storedSnapshots = snapshotSelect.all(
+        context.accountId,
+        row.id,
+      ) as OrderCostSnapshotRow[];
+      const snapshotMap = new Map(
+        storedSnapshots.map((item) => [item.line_id, orderCostSnapshot(item)]),
+      );
+      const lines = Array.isArray(normalized.lines)
+        ? normalized.lines.map((line) => {
+            if (!isRecord(line)) return line;
+            const lineKey =
+              typeof line.lineId === 'string'
+                ? line.lineId
+                : typeof line.id === 'string'
+                  ? line.id
+                  : '';
+            const snapshot = snapshotMap.get(lineKey);
+            return snapshot
+              ? {
+                  ...line,
+                  costSnapshot: {
+                    ruleId: snapshot.ruleId,
+                    source: snapshot.source,
+                    effectiveAt: snapshot.effectiveAt,
+                    unitCostMinor: snapshot.unitCostMinor,
+                  },
+                }
+              : line;
+          })
+        : [];
+      const order: Record<string, unknown> = {
+        ...normalized,
+        id: String(row.id),
+        orderNumber: row.order_number,
+        externalOrderId: row.external_order_id,
+        origin: rowSource,
+        remoteStatus: row.remote_status,
+        localStatus: row.local_status,
+        exportState:
+          row.stale_export_at && row.export_state === 'exported'
+            ? 'changed-after-export'
+            : row.export_state,
+        currency: row.currency,
+        grandTotalMinor: row.grand_total_minor,
+        remoteCreatedAt: row.remote_modified_at,
+        createdAt: row.created_at,
+        lines,
+      };
+      const result = calculateOrderMetrics(order, rules);
+      const date = dateKeyInTimezone(result.date, account.timezone);
+      if ((from !== null && date < from) || (to !== null && date > to)) continue;
+      if (!result.included) {
+        excluded += 1;
+        continue;
+      }
+      included += 1;
+      results.push({ row, result });
+      const key = `${date}|${result.currency}|${result.source}|${dimensionsFingerprint(result.dimensions)}`;
+      const current = facts.get(key);
+      if (current) {
+        current.orderCount += 1;
+        current.lineCount += result.lineCount;
+        current.totals = addAnalyticsTotals(current.totals, result.totals);
+      } else {
+        facts.set(key, {
+          date,
+          currency: result.currency,
+          source: result.source,
+          dimensions: result.dimensions,
+          orderCount: 1,
+          lineCount: result.lineCount,
+          totals: result.totals,
+        });
+      }
+    }
+    const deleteClauses = ['account_id = ?'];
+    const deleteParams: (string | number)[] = [context.accountId];
+    if (from !== null) {
+      deleteClauses.push('fact_date >= ?');
+      deleteParams.push(from);
+    }
+    if (to !== null) {
+      deleteClauses.push('fact_date <= ?');
+      deleteParams.push(to);
+    }
+    if (source !== 'combined') {
+      deleteClauses.push('source = ?');
+      deleteParams.push(source);
+    }
+    if (currency !== undefined) {
+      deleteClauses.push('currency = ?');
+      deleteParams.push(currency);
+    }
+    const factsInsert = this.db.prepare(
+      `INSERT INTO daily_order_facts
+        (account_id, fact_date, currency, source, dimension_hash, dimensions_json, order_count, line_count,
+         gross_sales_minor, discount_minor, net_merchandise_minor, shipping_collected_minor, tax_minor,
+         refunds_minor, collected_revenue_minor, cogs_minor, actual_shipping_cost_minor, payment_fees_minor,
+         return_cost_minor, contribution_profit_minor, metrics_version, rebuilt_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+    );
+    this.db.transaction(() => {
+      this.db
+        .prepare(`DELETE FROM daily_order_facts WHERE ${deleteClauses.join(' AND ')}`)
+        .run(...deleteParams);
+      for (const { row, result } of results) {
+        for (const snapshot of result.lineSnapshots) {
+          const inserted = snapshotsInsert.run(
+            createHash('sha256')
+              .update(`${context.accountId}:${row.id}:${snapshot.lineId}`)
+              .digest('hex'),
+            context.accountId,
+            row.id,
+            snapshot.lineId,
+            snapshot.ruleId,
+            result.currency,
+            snapshot.source,
+            snapshot.effectiveAt,
+            snapshot.quantity,
+            snapshot.unitCostMinor,
+            snapshot.totalCostMinor,
+            row.source_hash,
+            rebuiltAt,
+          );
+          snapshotsWritten += inserted.changes;
+        }
+      }
+      for (const fact of facts.values()) {
+        const dimensionsJson = JSON.stringify(fact.dimensions);
+        const totals = fact.totals;
+        factsInsert.run(
+          context.accountId,
+          fact.date,
+          fact.currency,
+          fact.source,
+          createHash('sha256').update(dimensionsJson).digest('hex'),
+          dimensionsJson,
+          fact.orderCount,
+          fact.lineCount,
+          totals.grossSalesMinor,
+          totals.discountMinor,
+          totals.netMerchandiseMinor,
+          totals.shippingCollectedMinor,
+          totals.taxMinor,
+          totals.refundsMinor,
+          totals.collectedRevenueMinor,
+          totals.cogsMinor,
+          totals.actualShippingCostMinor,
+          totals.paymentFeesMinor,
+          totals.returnCostMinor,
+          totals.contributionProfitMinor,
+          rebuiltAt,
+        );
+      }
+    })();
+    this.audit(context, 'analytics.rebuilt', 'daily_order_facts', context.accountId, {
+      from,
+      to,
+      source,
+      currency: currency ?? null,
+      factsWritten: facts.size,
+      ordersIncluded: included,
+      ordersExcluded: excluded,
+    });
+    return {
+      from,
+      to,
+      factsWritten: facts.size,
+      ordersIncluded: included,
+      ordersExcluded: excluded,
+      snapshotsWritten,
+      rebuiltAt,
+    };
   }
 
   private documentTemplateRow(context: AccountContext, templateId: string): DocumentTemplateRow {

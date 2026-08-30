@@ -22,6 +22,10 @@ import {
   documentTemplateUpdateSchema,
   documentPreviewSchema,
   documentJobCreateSchema,
+  analyticsFilterSchema,
+  analyticsBreakdownSchema,
+  costRuleCreateSchema,
+  costRuleUpdateSchema,
   healthResponseSchema,
 } from '@woo-ops/contracts';
 import { SqliteStore } from '@woo-ops/persistence';
@@ -38,6 +42,7 @@ import type {
   ExportFormat,
   ExportRowMode,
   DocumentTemplateRecord,
+  AnalyticsFilter,
 } from '@woo-ops/persistence';
 import {
   canonicalizeStoreUrl,
@@ -121,6 +126,18 @@ const requireOperationWrite = (request: Request, response: Response): CurrentUse
   }
   return user;
 };
+type AnalyticsRequestFilter = {
+  from?: string | undefined;
+  to?: string | undefined;
+  source?: 'woo' | 'manual' | 'combined' | undefined;
+  currency?: string | undefined;
+};
+const analyticsFilterInput = (value: AnalyticsRequestFilter): AnalyticsFilter => ({
+  ...(value.from === undefined ? {} : { from: value.from }),
+  ...(value.to === undefined ? {} : { to: value.to }),
+  ...(value.source === undefined ? {} : { source: value.source }),
+  ...(value.currency === undefined ? {} : { currency: value.currency }),
+});
 
 const documentTemplateForEngine = (template: DocumentTemplateRecord) => ({
   id: template.id,
@@ -1345,6 +1362,152 @@ app.post('/api/v1/document-jobs', (request, response) => {
         },
         idempotencyKey: body.idempotencyKey,
       }),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/analytics/metric-definitions', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  response.json({ items: store.getAnalyticsSummary(operationContext(user, response)).definitions });
+});
+app.post('/api/v1/analytics/summary', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const parsed = analyticsFilterSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    sendApiError(response, 400, 'ANALYTICS_INPUT_INVALID', 'Analytics filter is invalid');
+    return;
+  }
+  try {
+    response.json({
+      summary: store.getAnalyticsSummary(
+        operationContext(user, response),
+        analyticsFilterInput(parsed.data),
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/analytics/timeseries', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const parsed = analyticsFilterSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    sendApiError(response, 400, 'ANALYTICS_INPUT_INVALID', 'Analytics filter is invalid');
+    return;
+  }
+  try {
+    response.json({
+      timeseries: store.getAnalyticsTimeseries(
+        operationContext(user, response),
+        analyticsFilterInput(parsed.data),
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/analytics/breakdown', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const parsed = analyticsBreakdownSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    sendApiError(response, 400, 'ANALYTICS_INPUT_INVALID', 'Analytics breakdown is invalid');
+    return;
+  }
+  try {
+    const filter = analyticsFilterInput(parsed.data);
+    response.json({
+      breakdown: store.getAnalyticsBreakdown(operationContext(user, response), {
+        ...filter,
+        ...(parsed.data.dimension === undefined ? {} : { dimension: parsed.data.dimension }),
+      }),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/cost-rules', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    const rawScope = typeof request.query.scope === 'string' ? request.query.scope : undefined;
+    const scopes = ['product', 'variation', 'shipping', 'payment', 'return'] as const;
+    if (rawScope !== undefined && !scopes.includes(rawScope as (typeof scopes)[number]))
+      throw new Error('COST_RULE_SCOPE_INVALID');
+    response.json({
+      items: store.listCostRules(operationContext(user, response), {
+        ...(rawScope === undefined ? {} : { scope: rawScope as (typeof scopes)[number] }),
+        ...(typeof request.query.currency === 'string' ? { currency: request.query.currency } : {}),
+      }),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/cost-rules', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = costRuleCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'COST_RULE_INPUT_INVALID', 'Cost rule input is invalid');
+    return;
+  }
+  try {
+    const input = parsed.data;
+    response.status(201).json({
+      rule: store.createCostRule(operationContext(user, response), {
+        scope: input.scope,
+        key: input.key,
+        currency: input.currency,
+        amountMinor: input.amountMinor,
+        source: input.source,
+        effectiveFrom: input.effectiveFrom,
+        ...(input.effectiveTo === undefined ? {} : { effectiveTo: input.effectiveTo }),
+        ...(input.active === undefined ? {} : { active: input.active }),
+      }),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.patch('/api/v1/cost-rules/:ruleId', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = costRuleUpdateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'COST_RULE_INPUT_INVALID', 'Cost rule input is invalid');
+    return;
+  }
+  try {
+    const input = parsed.data;
+    response.json({
+      rule: store.updateCostRule(operationContext(user, response), request.params.ruleId, {
+        ...(input.active === undefined ? {} : { active: input.active }),
+        ...(input.effectiveTo === undefined ? {} : { effectiveTo: input.effectiveTo }),
+      }),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/analytics/rebuilds', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = analyticsFilterSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    sendApiError(response, 400, 'ANALYTICS_INPUT_INVALID', 'Analytics rebuild input is invalid');
+    return;
+  }
+  try {
+    response.status(202).json({
+      rebuild: store.rebuildAnalyticsFacts(
+        operationContext(user, response),
+        analyticsFilterInput(parsed.data),
+      ),
     });
   } catch (error) {
     sendOperationError(response, error);

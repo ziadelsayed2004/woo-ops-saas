@@ -20,6 +20,7 @@
     "test:contract": "node --test tests/*.test.js"
   },
   "dependencies": {
+    "@woo-ops/analytics": "workspace:*",
     "@woo-ops/application": "workspace:*",
     "@woo-ops/documents": "workspace:*",
     "better-sqlite3": "^12.4.1"

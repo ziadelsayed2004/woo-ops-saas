@@ -49,7 +49,7 @@ const order = store.createManualOrder(context, {
 });
 
 test('templates are versioned, account scoped, and reject executable or network content', () => {
-  assert.equal(schemaVersion, 13);
+  assert.equal(schemaVersion, 14);
   const template = store.createDocumentTemplate(context, {
     name: 'Invoice',
     format: 'a4',
