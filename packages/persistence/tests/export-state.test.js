@@ -99,7 +99,7 @@ const completeBatch = (key) => {
 };
 
 test('successful batches derive local exported state and keep append-only history', () => {
-  assert.equal(schemaVersion, 15);
+  assert.equal(schemaVersion, 16);
   const batchId = completeBatch('state-1');
   assert.equal(
     store.recordExportedOrders(adminContext, batchId, [orderId], '2'.repeat(64)).recorded,

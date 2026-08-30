@@ -94,6 +94,15 @@ export const createApiJobRunner = (
     if (!inbox) return;
     try {
       const body = JSON.parse(Buffer.from(inbox.rawBody).toString('utf8')) as unknown;
+      if (inbox.topic === 'order.deleted') {
+        if (!isRecord(body) || !Number.isInteger(body.id) || Number(body.id) < 1)
+          throw new Error('WEBHOOK_SCHEMA_DRIFT');
+        store.markRemoteOrderDeleted(account, inbox.connectionId, String(body.id));
+        store.completeWebhook(account, inbox.id);
+        return;
+      }
+      if (inbox.topic !== 'order.created' && inbox.topic !== 'order.updated')
+        throw new Error('WEBHOOK_TOPIC_UNSUPPORTED');
       const validation = validateWooOrder(body);
       if (validation.status !== 'accepted') throw new Error('WEBHOOK_SCHEMA_DRIFT');
       store.upsertRemoteOrder(account, inbox.connectionId, {

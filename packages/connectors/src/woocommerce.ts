@@ -1,11 +1,29 @@
-import { createCipheriv, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import type { ConnectorCapabilities, ReadOnlyCommerceConnector } from './index.js';
+import type {
+  ConnectorCapabilities,
+  ConnectorDiscovery,
+  ConnectorErrorCategory,
+  ConnectorHealth,
+  ReadOnlyCommerceConnector,
+} from './index.js';
 
 export type WooCredentials = { key: string; secret: string };
 export type WooCatalogKind = 'products' | 'categories' | 'tags' | 'shipping_classes';
 export type WooOrderKind = 'orders' | 'refunds';
+export type WooOrderPage = Readonly<{
+  kind: WooOrderKind;
+  page: number;
+  totalPages: number;
+  items: readonly unknown[];
+}>;
 export type WooCatalogPage = {
   kind: WooCatalogKind;
   page: number;
@@ -43,6 +61,61 @@ export type CredentialEnvelope = {
   iv: string;
   tag: string;
   ciphertext: string;
+};
+
+export type WooPullOptions = Readonly<{
+  modifiedAfter?: string;
+  modifiedBefore?: string;
+  after?: string;
+  before?: string;
+  orderby?: 'date' | 'modified' | 'id';
+  order?: 'asc' | 'desc';
+}>;
+
+const envelopeFields = (value: unknown): CredentialEnvelope => {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('CREDENTIAL_ENVELOPE_INVALID');
+  const record = value as Record<string, unknown>;
+  if (
+    record.algorithm !== 'aes-256-gcm' ||
+    typeof record.keyVersion !== 'string' ||
+    !record.keyVersion ||
+    typeof record.iv !== 'string' ||
+    typeof record.tag !== 'string' ||
+    typeof record.ciphertext !== 'string'
+  )
+    throw new Error('CREDENTIAL_ENVELOPE_INVALID');
+  return {
+    algorithm: 'aes-256-gcm',
+    keyVersion: record.keyVersion,
+    iv: record.iv,
+    tag: record.tag,
+    ciphertext: record.ciphertext,
+  };
+};
+
+const encryptionKey = (secret: string): Buffer => {
+  const key = Buffer.from(secret, 'base64');
+  if (key.length !== 32) throw new Error('CREDENTIAL_ENCRYPTION_KEY_INVALID');
+  return key;
+};
+
+const encryptEnvelope = (
+  plaintext: string,
+  secret: string,
+  keyVersion: string,
+): CredentialEnvelope => {
+  if (!plaintext || plaintext.length > 4096) throw new Error('CREDENTIAL_VALUE_INVALID');
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', encryptionKey(secret), iv);
+  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  return {
+    algorithm: 'aes-256-gcm',
+    keyVersion,
+    iv: iv.toString('base64url'),
+    tag: cipher.getAuthTag().toString('base64url'),
+    ciphertext: ciphertext.toString('base64url'),
+  };
 };
 
 const hostWithoutBrackets = (hostname: string): string =>
@@ -148,21 +221,83 @@ export const encryptCredentialEnvelope = (
   secret: string,
   keyVersion = 'v1',
 ): CredentialEnvelope => {
-  const key = Buffer.from(secret, 'base64');
-  if (key.length !== 32) throw new Error('CREDENTIAL_ENCRYPTION_KEY_INVALID');
-  const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', key, iv);
-  const ciphertext = Buffer.concat([
-    cipher.update(JSON.stringify(credentials), 'utf8'),
-    cipher.final(),
-  ]);
-  return {
-    algorithm: 'aes-256-gcm',
-    keyVersion,
-    iv: iv.toString('base64url'),
-    tag: cipher.getAuthTag().toString('base64url'),
-    ciphertext: ciphertext.toString('base64url'),
-  };
+  if (
+    !credentials ||
+    typeof credentials.key !== 'string' ||
+    typeof credentials.secret !== 'string' ||
+    credentials.key.length < 1 ||
+    credentials.secret.length < 1 ||
+    credentials.key.length > 256 ||
+    credentials.secret.length > 256
+  )
+    throw new Error('CREDENTIALS_INVALID');
+  return encryptEnvelope(JSON.stringify(credentials), secret, keyVersion);
+};
+
+export const encryptSecretEnvelope = (
+  value: string,
+  secret: string,
+  keyVersion = 'v1',
+): CredentialEnvelope => encryptEnvelope(value, secret, keyVersion);
+
+export const decryptSecretEnvelope = (value: unknown, secret: string): string => {
+  const envelope = envelopeFields(value);
+  try {
+    const decipher = createDecipheriv(
+      'aes-256-gcm',
+      encryptionKey(secret),
+      Buffer.from(envelope.iv, 'base64url'),
+    );
+    decipher.setAuthTag(Buffer.from(envelope.tag, 'base64url'));
+    const plaintext = Buffer.concat([
+      decipher.update(Buffer.from(envelope.ciphertext, 'base64url')),
+      decipher.final(),
+    ]).toString('utf8');
+    if (!plaintext || plaintext.length > 4096) throw new Error('CREDENTIAL_VALUE_INVALID');
+    return plaintext;
+  } catch (error) {
+    if (error instanceof Error && error.message === 'CREDENTIAL_VALUE_INVALID') throw error;
+    throw new Error('CREDENTIAL_DECRYPTION_FAILED');
+  }
+};
+
+export const decryptCredentialEnvelope = (value: unknown, secret: string): WooCredentials => {
+  try {
+    const parsed = JSON.parse(decryptSecretEnvelope(value, secret)) as unknown;
+    const record =
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    if (
+      !record ||
+      typeof record.key !== 'string' ||
+      typeof record.secret !== 'string' ||
+      record.key.length < 1 ||
+      record.secret.length < 1 ||
+      record.key.length > 256 ||
+      record.secret.length > 256
+    )
+      throw new Error('CREDENTIALS_INVALID');
+    return {
+      key: record.key,
+      secret: record.secret,
+    };
+  } catch (error) {
+    if (error instanceof Error && error.message === 'CREDENTIALS_INVALID') throw error;
+    throw new Error('CREDENTIAL_DECRYPTION_FAILED');
+  }
+};
+
+export const classifyWooError = (error: unknown): ConnectorErrorCategory => {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/WOO_HTTP_(401|403)/u.test(message) || /WOO_AUTH/u.test(message)) return 'auth';
+  if (/WOO_HTTP_404|WOO_FORBIDDEN|WOO_PERMISSION/u.test(message)) return 'permission';
+  if (/WOO_RATE_LIMITED|WOO_HTTP_429/u.test(message)) return 'rate';
+  if (/WOO_HTTP_5\d\d/u.test(message)) return 'remote';
+  if (/WOO_SCHEMA|WOO_MONEY|WOO_DATE/u.test(message)) return 'schema';
+  if (/CONNECTOR_|WOO_CONNECTION/u.test(message)) return 'network';
+  if (/fetch failed|network|timeout|socket|econn/u.test(message)) return 'network';
+  return 'unknown';
 };
 
 export const verifyWebhookSignature = (
@@ -372,7 +507,9 @@ export const toCatalogItems = (page: WooCatalogPage): NormalizedCatalogItem[] =>
         kind:
           page.kind === 'shipping_classes'
             ? 'shipping_class'
-            : (page.kind.slice(0, -1) as 'category' | 'tag'),
+            : page.kind === 'categories'
+              ? 'category'
+              : 'tag',
         externalId,
         parentExternalId: null,
         name: String(record.name),
@@ -396,7 +533,7 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
   ) {}
 
   private async requestPage(url: URL): Promise<Response> {
-    if (!this.storeUrl) throw new Error('WOO_CONNECTION_NOT_CONFIGURED');
+    if (!this.storeUrl || !this.credentials) throw new Error('WOO_CONNECTION_NOT_CONFIGURED');
     await assertPublicStoreUrl(this.storeUrl, this.resolveHost);
     const response = await this.request(url, {
       method: 'GET',
@@ -413,6 +550,38 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
       if (responseUrl.origin !== this.storeUrl.origin) throw new Error('WOO_ORIGIN_CHANGED');
     }
     return response;
+  }
+  async healthCheck(): Promise<ConnectorHealth> {
+    if (!this.storeUrl || !this.credentials) throw new Error('WOO_CONNECTION_NOT_CONFIGURED');
+    const response = await this.requestPage(new URL('/wp-json/wc/v3/system_status', this.storeUrl));
+    if (response.status === 401 || response.status === 403)
+      throw new Error(`WOO_AUTH_${response.status}`);
+    if (!response.ok) throw new Error(`WOO_HTTP_${response.status}`);
+    const body: unknown = await response.json();
+    const record = asRecord(body);
+    if (!record) throw new Error('WOO_SCHEMA_INVALID:system_status');
+    const environment = asRecord(record.environment);
+    const wordpressVersion =
+      typeof environment?.wp_version === 'string' ? environment.wp_version : null;
+    const platformVersion = typeof record.version === 'string' ? record.version : null;
+    return {
+      status: 'healthy',
+      platformVersion,
+      wordpressVersion,
+      capabilities: this.capabilities,
+      checkedAt: new Date().toISOString(),
+      errorCategory: null,
+    };
+  }
+
+  async discover(): Promise<ConnectorDiscovery> {
+    if (!this.storeUrl) throw new Error('WOO_CONNECTION_NOT_CONFIGURED');
+    await this.healthCheck();
+    return {
+      platform: this.platform,
+      apiBaseUrl: new URL('/wp-json/wc/v3', this.storeUrl).toString(),
+      capabilities: this.capabilities,
+    };
   }
   pullOrders(): AsyncIterable<unknown> {
     return this.pullRemote('orders');
@@ -459,11 +628,12 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
       for await (const page of this.pullCatalog(kind)) await onPage(page, toCatalogItems(page));
     }
   }
-  async *pullRemote(
+  async *pullOrderPages(
     kind: WooOrderKind,
     perPage = 100,
     startPage = 1,
-  ): AsyncIterable<readonly unknown[]> {
+    options: WooPullOptions = {},
+  ): AsyncIterable<WooOrderPage> {
     if (!this.storeUrl || !this.credentials) throw new Error('WOO_CONNECTION_NOT_CONFIGURED');
     if (!Number.isInteger(perPage) || perPage < 1 || perPage > 100)
       throw new Error('WOO_PAGE_SIZE_INVALID');
@@ -471,17 +641,34 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
       const url = new URL(`/wp-json/wc/v3/${kind}`, this.storeUrl);
       url.searchParams.set('page', String(page));
       url.searchParams.set('per_page', String(perPage));
+      if (options.modifiedAfter !== undefined)
+        url.searchParams.set('modified_after', options.modifiedAfter);
+      if (options.modifiedBefore !== undefined)
+        url.searchParams.set('modified_before', options.modifiedBefore);
+      if (options.after !== undefined) url.searchParams.set('after', options.after);
+      if (options.before !== undefined) url.searchParams.set('before', options.before);
+      if (options.orderby !== undefined) url.searchParams.set('orderby', options.orderby);
+      if (options.order !== undefined) url.searchParams.set('order', options.order);
       const response = await this.requestPage(url);
       if (response.status === 429) throw new Error('WOO_RATE_LIMITED');
       if (!response.ok) throw new Error(`WOO_HTTP_${response.status}`);
       const body: unknown = await response.json();
       if (!Array.isArray(body)) throw new Error('WOO_SCHEMA_INVALID:page');
-      yield body;
       const totalPages = Number(response.headers.get('x-wp-totalpages') ?? page);
       if (!Number.isInteger(totalPages) || totalPages < page)
         throw new Error('WOO_SCHEMA_INVALID:pagination');
+      yield { kind, page, totalPages, items: body };
       if (page >= totalPages || body.length === 0) return;
     }
+  }
+  async *pullRemote(
+    kind: WooOrderKind,
+    perPage = 100,
+    startPage = 1,
+    options: WooPullOptions = {},
+  ): AsyncIterable<readonly unknown[]> {
+    for await (const page of this.pullOrderPages(kind, perPage, startPage, options))
+      yield page.items;
   }
   verifyWebhook(rawBody: Uint8Array, signature: string): Promise<boolean> {
     return Promise.resolve(verifyWebhookSignature(rawBody, signature, this.webhookSecret));

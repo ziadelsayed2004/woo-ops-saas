@@ -38,6 +38,12 @@ Authorization requirements:
 - Encrypt credentials immediately and remove plaintext references before further work.
 - Validate returned store URL matches the approved canonical origin.
 
+The Woo connector exposes only `GET` requests for system status, catalog, orders, and discovery.
+Credentials are held as AES-256-GCM envelopes with a deployment key and are decrypted only inside
+the worker boundary. Health checks record safe Woo/WordPress versions and capabilities; connector
+errors are classified into auth, permission, network, rate, remote, schema, normalization,
+persistence, or unknown categories.
+
 ## Initial sync phases
 
 1. Store/system capability probe.
@@ -53,6 +59,11 @@ Authorization requirements:
 Each phase has a durable cursor, counters, checkpoint timestamp, source page identity, retry budget,
 and error taxonomy. Initial sync may serve partial data with a clear coverage banner.
 
+The current SQLite implementation stores these checkpoints in `connection_sync_runs` and mirrors
+the latest cursor/counters on `connections`. Catalog and order pages are applied through
+account/connection-owned repositories before the cursor advances. A failed durable job records a
+redacted error and retry-after hint; rerunning the same job resumes the last successful page.
+
 ## Incremental strategy
 
 - Poll using `modified_after` or the closest supported endpoint behavior.
@@ -61,6 +72,8 @@ and error taxonomy. Initial sync may serve partial data with a clear coverage ba
 - Advance a cursor only after every page effect is durable.
 - Periodically query a wider lookback and compare counts/hashes.
 - Re-fetch a single order when a verified webhook lacks a complete supported payload.
+- The incremental endpoint uses the last modified order timestamp minus a bounded configurable
+  overlap (five minutes by default) and orders by modification ascending.
 
 ## Webhook intake
 
@@ -73,6 +86,11 @@ and error taxonomy. Initial sync may serve partial data with a clear coverage ba
 - Store the inbox entry before enqueueing.
 - Repeated valid deliveries return the prior accepted result.
 - Never log full payloads or signature secrets.
+
+The public intake currently supports `order.created`, `order.updated`, and `order.deleted`.
+Created/updated payloads are normalized after inbox persistence; deleted payloads mark the matching
+local snapshot as remotely deleted. Product/catalog changes are obtained through read-only polling
+until a dedicated catalog webhook effect is introduced.
 
 ## Normalization pipeline
 
@@ -142,7 +160,7 @@ REST-visible, an optional companion WordPress bridge may expose an allowlisted, 
 
 Remote deletion/trash never hard-deletes local operational evidence. Mark `remoteDeletedAt`, retain
 documents/exports/audit, remove from default views if policy says so, and allow privileged
- inspection. Account retention may later purge eligible data through a separately audited job.
+inspection. Account retention may later purge eligible data through a separately audited job.
 
 ## Connector certification
 

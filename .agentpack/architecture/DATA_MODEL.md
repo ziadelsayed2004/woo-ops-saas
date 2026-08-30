@@ -62,6 +62,12 @@ Indexes:
 - account + status
 - health.nextCheckAt
 
+The SQLite deployment stores the connection lifecycle in `connections`: the encrypted credential
+and webhook-secret envelopes are private worker fields, while list/detail responses expose only
+status, health timestamps, versions, capabilities, source timezone, and sync counters/cursor.
+Migration 16 adds those lifecycle fields and the account-first status index. Credentials are never
+copied into jobs, audit summaries, or API responses.
+
 ### products
 
 Canonical product/variation catalog snapshots for filtering and manual-order lookup.
@@ -247,8 +253,12 @@ aggregate as the only financial evidence.
 
 Inbox is append-only delivery intake with uniqueness and processing state. Accepted deliveries are
 scheduled as `webhook.process` jobs; processing normalizes the immutable source snapshot and uses
-the delivery/job key as the idempotency boundary. Sync runs track type, cursor range, counts, lag,
-retries, errors, and completion.
+the delivery/job key as the idempotency boundary. The `connection_sync_runs` table tracks
+`initial`, `incremental`, and `reconcile` type, bounded JSON cursor, pages/items/deletions,
+retry-after and redacted failure category/code, with `(account_id, connection_id, status,
+updated_at, id)` indexing. A checkpoint is persisted only after the page's catalog/order effect;
+retrying the same job resumes the stored cursor. Reconciliation assigns a run token to seen remote
+orders and marks missing snapshots as remotely deleted without removing local evidence.
 
 ### auditEvents
 
