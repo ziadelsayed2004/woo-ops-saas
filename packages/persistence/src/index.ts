@@ -257,6 +257,18 @@ export type ExportBatch = Readonly<{
   updatedAt: string;
   completedAt: string | null;
 }>;
+export type ExportEventType = 'exported' | 'unexported';
+export type OrderExportEvent = Readonly<{
+  id: string;
+  accountId: string;
+  orderId: string;
+  batchId: string | null;
+  type: ExportEventType;
+  snapshotHash: string | null;
+  reason: string | null;
+  createdBy: string;
+  createdAt: string;
+}>;
 
 const isJsonValue = (value: unknown, depth = 0): boolean => {
   if (depth > 8) return false;
@@ -465,7 +477,8 @@ const filterColumns: Record<OrderFilterField, string> = {
   externalOrderId: 'o.external_order_id',
   remoteStatus: 'o.remote_status',
   localStatus: 'o.local_status',
-  exportState: 'o.export_state',
+  exportState:
+    "CASE WHEN o.stale_export_at IS NOT NULL AND o.export_state = 'exported' THEN 'changed-after-export' ELSE o.export_state END",
   origin: 'o.origin',
   currency: 'o.currency',
   connectionId: 'o.connection_id',
@@ -598,7 +611,7 @@ const compileFilter = (
   return { sql: `${column} ${sqlOperator} ?`, params: [filter.value] };
 };
 
-export const schemaVersion = 11;
+export const schemaVersion = 12;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -859,6 +872,24 @@ const migrations: readonly Migration[] = [
       CREATE INDEX export_batches_account_status ON export_batches(account_id, status, updated_at, id);
     `,
   },
+  {
+    version: 12,
+    name: 'append-only-order-export-events',
+    sql: `
+      CREATE TABLE order_export_events (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), order_id TEXT NOT NULL,
+        batch_id TEXT, event_type TEXT NOT NULL CHECK(event_type IN ('exported', 'unexported')),
+        snapshot_hash TEXT, reason TEXT, created_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL,
+        FOREIGN KEY(account_id, order_id) REFERENCES orders(account_id, id),
+        FOREIGN KEY(account_id, batch_id) REFERENCES export_batches(account_id, id)
+      );
+      CREATE UNIQUE INDEX order_export_events_batch_exported
+        ON order_export_events(account_id, order_id, batch_id, event_type)
+        WHERE event_type = 'exported' AND batch_id IS NOT NULL;
+      CREATE INDEX order_export_events_account_order ON order_export_events(account_id, order_id, created_at, id);
+      CREATE INDEX order_export_events_account_batch ON order_export_events(account_id, batch_id, created_at, id);
+    `,
+  },
 ];
 
 const MAX_SELECTION_IDS = 5_000;
@@ -1029,6 +1060,17 @@ type ExportBatchRow = {
   updated_at: string;
   completed_at: string | null;
 };
+type OrderExportEventRow = {
+  id: string;
+  account_id: string;
+  order_id: string;
+  batch_id: string | null;
+  event_type: ExportEventType;
+  snapshot_hash: string | null;
+  reason: string | null;
+  created_by: string;
+  created_at: string;
+};
 const exportFormats: readonly ExportFormat[] = ['csv', 'xlsx'];
 const exportRowModes: readonly ExportRowMode[] = ['order', 'line', 'package', 'carrier'];
 const exportColumnTypes: readonly NonNullable<ExportColumn['type']>[] = [
@@ -1122,6 +1164,17 @@ const exportBatch = (row: ExportBatchRow): ExportBatch => ({
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   completedAt: row.completed_at,
+});
+const orderExportEvent = (row: OrderExportEventRow): OrderExportEvent => ({
+  id: row.id,
+  accountId: row.account_id,
+  orderId: row.order_id,
+  batchId: row.batch_id,
+  type: row.event_type,
+  snapshotHash: row.snapshot_hash,
+  reason: row.reason,
+  createdBy: row.created_by,
+  createdAt: row.created_at,
 });
 type SavedViewRow = {
   id: string;
@@ -1746,6 +1799,125 @@ export class SqliteStore {
     if (result.changes !== 1 && this.getExportBatch(context, batchId).status !== 'failed')
       throw new Error('EXPORT_BATCH_STATE_CONFLICT');
     return this.getExportBatch(context, batchId);
+  }
+
+  recordExportedOrders(
+    context: AccountContext,
+    batchId: string,
+    orderIds: readonly string[],
+    snapshotHash?: string,
+  ): { recorded: number; orderIds: readonly string[] } {
+    const actorId = this.requireMutationActor(context);
+    if (!Array.isArray(orderIds) || orderIds.length < 1 || orderIds.length > 5_000)
+      throw new Error('EXPORT_ORDER_IDS_INVALID');
+    if (new Set(orderIds).size !== orderIds.length) throw new Error('EXPORT_ORDER_IDS_INVALID');
+    if (snapshotHash !== undefined && !/^[a-f0-9]{64}$/i.test(snapshotHash))
+      throw new Error('EXPORT_SNAPSHOT_HASH_INVALID');
+    const batch = this.db
+      .prepare(
+        'SELECT id, selection_id, status FROM export_batches WHERE account_id = ? AND id = ?',
+      )
+      .get(context.accountId, batchId) as
+      { id: string; selection_id: string; status: ExportBatchStatus } | undefined;
+    if (!batch) throw new Error('EXPORT_BATCH_NOT_FOUND');
+    if (batch.status !== 'completed') throw new Error('EXPORT_BATCH_NOT_COMPLETED');
+    this.verifyOrderIds(context, orderIds);
+    const selection = this.selectionData(this.selectionRow(context, batch.selection_id));
+    const selectedWhere = this.compileSelectionWhere(context, selection);
+    const selected = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM orders o WHERE ${selectedWhere.sql} AND o.id IN (${orderIds.map(() => '?').join(',')})`,
+      )
+      .get(...selectedWhere.params, ...orderIds) as { count: number };
+    if (Number(selected.count) !== orderIds.length)
+      throw new Error('EXPORT_ORDER_NOT_IN_SELECTION');
+    const now = new Date().toISOString();
+    const insert = this.db.prepare(
+      `INSERT OR IGNORE INTO order_export_events
+        (id, account_id, order_id, batch_id, event_type, snapshot_hash, created_by, created_at)
+       VALUES (?, ?, ?, ?, 'exported', ?, ?, ?)`,
+    );
+    const placeholders = orderIds.map(() => '?').join(',');
+    const result = this.db.transaction(() => {
+      let recorded = 0;
+      for (const orderId of orderIds) {
+        const inserted = insert.run(
+          randomId(),
+          context.accountId,
+          orderId,
+          batchId,
+          snapshotHash?.toLowerCase() ?? null,
+          actorId,
+          now,
+        );
+        recorded += inserted.changes;
+      }
+      this.db
+        .prepare(
+          `UPDATE orders SET export_state = 'exported', stale_export_at = NULL, updated_at = ?
+           WHERE account_id = ? AND id IN (${placeholders})`,
+        )
+        .run(now, context.accountId, ...orderIds);
+      return recorded;
+    })();
+    this.audit(context, 'order-export.recorded', 'export_batch', batchId, {
+      orderCount: orderIds.length,
+      recorded: result,
+    });
+    return { recorded: result, orderIds: [...orderIds] };
+  }
+
+  listOrderExportEvents(context: AccountContext, orderId: string): OrderExportEvent[] {
+    this.assertMember(context);
+    const order = this.db
+      .prepare('SELECT id FROM orders WHERE account_id = ? AND id = ?')
+      .get(context.accountId, orderId);
+    if (!order) throw new Error('ORDER_NOT_FOUND');
+    const rows = this.db
+      .prepare(
+        `SELECT id, account_id, order_id, batch_id, event_type, snapshot_hash, reason, created_by, created_at
+         FROM order_export_events WHERE account_id = ? AND order_id = ? ORDER BY created_at DESC, id DESC`,
+      )
+      .all(context.accountId, orderId) as OrderExportEventRow[];
+    return rows.map(orderExportEvent);
+  }
+
+  unexportOrder(context: AccountContext, orderId: string, reason: string): OrderExportEvent {
+    const role = this.assertMember(context);
+    if (role !== 'owner' && role !== 'admin') throw new Error('EXPORT_UNEXPORT_PERMISSION_DENIED');
+    const actorId = this.requireMutationActor(context);
+    const normalizedReason = normalizeExportName(reason, 'EXPORT_UNEXPORT_REASON_INVALID', 500);
+    const order = this.db
+      .prepare('SELECT id FROM orders WHERE account_id = ? AND id = ?')
+      .get(context.accountId, orderId) as { id: string } | undefined;
+    if (!order) throw new Error('ORDER_NOT_FOUND');
+    const now = new Date().toISOString();
+    const eventId = randomId();
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO order_export_events
+            (id, account_id, order_id, batch_id, event_type, reason, created_by, created_at)
+           VALUES (?, ?, ?, NULL, 'unexported', ?, ?, ?)`,
+        )
+        .run(eventId, context.accountId, orderId, normalizedReason, actorId, now);
+      this.db
+        .prepare(
+          `UPDATE orders SET export_state = 'never-exported', stale_export_at = NULL, updated_at = ?
+           WHERE account_id = ? AND id = ?`,
+        )
+        .run(now, context.accountId, orderId);
+    })();
+    this.audit(context, 'order-export.unexported', 'order', orderId, {
+      reason: normalizedReason,
+    });
+    return orderExportEvent(
+      this.db
+        .prepare(
+          'SELECT id, account_id, order_id, batch_id, event_type, snapshot_hash, reason, created_by, created_at FROM order_export_events WHERE account_id = ? AND id = ?',
+        )
+        .get(context.accountId, eventId) as OrderExportEventRow,
+    );
   }
 
   private normalizeColumns(value: unknown): string[] {
@@ -2532,7 +2704,7 @@ export class SqliteStore {
     }
     const rows = this.db
       .prepare(
-        `SELECT o.id, o.order_number, o.external_order_id, o.origin, o.connection_id, o.remote_status, o.local_status, o.export_state, o.currency, o.grand_total_minor, o.remote_modified_at, o.updated_at, o.normalized_json, o.assignee_id, o.tags_json, o.notes_json, o.version, COALESCE(${sortColumn}, '') AS sort_value FROM orders o WHERE ${clauses.join(' AND ')} ORDER BY COALESCE(${sortColumn}, '') ${sort.direction}, o.id ${sort.direction} LIMIT ?`,
+        `SELECT o.id, o.order_number, o.external_order_id, o.origin, o.connection_id, o.remote_status, o.local_status, o.export_state, o.stale_export_at, o.currency, o.grand_total_minor, o.remote_modified_at, o.updated_at, o.normalized_json, o.assignee_id, o.tags_json, o.notes_json, o.version, COALESCE(${sortColumn}, '') AS sort_value FROM orders o WHERE ${clauses.join(' AND ')} ORDER BY COALESCE(${sortColumn}, '') ${sort.direction}, o.id ${sort.direction} LIMIT ?`,
       )
       .all(...params, limit + 1) as Array<Record<string, unknown>>;
     const hasMore = rows.length > limit;
@@ -2564,7 +2736,10 @@ export class SqliteStore {
         connectionId: row.connection_id,
         remoteStatus: row.remote_status,
         localStatus: row.local_status,
-        exportState: row.export_state,
+        exportState:
+          row.stale_export_at && row.export_state === 'exported'
+            ? 'changed-after-export'
+            : row.export_state,
         currency: row.currency,
         grandTotalMinor: row.grand_total_minor,
         remoteCreatedAt: row.remote_modified_at,
@@ -2634,7 +2809,10 @@ export class SqliteStore {
       connectionId: row.connection_id,
       remoteStatus: row.remote_status,
       localStatus: row.local_status,
-      exportState: row.export_state,
+      exportState:
+        row.stale_export_at && row.export_state === 'exported'
+          ? 'changed-after-export'
+          : row.export_state,
       currency: row.currency,
       grandTotalMinor: row.grand_total_minor,
       remoteCreatedAt: row.remote_modified_at,

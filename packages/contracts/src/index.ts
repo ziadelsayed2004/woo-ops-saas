@@ -62,6 +62,18 @@ export const exportBatchCreateSchema = z
     idempotencyKey: z.string().trim().min(1).max(200),
   })
   .strict();
+export const exportUnexportSchema = z
+  .object({ reason: z.string().trim().min(1).max(500) })
+  .strict();
+export const exportMarkOrdersSchema = z
+  .object({
+    orderIds: z.array(z.string().min(1).max(256)).min(1).max(5_000),
+    snapshotHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/i)
+      .optional(),
+  })
+  .strict();
 
 const minorAmountSchema = z.string().regex(/^-?\d{1,18}$/);
 const manualJsonObjectSchema = z.record(z.string(), z.unknown());

@@ -13,6 +13,11 @@ import {
   selectionResolveSchema,
   manualOrderCreateSchema,
   manualOrderUpdateSchema,
+  exportProfileCreateSchema,
+  exportProfileVersionCreateSchema,
+  exportBatchCreateSchema,
+  exportMarkOrdersSchema,
+  exportUnexportSchema,
   healthResponseSchema,
 } from '@woo-ops/contracts';
 import { SqliteStore } from '@woo-ops/persistence';
@@ -25,6 +30,9 @@ import type {
   OrderQueryInput,
   OrderSort,
   SavedViewVisibility,
+  ExportColumn,
+  ExportFormat,
+  ExportRowMode,
 } from '@woo-ops/persistence';
 import {
   canonicalizeStoreUrl,
@@ -910,6 +918,160 @@ app.get('/api/v1/bulk-jobs/:jobId/errors', (request, response) => {
     };
     response.json({
       ...store.listBulkFailures(operationContext(user, response), request.params.jobId, paging),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/export-profiles', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({ items: store.listExportProfiles(operationContext(user, response)) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/export-profiles', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = exportProfileCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'EXPORT_PROFILE_INPUT_INVALID', 'Export profile input is invalid');
+    return;
+  }
+  try {
+    response.status(201).json({
+      profile: store.createExportProfile(operationContext(user, response), {
+        name: parsed.data.name,
+        ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+      }),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/export-profiles/:profileId/versions', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = exportProfileVersionCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(
+      response,
+      400,
+      'EXPORT_PROFILE_VERSION_INPUT_INVALID',
+      'Export profile version input is invalid',
+    );
+    return;
+  }
+  const body = parsed.data;
+  try {
+    response.status(201).json({
+      version: store.createExportProfileVersion(
+        operationContext(user, response),
+        request.params.profileId,
+        {
+          format: body.format as ExportFormat,
+          rowMode: body.rowMode as ExportRowMode,
+          columns: body.columns as ExportColumn[],
+          filenameTemplate: body.filenameTemplate,
+          ...(body.config !== undefined ? { config: body.config } : {}),
+        },
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/export-batches', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = exportBatchCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'EXPORT_BATCH_INPUT_INVALID', 'Export batch input is invalid');
+    return;
+  }
+  try {
+    response.status(202).json({
+      batch: store.createExportBatch(operationContext(user, response), parsed.data),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/export-batches', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const rawLimit = request.query.limit === undefined ? undefined : Number(request.query.limit);
+  try {
+    response.json({
+      items:
+        rawLimit === undefined
+          ? store.listExportBatches(operationContext(user, response))
+          : store.listExportBatches(operationContext(user, response), rawLimit),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/export-batches/:batchId', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({
+      batch: store.getExportBatch(operationContext(user, response), request.params.batchId),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/export-batches/:batchId/mark-exported', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = exportMarkOrdersSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'EXPORT_MARK_INPUT_INVALID', 'Export order IDs are invalid');
+    return;
+  }
+  try {
+    response.json({
+      result: store.recordExportedOrders(
+        operationContext(user, response),
+        request.params.batchId,
+        parsed.data.orderIds,
+        parsed.data.snapshotHash,
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/orders/:orderId/export-history', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({
+      items: store.listOrderExportEvents(operationContext(user, response), request.params.orderId),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/orders/:orderId/export-state/unexport', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = exportUnexportSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'EXPORT_UNEXPORT_INPUT_INVALID', 'An unexport reason is required');
+    return;
+  }
+  try {
+    response.json({
+      event: store.unexportOrder(
+        operationContext(user, response),
+        request.params.orderId,
+        parsed.data.reason,
+      ),
     });
   } catch (error) {
     sendOperationError(response, error);

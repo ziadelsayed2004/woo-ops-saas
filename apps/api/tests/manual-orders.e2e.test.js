@@ -140,7 +140,7 @@ try {
   });
   assert.equal(updated.response.status, 200);
   assert.equal(updated.body.order.localStatus, 'packed');
-  assert.equal(updated.body.order.exportState, 'exported');
+  assert.equal(updated.body.order.exportState, 'changed-after-export');
   assert.equal(typeof updated.body.order.staleExportAt, 'string');
   assert.equal(updated.body.order.syncPolicy, 'never');
 
