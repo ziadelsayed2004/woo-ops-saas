@@ -718,6 +718,36 @@
         "node .agentpack/scripts/agentpack.mjs validate",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0804",
+      "epic": "E08",
+      "title": "Refresh shipped orders visual regression baseline",
+      "type": "chore",
+      "phase": 8,
+      "priority": "P1",
+      "estimate": "S",
+      "parallelGroup": "release",
+      "dependencies": ["T0803"],
+      "references": [
+        ".agentpack/architecture/TESTING.md",
+        ".agentpack/workflows/review.md",
+        "tests/e2e/orders.spec.ts"
+      ],
+      "scope": [
+        "Refresh the Arabic orders visual regression artifact to match the accepted shipped navigation",
+        "Keep the visual assertion and accessibility coverage deterministic without weakening thresholds"
+      ],
+      "acceptance": [
+        "The orders visual regression passes against the current shipped UI",
+        "The refreshed artifact reflects intentional navigation controls and no application source changes are required"
+      ],
+      "validation": [
+        "pnpm test:visual",
+        "pnpm test:a11y",
+        "node .agentpack/scripts/agentpack.mjs validate",
+        "git diff --check"
+      ]
     }
   ]
 }
