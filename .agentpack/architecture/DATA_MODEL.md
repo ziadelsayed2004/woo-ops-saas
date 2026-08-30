@@ -2,16 +2,16 @@
 
 ## Storage conventions
 
-- Every tenant-owned document includes `organizationId` as the first compound-index key.
+- Every account-owned row includes `accountId` as the leading scope key in applicable indexes.
 - Use opaque application IDs; external IDs are namespaced by connection.
 - Use integer minor money units and ISO currency.
 - Use optimistic `version` for mutable local aggregates.
 - Use `createdAt`, `updatedAt`, `createdBy`, and `updatedBy` where actor attribution is meaningful.
 - Never index arbitrary raw Woo metadata. Index configured, typed mappings only.
 
-## Core collections
+## Core tables
 
-### organizations
+### accounts
 
 Identity, locale, timezone, base currency, retention policy, plan, document identity, and status.
 
@@ -22,19 +22,19 @@ Indexes:
 
 ### users, sessions, memberships
 
-Users hold global identity. Memberships map user to organization, role, permissions override, and
+Users hold global identity. Memberships map user to account, role, permissions override, and
 state. Sessions are hashed, revocable, rotated, and device-aware.
 
 Indexes:
 
 - unique normalized email
-- unique organization + user membership
+- unique account + user membership
 - session hash and expiry TTL
 
 ### storeConnections
 
 ```text
-organizationId
+accountId
 platform
 canonicalStoreUrl
 externalStoreIdentity
@@ -52,8 +52,8 @@ fieldCatalogVersion
 
 Indexes:
 
-- unique organization + platform + canonicalStoreUrl
-- organization + status
+- unique account + platform + canonicalStoreUrl
+- account + status
 - health.nextCheckAt
 
 ### products
@@ -61,7 +61,7 @@ Indexes:
 Canonical product/variation catalog snapshots for filtering and manual-order lookup.
 
 ```text
-organizationId
+accountId
 connectionId
 externalProductId
 externalVariationId?
@@ -77,17 +77,17 @@ deletedRemotelyAt?
 
 Indexes:
 
-- unique organization + connection + external product + external variation
-- organization + connection + normalized SKU
-- organization + category IDs
-- organization + mapped author IDs
+- unique account + connection + external product + external variation
+- account + connection + normalized SKU
+- account + category IDs
+- account + mapped author IDs
 - search index for name/SKU/configured fields
 
 ### orders
 
 ```text
 identity:
-  organizationId, id, origin, connectionId?, platform?, externalOrderId?, orderNumber
+  accountId, id, origin, connectionId?, platform?, externalOrderId?, orderNumber
 
 source:
   remoteStatus?, createdVia?, channel, posLocation?, remoteCreatedAt?, remoteModifiedAt?
@@ -137,22 +137,22 @@ separate command model or guarded updates, but API responses remain canonical.
 
 Required indexes:
 
-- unique partial: organization + connection + externalOrderId for imported orders
-- unique: organization + orderNumber
-- organization + remoteCreatedAt + `_id`
-- organization + connection + remoteStatus + remoteCreatedAt
-- organization + localStatus + remoteCreatedAt
-- organization + exportSummary.state + remoteCreatedAt
-- organization + shippingMethod.methodId + remoteCreatedAt
-- organization + line product references
-- organization + line category/author facets
-- organization + normalized phone/email
-- Atlas Search index for approved search fields when enabled
+- unique partial: account + connection + externalOrderId for imported orders
+- unique: account + orderNumber
+- account + remoteCreatedAt + `_id`
+- account + connection + remoteStatus + remoteCreatedAt
+- account + localStatus + remoteCreatedAt
+- account + exportSummary.state + remoteCreatedAt
+- account + shippingMethod.methodId + remoteCreatedAt
+- account + line product references
+- account + line category/author facets
+- account + normalized phone/email
+- SQLite FTS5 index for approved search fields when enabled
 
 ### remoteSnapshots
 
-Optionally separated encrypted/compressed payloads keyed by organization, connection, entity type,
-entity ID, source hash, and received time. Ordinary APIs never return this collection. Retention can
+Optionally separated encrypted/compressed payloads keyed by account, connection, entity type,
+entity ID, source hash, and received time. Ordinary APIs never return this table. Retention can
 be shorter than canonical order retention.
 
 ### fieldCatalogs and fieldMappings
@@ -173,8 +173,8 @@ manifest, actor, correlation ID, timestamps, and idempotency key.
 
 Indexes:
 
-- unique organization + type + idempotency key
-- organization + state + createdAt
+- unique account + type + idempotency key
+- account + state + createdAt
 - TTL for old detailed item results according to retention
 
 ### exportProfiles and exportProfileVersions
@@ -214,7 +214,7 @@ rule version and inputs. Overrides are append-only events with actor and reason.
 
 ### dailyOrderFacts
 
-Rebuildable, versioned aggregation facts by organization/date/currency/dimensions. Never treat an
+Rebuildable, versioned aggregation facts by account/date/currency/dimensions. Never treat an
 aggregate as the only financial evidence.
 
 ### webhookInbox and syncRuns
@@ -224,13 +224,13 @@ cursor range, counts, lag, retries, errors, and completion.
 
 ### auditEvents
 
-Append-only actor/system event with organization, action, target, result, redacted change summary,
+Append-only actor/system event with account, action, target, result, redacted change summary,
 correlation/causation IDs, IP/device summary where allowed, and timestamp.
 
 ## Data migrations
 
 - Every normalized document carries a schema/normalization version.
-- Online backfills are idempotent, resumable, tenant-bounded, rate-limited, and observable.
+- Online backfills are idempotent, resumable, account-bounded, rate-limited, and observable.
 - Index creation is a deployment task with rollout and rollback notes.
 - Raw snapshots permit re-normalization when field mappings or connector versions change.
 
@@ -238,7 +238,7 @@ correlation/causation IDs, IP/device summary where allowed, and timestamp.
 
 - Credential envelopes: until connection deletion, with key rotation.
 - Raw source payloads: configurable and shorter-lived when possible.
-- Canonical orders and legal documents: organization/legal policy.
+- Canonical orders and legal documents: account/legal policy.
 - Job item details: bounded operational period, then aggregate result only.
 - Audit: policy-defined, tamper-evident, never silently edited.
 - Signed URLs: minutes, not permanent.

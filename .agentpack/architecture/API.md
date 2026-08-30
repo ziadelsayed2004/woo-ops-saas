@@ -6,22 +6,22 @@ Base path: `/api/v1`. JSON errors use stable machine codes and a correlation ID.
 
 - Authentication uses secure same-site cookies for the web application.
 - Mutating requests require CSRF protection and an idempotency key where retryable.
-- Organization context comes from the authenticated active membership, not a body/query tenant ID.
+- Account context comes from the authenticated active membership, not a body/query account ID.
 - Money is `{ "amountMinor": "12345", "currency": "EGP" }`.
 - Cursor pagination returns `items`, `nextCursor`, `hasMore`, and an optional bounded estimate.
 - Date-times are ISO-8601 UTC.
 - Request and response schemas are shared TypeScript/Zod contracts and emitted as OpenAPI.
 
-## Identity and organizations
+## Identity and accounts
 
 ```text
 POST   /auth/login
 POST   /auth/logout
 POST   /auth/refresh
 GET    /auth/session
-GET    /organizations
-POST   /organizations
-POST   /organizations/:id/activate
+GET    /accounts
+POST   /accounts
+POST   /accounts/:id/activate
 GET    /members
 POST   /members/invitations
 PATCH  /members/:membershipId
@@ -100,7 +100,7 @@ Imported order commerce fields have no PATCH endpoint.
 ```
 
 The server compiles only catalog-approved fields/operators. Never translate arbitrary client keys
-directly to Mongo queries.
+directly to SQL or storage queries.
 
 ## Saved views and selection
 
@@ -204,12 +204,12 @@ GET    /operations/usage
 {
   "error": {
     "code": "ORDER_FILTER_FIELD_NOT_ALLOWED",
-    "message": "This filter field is not available for the active organization.",
+    "message": "This filter field is not available for the active account.",
     "details": {},
     "correlationId": "opaque-id"
   }
 }
 ```
 
-Internal stack traces, credentials, raw platform responses, Mongo errors, and tenant identifiers not
+Internal stack traces, credentials, raw platform responses, database errors, and account identifiers not
 already authorized for the user are never returned.

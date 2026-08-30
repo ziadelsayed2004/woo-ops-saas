@@ -5,7 +5,7 @@
 Build the web app with Vite and run one Node/Express process. Configure a private writable
 `WOO_OPS_DATA_DIR` containing the SQLite file, generated documents, exports and backups. The process
 must expose `/health`, serve built web assets, and use environment-provided session/encryption secrets.
-No Docker, MongoDB, Redis or external worker is required.
+No Docker, external database, Redis, or external worker is required.
 
 ```text
 pnpm install --frozen-lockfile

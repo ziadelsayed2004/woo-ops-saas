@@ -9,8 +9,8 @@ permissions, cost rules, metric formulas, filter AST validation, and idempotency
 
 ### Integration
 
-Mongoose repositories with real Mongo behavior, indexes, transactions where used, Redis/BullMQ,
-object storage, session persistence, API middleware, and worker state machines.
+SQLite repositories with real migrations, indexes, transactions where used, private file storage,
+session persistence, API middleware, and in-process durable-job state machines.
 
 ### Connector contract
 
@@ -20,7 +20,7 @@ orders, Arabic data, pagination, and schema drift.
 
 ### End-to-end
 
-- sign up/create organization/invite and role enforcement
+- sign up/create account/invite and role enforcement
 - connect test Woo store and complete initial sync
 - webhook update with local fields preserved
 - advanced filter and saved view
@@ -34,7 +34,7 @@ orders, Arabic data, pagination, and schema drift.
 ### Non-functional
 
 - load and soak tests
-- tenant-isolation attack suite
+- account-isolation attack suite
 - webhook replay and signature abuse
 - SSRF and callback tests
 - queue restart and duplicate-delivery chaos
@@ -67,21 +67,21 @@ orders, Arabic data, pagination, and schema drift.
   per-line row mode.
 - File checksum and export-batch metadata must match stored bytes.
 
-## Tenant isolation matrix
+## Account isolation matrix
 
-For every tenant API/repository/job/storage action:
+For every account API/repository/job/storage action:
 
-- organization A cannot read B by ID
+- account A cannot read B by ID
 - A cannot mutate B by ID
 - A cannot infer B through count/search/facet/error timing
-- jobs cannot accept swapped tenant/target IDs
+- jobs cannot accept swapped account/target IDs
 - cache keys do not collide
-- signed file access cannot cross organization
+- signed file access cannot cross account
 - audit results stay scoped
 
 ## Performance fixtures
 
-Generate synthetic tenants with skewed realistic distributions at 10k, 100k, and 1m orders.
+Generate synthetic accounts with skewed realistic distributions at 10k, 100k, and 1m orders.
 Measure common list/filter/search queries, bulk resolution, initial sync throughput, reconciliation,
 export memory, PDF concurrency, analytics rebuild, and index size.
 
@@ -97,7 +97,7 @@ pnpm test:unit
 pnpm test:integration
 pnpm test:contract
 pnpm test:e2e:critical
-pnpm test:tenant-isolation
+pnpm test:account-isolation
 pnpm build
 ```
 

@@ -7,17 +7,17 @@
 - Remote store URLs and redirect destinations are untrusted.
 - Queue messages must be authenticated by infrastructure and schema-validated by consumers.
 - Object-storage keys and signed URLs are sensitive capabilities.
-- Organization membership and permission data are server authority.
+- Account membership and permission data are server authority.
 
-## Tenant isolation controls
+## Account isolation controls
 
-- Every tenant repository requires server-created `TenantContext`.
-- Mongoose access from HTTP controllers is prohibited.
-- Compound unique and query indexes begin with organization where applicable.
+- Every account repository requires server-created `AccountContext`.
+- Direct SQLite access from HTTP controllers is prohibited; controllers use account-scoped repositories.
+- Compound unique and query indexes begin with account where applicable.
 - Jobs re-load current membership/entitlement or use an explicit system actor policy.
-- Cache and lock keys begin with an opaque organization ID.
-- File object keys are organization-scoped and random.
-- Search requests always include a server-owned tenant filter.
+- Cache and lock keys begin with an opaque account ID.
+- File object keys are account-scoped and random.
+- Search requests always include a server-owned account filter.
 - Automated negative tests attempt horizontal access for every API group.
 
 ## Connector secrets
@@ -52,7 +52,7 @@
 ## Input and output safety
 
 - Zod validation at every transport boundary.
-- Allowlisted filter fields/operators; no raw Mongo operators or regex from clients.
+- Allowlisted filter fields/operators; no raw SQL fragments or regular expressions from clients.
 - Spreadsheet strings beginning with formula control characters are escaped.
 - HTML templates use safe tokens, sanitizer, CSP, no scripts, no remote network, and restricted CSS.
 - PDF renderer runs in an isolated container/profile with time/memory limits.
@@ -64,7 +64,7 @@
 - Redact email, phone, address, tokens, and raw payload content from default logs.
 - Permission-protect raw data and sensitive exports.
 - Record export/document downloads when policy requires.
-- Retention and deletion jobs are tenant-scoped, dry-run capable, and auditable.
+- Retention and deletion jobs are account-scoped, dry-run capable, and auditable.
 - Audit events record concise redacted diffs, not secrets or full documents.
 
 ## Supply chain and deployment
@@ -72,9 +72,9 @@
 - Lockfile required; dependency updates are reviewed.
 - CI runs secret, dependency, static, and container scans.
 - Production images run non-root with read-only filesystem where possible.
-- Separate API and worker identities and storage permissions.
+- The API and in-process job runner use private application data permissions; files remain outside the public root.
 - Environment secrets never enter images, bundles, repository, or client runtime.
-- Database and Redis are network-restricted; TLS required.
+- The SQLite data directory is private and filesystem-protected; HTTPS/TLS is required for public and outbound traffic.
 - Backups and restore drills have documented RPO/RTO.
 
 ## High-risk change review
@@ -83,10 +83,10 @@ The following require explicit security review and an ADR:
 
 - any platform write capability
 - any new raw query/filter mechanism
-- changes to tenant context propagation
+- changes to account context propagation
 - credential/encryption format changes
 - template execution or external resource loading
 - public file access
 - invoice numbering changes
 - broad retention deletion
-- cross-organization analytics
+- cross-account analytics

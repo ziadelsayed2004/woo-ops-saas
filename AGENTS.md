@@ -1,7 +1,7 @@
 # Repository Agent Contract
 
 These instructions apply to Codex, Claude, Gemini, and human contributors. More specific task
-instructions may narrow this contract but may not weaken security, tenant isolation, data
+instructions may narrow this contract but may not weaken security, account isolation, data
 direction, or quality gates.
 
 ## Mandatory read sequence
@@ -34,8 +34,8 @@ Run `node .agentpack/scripts/agentpack.mjs validate` before starting.
   order, stock, customer, or product mutation methods.
 - `exported`, local workflow, assignments, tags, notes, saved views, and documents are local data.
 - Manual orders have `syncPolicy=never` and `inventoryPolicy=ignore`.
-- Every tenant-owned record and query must be scoped by `organizationId`.
-- Never trust a client-provided `organizationId`; derive it from the authenticated membership.
+- Every account-owned record and query must be scoped by `accountId`.
+- Never trust a client-provided `accountId`; derive it from the authenticated session.
 - Money uses integer minor units plus ISO currency. Never use floating-point arithmetic.
 - Dates persist in UTC while retaining source timezone and raw source timestamps where needed.
 - Remote payloads are immutable diagnostic snapshots with configurable PII retention.
@@ -46,12 +46,12 @@ Run `node .agentpack/scripts/agentpack.mjs validate` before starting.
 - TypeScript strict mode is required. Avoid `any`; use `unknown` plus validation at boundaries.
 - Validate HTTP, webhook, queue, environment, and connector payloads with shared schemas.
 - Keep controllers thin and domain/application logic framework-independent.
-- Use repositories that require tenant context instead of calling Mongoose models from routes.
+- Use repositories that require authenticated account context instead of calling SQLite from routes.
 - Long operations run as idempotent jobs, not inside request/response lifetimes.
 - Every job needs a deterministic idempotency key, retry policy, dead-letter behavior, and audit
   event.
 - All list APIs use server-side cursor pagination, bounded limits, and explicit stable sorting.
-- Exports and PDFs are generated from immutable snapshots and stored outside MongoDB.
+- Exports and PDFs are generated from immutable snapshots and stored as private files outside SQLite.
 - Logs must never contain Woo credentials, session tokens, full webhook bodies, or unnecessary PII.
 
 ## Required tests
@@ -60,7 +60,7 @@ Run `node .agentpack/scripts/agentpack.mjs validate` before starting.
 - Integration tests for repositories, jobs, and HTTP boundaries.
 - Contract tests for WooCommerce fixtures and connector normalization.
 - End-to-end tests for critical operator journeys.
-- Tenant-isolation tests for every tenant-aware repository and API group.
+- Account-isolation tests for every account-scoped repository and API group.
 - Golden-file or visual regression tests for XLSX, invoice PDF, and thermal output.
 - Idempotency and replay tests for webhooks, exports, and bulk actions.
 
