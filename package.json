@@ -28,6 +28,7 @@
     "test:security": "node tools/run-tests.mjs security",
     "test:chaos": "node tools/run-tests.mjs chaos",
     "test:contract": "node tools/run-tests.mjs contract",
+    "test:golden": "node tools/run-tests.mjs golden",
     "test:e2e": "node tools/run-ui-tests.mjs e2e",
     "test:a11y": "node tools/run-ui-tests.mjs a11y",
     "test:visual": "node tools/run-ui-tests.mjs visual",

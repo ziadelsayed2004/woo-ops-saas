@@ -206,6 +206,57 @@ export type BulkPreview = {
   stores: readonly string[];
   warnings: readonly string[];
 };
+export type ExportFormat = 'csv' | 'xlsx';
+export type ExportRowMode = 'order' | 'line' | 'package' | 'carrier';
+export type ExportColumn = Readonly<{
+  key: string;
+  label: string;
+  type?: 'text' | 'number' | 'date' | 'money';
+}>;
+export type ExportProfile = Readonly<{
+  id: string;
+  accountId: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}>;
+export type ExportProfileVersion = Readonly<{
+  id: string;
+  accountId: string;
+  profileId: string;
+  version: number;
+  format: ExportFormat;
+  rowMode: ExportRowMode;
+  columns: readonly ExportColumn[];
+  filenameTemplate: string;
+  config: Readonly<Record<string, unknown>>;
+  createdBy: string;
+  createdAt: string;
+}>;
+export type ExportBatchStatus = 'queued' | 'running' | 'completed' | 'failed';
+export type ExportBatch = Readonly<{
+  id: string;
+  accountId: string;
+  selectionId: string;
+  profileVersionId: string;
+  format: ExportFormat;
+  rowMode: ExportRowMode;
+  status: ExportBatchStatus;
+  watermark: string;
+  orderCount: number;
+  rowCount: number;
+  filename: string | null;
+  filePath: string | null;
+  checksum: string | null;
+  createdBy: string;
+  idempotencyKey: string;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}>;
 
 const isJsonValue = (value: unknown, depth = 0): boolean => {
   if (depth > 8) return false;
@@ -547,7 +598,7 @@ const compileFilter = (
   return { sql: `${column} ${sqlOperator} ?`, params: [filter.value] };
 };
 
-export const schemaVersion = 10;
+export const schemaVersion = 11;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -771,6 +822,43 @@ const migrations: readonly Migration[] = [
       CREATE INDEX orders_account_assignee ON orders(account_id, assignee_id, local_status);
     `,
   },
+  {
+    version: 11,
+    name: 'versioned-export-profiles-and-batches',
+    sql: `
+      CREATE TABLE export_profiles (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), name TEXT NOT NULL,
+        description TEXT, active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(account_id, name)
+      );
+      CREATE UNIQUE INDEX export_profiles_account_id ON export_profiles(account_id, id);
+      CREATE TABLE export_profile_versions (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), profile_id TEXT NOT NULL,
+        version INTEGER NOT NULL CHECK(version >= 1), format TEXT NOT NULL CHECK(format IN ('csv', 'xlsx')),
+        row_mode TEXT NOT NULL CHECK(row_mode IN ('order', 'line', 'package', 'carrier')),
+        columns_json TEXT NOT NULL, filename_template TEXT NOT NULL, config_json TEXT NOT NULL DEFAULT '{}',
+        created_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL,
+        UNIQUE(account_id, profile_id, version),
+        FOREIGN KEY(account_id, profile_id) REFERENCES export_profiles(account_id, id)
+      );
+      CREATE UNIQUE INDEX export_profile_versions_account_id ON export_profile_versions(account_id, id);
+      CREATE INDEX export_profile_versions_account_profile ON export_profile_versions(account_id, profile_id, version DESC);
+      CREATE TABLE export_batches (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), selection_id TEXT NOT NULL,
+        profile_version_id TEXT NOT NULL, format TEXT NOT NULL CHECK(format IN ('csv', 'xlsx')),
+        row_mode TEXT NOT NULL CHECK(row_mode IN ('order', 'line', 'package', 'carrier')),
+        status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'completed', 'failed')),
+        watermark TEXT NOT NULL, order_count INTEGER NOT NULL DEFAULT 0 CHECK(order_count >= 0),
+        row_count INTEGER NOT NULL DEFAULT 0 CHECK(row_count >= 0), filename TEXT, file_path TEXT,
+        checksum TEXT, created_by TEXT NOT NULL REFERENCES users(id), idempotency_key TEXT NOT NULL,
+        error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT,
+        UNIQUE(account_id, idempotency_key), UNIQUE(account_id, id),
+        FOREIGN KEY(account_id, selection_id) REFERENCES selection_snapshots(account_id, id),
+        FOREIGN KEY(account_id, profile_version_id) REFERENCES export_profile_versions(account_id, id)
+      );
+      CREATE INDEX export_batches_account_status ON export_batches(account_id, status, updated_at, id);
+    `,
+  },
 ];
 
 const MAX_SELECTION_IDS = 5_000;
@@ -898,6 +986,143 @@ type SelectionRow = {
   expires_at: string;
   created_at: string;
 };
+type ExportProfileRow = {
+  id: string;
+  account_id: string;
+  name: string;
+  description: string | null;
+  active: number;
+  created_at: string;
+  updated_at: string;
+};
+type ExportProfileVersionRow = {
+  id: string;
+  account_id: string;
+  profile_id: string;
+  version: number;
+  format: ExportFormat;
+  row_mode: ExportRowMode;
+  columns_json: string;
+  filename_template: string;
+  config_json: string;
+  created_by: string;
+  created_at: string;
+};
+type ExportBatchRow = {
+  id: string;
+  account_id: string;
+  selection_id: string;
+  profile_version_id: string;
+  format: ExportFormat;
+  row_mode: ExportRowMode;
+  status: ExportBatchStatus;
+  watermark: string;
+  order_count: number;
+  row_count: number;
+  filename: string | null;
+  file_path: string | null;
+  checksum: string | null;
+  created_by: string;
+  idempotency_key: string;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+};
+const exportFormats: readonly ExportFormat[] = ['csv', 'xlsx'];
+const exportRowModes: readonly ExportRowMode[] = ['order', 'line', 'package', 'carrier'];
+const exportColumnTypes: readonly NonNullable<ExportColumn['type']>[] = [
+  'text',
+  'number',
+  'date',
+  'money',
+];
+const normalizeExportName = (value: unknown, code: string, maxLength: number): string => {
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > maxLength)
+    throw new Error(code);
+  return value.trim();
+};
+const normalizeExportColumns = (value: unknown): ExportColumn[] => {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 100)
+    throw new Error('EXPORT_COLUMNS_INVALID');
+  const columns = value.map((item) => {
+    if (!isRecord(item)) throw new Error('EXPORT_COLUMNS_INVALID');
+    const key = normalizeExportName(item.key, 'EXPORT_COLUMN_KEY_INVALID', 180);
+    const label = normalizeExportName(item.label, 'EXPORT_COLUMN_LABEL_INVALID', 160);
+    if (!key.split('.').every((segment) => /^[A-Za-z0-9_\u0600-\u06ff-]+$/u.test(segment)))
+      throw new Error('EXPORT_COLUMN_KEY_INVALID');
+    const type = item.type === undefined ? undefined : item.type;
+    if (
+      type !== undefined &&
+      (typeof type !== 'string' ||
+        !exportColumnTypes.includes(type as NonNullable<ExportColumn['type']>))
+    )
+      throw new Error('EXPORT_COLUMN_TYPE_INVALID');
+    return {
+      key,
+      label,
+      ...(type === undefined ? {} : { type: type as NonNullable<ExportColumn['type']> }),
+    };
+  });
+  if (new Set(columns.map((column) => column.key)).size !== columns.length)
+    throw new Error('EXPORT_COLUMNS_DUPLICATE');
+  return columns;
+};
+const normalizeExportFormat = (value: unknown): ExportFormat => {
+  if (typeof value !== 'string' || !exportFormats.includes(value as ExportFormat))
+    throw new Error('EXPORT_FORMAT_INVALID');
+  return value as ExportFormat;
+};
+const normalizeExportRowMode = (value: unknown): ExportRowMode => {
+  if (typeof value !== 'string' || !exportRowModes.includes(value as ExportRowMode))
+    throw new Error('EXPORT_ROW_MODE_INVALID');
+  return value as ExportRowMode;
+};
+const exportProfile = (row: ExportProfileRow): ExportProfile => ({
+  id: row.id,
+  accountId: row.account_id,
+  name: row.name,
+  description: row.description,
+  active: row.active === 1,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+const exportProfileVersion = (row: ExportProfileVersionRow): ExportProfileVersion => ({
+  id: row.id,
+  accountId: row.account_id,
+  profileId: row.profile_id,
+  version: row.version,
+  format: row.format,
+  rowMode: row.row_mode,
+  columns: normalizeExportColumns(
+    parseStoredJson<unknown>(row.columns_json, 'EXPORT_COLUMNS_INVALID'),
+  ),
+  filenameTemplate: normalizeExportName(row.filename_template, 'EXPORT_FILENAME_INVALID', 180),
+  config: parseStoredJson<Record<string, unknown>>(row.config_json, 'EXPORT_CONFIG_INVALID'),
+  createdBy: row.created_by,
+  createdAt: row.created_at,
+});
+const exportBatch = (row: ExportBatchRow): ExportBatch => ({
+  id: row.id,
+  accountId: row.account_id,
+  selectionId: row.selection_id,
+  profileVersionId: row.profile_version_id,
+  format: row.format,
+  rowMode: row.row_mode,
+  status: row.status,
+  watermark: row.watermark,
+  orderCount: row.order_count,
+  rowCount: row.row_count,
+  filename: row.filename,
+  filePath: row.file_path,
+  checksum: row.checksum,
+  createdBy: row.created_by,
+  idempotencyKey: row.idempotency_key,
+  error: row.error,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  completedAt: row.completed_at,
+});
 type SavedViewRow = {
   id: string;
   account_id: string;
@@ -1187,8 +1412,11 @@ export class SqliteStore {
     this.requireMutationActor(context);
     this.selectionRow(context, selectionId);
     const activeJobs = this.db
-      .prepare('SELECT COUNT(*) AS count FROM bulk_jobs WHERE account_id = ? AND selection_id = ?')
-      .get(context.accountId, selectionId) as { count: number };
+      .prepare(
+        `SELECT (SELECT COUNT(*) FROM bulk_jobs WHERE account_id = ? AND selection_id = ?)
+          + (SELECT COUNT(*) FROM export_batches WHERE account_id = ? AND selection_id = ?) AS count`,
+      )
+      .get(context.accountId, selectionId, context.accountId, selectionId) as { count: number };
     if (Number(activeJobs.count) > 0) throw new Error('SELECTION_IN_USE');
     const result = this.db
       .prepare('DELETE FROM selection_snapshots WHERE account_id = ? AND id = ?')
@@ -1226,6 +1454,298 @@ export class SqliteStore {
       nextCursor: hasMore && visible.length > 0 ? selectionCursor(visible.at(-1) as string) : null,
       totalCount: this.countSelection(context, selection),
     };
+  }
+
+  createExportProfile(
+    context: AccountContext,
+    input: { name: string; description?: string },
+  ): ExportProfile {
+    const actorId = this.requireMutationActor(context);
+    const name = normalizeExportName(input.name, 'EXPORT_PROFILE_NAME_INVALID', 120);
+    const description =
+      input.description === undefined
+        ? null
+        : normalizeExportName(input.description, 'EXPORT_DESCRIPTION_INVALID', 500);
+    const now = new Date().toISOString();
+    const id = randomId();
+    try {
+      this.db
+        .prepare(
+          'INSERT INTO export_profiles (id, account_id, name, description, active, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)',
+        )
+        .run(id, context.accountId, name, description, now, now);
+    } catch {
+      throw new Error('EXPORT_PROFILE_NAME_EXISTS');
+    }
+    this.audit(context, 'export-profile.created', 'export_profile', id, { name, actorId });
+    return exportProfile(
+      this.db
+        .prepare(
+          'SELECT id, account_id, name, description, active, created_at, updated_at FROM export_profiles WHERE account_id = ? AND id = ?',
+        )
+        .get(context.accountId, id) as ExportProfileRow,
+    );
+  }
+
+  listExportProfiles(context: AccountContext): ExportProfile[] {
+    this.assertMember(context);
+    const rows = this.db
+      .prepare(
+        'SELECT id, account_id, name, description, active, created_at, updated_at FROM export_profiles WHERE account_id = ? ORDER BY name COLLATE NOCASE, id',
+      )
+      .all(context.accountId) as ExportProfileRow[];
+    return rows.map(exportProfile);
+  }
+
+  createExportProfileVersion(
+    context: AccountContext,
+    profileId: string,
+    input: {
+      format: ExportFormat;
+      rowMode: ExportRowMode;
+      columns: readonly ExportColumn[];
+      filenameTemplate: string;
+      config?: Record<string, unknown>;
+    },
+  ): ExportProfileVersion {
+    const actorId = this.requireMutationActor(context);
+    const profile = this.db
+      .prepare('SELECT id, active FROM export_profiles WHERE account_id = ? AND id = ?')
+      .get(context.accountId, profileId) as { id: string; active: number } | undefined;
+    if (!profile || profile.active !== 1) throw new Error('EXPORT_PROFILE_NOT_FOUND');
+    const format = normalizeExportFormat(input.format);
+    const rowMode = normalizeExportRowMode(input.rowMode);
+    const columns = normalizeExportColumns(input.columns);
+    const filenameTemplate = normalizeExportName(
+      input.filenameTemplate,
+      'EXPORT_FILENAME_INVALID',
+      180,
+    );
+    if (
+      !/^[\p{L}\p{N}._{}-]+$/u.test(filenameTemplate) ||
+      filenameTemplate.includes('..') ||
+      filenameTemplate.includes('{format}') === false
+    )
+      throw new Error('EXPORT_FILENAME_INVALID');
+    const config = input.config ?? {};
+    if (!isRecord(config)) throw new Error('EXPORT_CONFIG_INVALID');
+    const columnsJson = serializeBoundedJson(columns, 32 * 1024, 'EXPORT_COLUMNS_TOO_LARGE');
+    const configJson = serializeBoundedJson(config, 32 * 1024, 'EXPORT_CONFIG_TOO_LARGE');
+    const previous = this.db
+      .prepare(
+        'SELECT COALESCE(MAX(version), 0) AS version FROM export_profile_versions WHERE account_id = ? AND profile_id = ?',
+      )
+      .get(context.accountId, profileId) as { version: number };
+    const version = Number(previous.version) + 1;
+    const now = new Date().toISOString();
+    const id = randomId();
+    this.db
+      .prepare(
+        'INSERT INTO export_profile_versions (id, account_id, profile_id, version, format, row_mode, columns_json, filename_template, config_json, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        id,
+        context.accountId,
+        profileId,
+        version,
+        format,
+        rowMode,
+        columnsJson,
+        filenameTemplate,
+        configJson,
+        actorId,
+        now,
+      );
+    this.audit(context, 'export-profile.version-created', 'export_profile', profileId, {
+      version,
+      format,
+      rowMode,
+    });
+    return this.getExportProfileVersion(context, id);
+  }
+
+  getExportProfileVersion(context: AccountContext, versionId: string): ExportProfileVersion {
+    this.assertMember(context);
+    const row = this.db
+      .prepare(
+        'SELECT id, account_id, profile_id, version, format, row_mode, columns_json, filename_template, config_json, created_by, created_at FROM export_profile_versions WHERE account_id = ? AND id = ?',
+      )
+      .get(context.accountId, versionId) as ExportProfileVersionRow | undefined;
+    if (!row) throw new Error('EXPORT_PROFILE_VERSION_NOT_FOUND');
+    return exportProfileVersion(row);
+  }
+
+  createExportBatch(
+    context: AccountContext,
+    input: { selectionId: string; profileVersionId: string; idempotencyKey: string },
+  ): ExportBatch {
+    const actorId = this.requireMutationActor(context);
+    const selection = this.selectionRow(context, input.selectionId);
+    this.assertSelectionActive(selection);
+    const version = this.db
+      .prepare(
+        `SELECT v.id, v.format, v.row_mode, p.active FROM export_profile_versions v
+         JOIN export_profiles p ON p.account_id = v.account_id AND p.id = v.profile_id
+         WHERE v.account_id = ? AND v.id = ?`,
+      )
+      .get(context.accountId, input.profileVersionId) as
+      { id: string; format: ExportFormat; row_mode: ExportRowMode; active: number } | undefined;
+    if (!version || version.active !== 1) throw new Error('EXPORT_PROFILE_VERSION_NOT_FOUND');
+    const idempotencyKey = normalizeExportName(
+      input.idempotencyKey,
+      'EXPORT_IDEMPOTENCY_KEY_INVALID',
+      200,
+    );
+    const now = new Date().toISOString();
+    const id = randomId();
+    this.db
+      .prepare(
+        `INSERT INTO export_batches
+          (id, account_id, selection_id, profile_version_id, format, row_mode, status, watermark,
+           order_count, row_count, created_by, idempotency_key, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, 0, ?, ?, ?, ?)
+         ON CONFLICT(account_id, idempotency_key) DO NOTHING`,
+      )
+      .run(
+        id,
+        context.accountId,
+        input.selectionId,
+        input.profileVersionId,
+        version.format,
+        version.row_mode,
+        selection.watermark,
+        selection.estimated_count,
+        actorId,
+        idempotencyKey,
+        now,
+        now,
+      );
+    const row = this.db
+      .prepare(
+        `SELECT id, account_id, selection_id, profile_version_id, format, row_mode, status, watermark,
+          order_count, row_count, filename, file_path, checksum, created_by, idempotency_key, error,
+          created_at, updated_at, completed_at FROM export_batches WHERE account_id = ? AND idempotency_key = ?`,
+      )
+      .get(context.accountId, idempotencyKey) as ExportBatchRow | undefined;
+    if (!row) throw new Error('EXPORT_BATCH_CREATE_FAILED');
+    if (row.selection_id !== input.selectionId || row.profile_version_id !== input.profileVersionId)
+      throw new Error('EXPORT_IDEMPOTENCY_CONFLICT');
+    if (row.status === 'queued' && row.id === id)
+      this.audit(context, 'export-batch.created', 'export_batch', row.id, {
+        selectionId: row.selection_id,
+        profileVersionId: row.profile_version_id,
+        orderCount: row.order_count,
+      });
+    return exportBatch(row);
+  }
+
+  getExportBatch(context: AccountContext, batchId: string): ExportBatch {
+    this.assertMember(context);
+    const row = this.db
+      .prepare(
+        `SELECT id, account_id, selection_id, profile_version_id, format, row_mode, status, watermark,
+          order_count, row_count, filename, file_path, checksum, created_by, idempotency_key, error,
+          created_at, updated_at, completed_at FROM export_batches WHERE account_id = ? AND id = ?`,
+      )
+      .get(context.accountId, batchId) as ExportBatchRow | undefined;
+    if (!row) throw new Error('EXPORT_BATCH_NOT_FOUND');
+    return exportBatch(row);
+  }
+
+  listExportBatches(context: AccountContext, limit = 100): ExportBatch[] {
+    this.assertMember(context);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error('EXPORT_BATCH_LIMIT_INVALID');
+    const rows = this.db
+      .prepare(
+        `SELECT id, account_id, selection_id, profile_version_id, format, row_mode, status, watermark,
+          order_count, row_count, filename, file_path, checksum, created_by, idempotency_key, error,
+          created_at, updated_at, completed_at FROM export_batches WHERE account_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`,
+      )
+      .all(context.accountId, limit) as ExportBatchRow[];
+    return rows.map(exportBatch);
+  }
+
+  startExportBatch(context: AccountContext, batchId: string): ExportBatch {
+    this.assertMember(context);
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `UPDATE export_batches SET status = 'running', updated_at = ? WHERE account_id = ? AND id = ? AND status = 'queued'`,
+      )
+      .run(now, context.accountId, batchId);
+    return this.getExportBatch(context, batchId);
+  }
+
+  completeExportBatch(
+    context: AccountContext,
+    batchId: string,
+    input: {
+      orderCount: number;
+      rowCount: number;
+      filename: string;
+      filePath: string;
+      checksum: string;
+    },
+  ): ExportBatch {
+    this.assertMember(context);
+    if (!Number.isInteger(input.orderCount) || input.orderCount < 0 || input.orderCount > 100_000)
+      throw new Error('EXPORT_ORDER_COUNT_INVALID');
+    if (!Number.isInteger(input.rowCount) || input.rowCount < 0 || input.rowCount > 200_000)
+      throw new Error('EXPORT_ROW_COUNT_INVALID');
+    const filename = normalizeExportName(input.filename, 'EXPORT_FILENAME_INVALID', 180);
+    const filePath = normalizeExportName(input.filePath, 'EXPORT_FILE_PATH_INVALID', 500);
+    if (filePath.includes('..') || filePath.includes('\\') || filePath.startsWith('/'))
+      throw new Error('EXPORT_FILE_PATH_INVALID');
+    if (!/^[a-f0-9]{64}$/i.test(input.checksum)) throw new Error('EXPORT_CHECKSUM_INVALID');
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE export_batches SET status = 'completed', order_count = ?, row_count = ?, filename = ?,
+          file_path = ?, checksum = ?, error = NULL, updated_at = ?, completed_at = ?
+         WHERE account_id = ? AND id = ? AND status IN ('queued', 'running')`,
+      )
+      .run(
+        input.orderCount,
+        input.rowCount,
+        filename,
+        filePath,
+        input.checksum.toLowerCase(),
+        now,
+        now,
+        context.accountId,
+        batchId,
+      );
+    if (result.changes !== 1) {
+      const existing = this.getExportBatch(context, batchId);
+      if (
+        existing.status === 'completed' &&
+        existing.checksum === input.checksum.toLowerCase() &&
+        existing.orderCount === input.orderCount &&
+        existing.rowCount === input.rowCount
+      )
+        return existing;
+      throw new Error('EXPORT_BATCH_STATE_CONFLICT');
+    }
+    this.audit(context, 'export-batch.completed', 'export_batch', batchId, {
+      orderCount: input.orderCount,
+      rowCount: input.rowCount,
+      checksum: input.checksum.toLowerCase(),
+    });
+    return this.getExportBatch(context, batchId);
+  }
+
+  failExportBatch(context: AccountContext, batchId: string, error: string): ExportBatch {
+    this.assertMember(context);
+    const message = normalizeExportName(error, 'EXPORT_ERROR_INVALID', 500);
+    const result = this.db
+      .prepare(
+        `UPDATE export_batches SET status = 'failed', error = ?, updated_at = ? WHERE account_id = ? AND id = ? AND status IN ('queued', 'running')`,
+      )
+      .run(message, new Date().toISOString(), context.accountId, batchId);
+    if (result.changes !== 1 && this.getExportBatch(context, batchId).status !== 'failed')
+      throw new Error('EXPORT_BATCH_STATE_CONFLICT');
+    return this.getExportBatch(context, batchId);
   }
 
   private normalizeColumns(value: unknown): string[] {

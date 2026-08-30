@@ -34,6 +34,34 @@ const orderSortSchema = z
   })
   .strict();
 const savedViewVisibilitySchema = z.enum(['private', 'shared']);
+const exportFormatSchema = z.enum(['csv', 'xlsx']);
+const exportRowModeSchema = z.enum(['order', 'line', 'package', 'carrier']);
+const exportColumnSchema = z
+  .object({
+    key: z.string().trim().min(1).max(180),
+    label: z.string().trim().min(1).max(160),
+    type: z.enum(['text', 'number', 'date', 'money']).optional(),
+  })
+  .strict();
+export const exportProfileCreateSchema = z
+  .object({ name: z.string().trim().min(1).max(120), description: z.string().max(500).optional() })
+  .strict();
+export const exportProfileVersionCreateSchema = z
+  .object({
+    format: exportFormatSchema,
+    rowMode: exportRowModeSchema,
+    columns: z.array(exportColumnSchema).min(1).max(100),
+    filenameTemplate: z.string().trim().min(1).max(180),
+    config: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
+export const exportBatchCreateSchema = z
+  .object({
+    selectionId: z.string().min(1).max(256),
+    profileVersionId: z.string().min(1).max(256),
+    idempotencyKey: z.string().trim().min(1).max(200),
+  })
+  .strict();
 
 const minorAmountSchema = z.string().regex(/^-?\d{1,18}$/);
 const manualJsonObjectSchema = z.record(z.string(), z.unknown());
