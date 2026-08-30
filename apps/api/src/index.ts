@@ -1,6 +1,6 @@
 import express, { type Express, type Request, type Response } from 'express';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import {
   bulkCreateSchema,
@@ -18,6 +18,10 @@ import {
   exportBatchCreateSchema,
   exportMarkOrdersSchema,
   exportUnexportSchema,
+  documentTemplateCreateSchema,
+  documentTemplateUpdateSchema,
+  documentPreviewSchema,
+  documentJobCreateSchema,
   healthResponseSchema,
 } from '@woo-ops/contracts';
 import { SqliteStore } from '@woo-ops/persistence';
@@ -33,6 +37,7 @@ import type {
   ExportColumn,
   ExportFormat,
   ExportRowMode,
+  DocumentTemplateRecord,
 } from '@woo-ops/persistence';
 import {
   canonicalizeStoreUrl,
@@ -42,10 +47,17 @@ import {
 import { createHmac, randomBytes } from 'node:crypto';
 import { AuthService, can, recordAudit } from './auth.js';
 import { verifyWebhookSignature } from '@woo-ops/connectors';
+import { generateDocument } from '@woo-ops/documents';
+import type { DocumentFormat, DocumentOrder } from '@woo-ops/documents';
+import { readPrivatePdf, writePrivatePdf } from './document-files.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const dataDirectory = resolve(process.env.WOO_OPS_DATA_DIR ?? './data');
 const databasePath = resolve(process.env.WOO_OPS_DATABASE ?? `${dataDirectory}/woo-ops.sqlite`);
+const documentStorageRoot = resolve(dataDirectory, 'private-documents');
+const documentFontBytes = process.env.WOO_OPS_DOCUMENT_FONT_PATH
+  ? new Uint8Array(readFileSync(resolve(process.env.WOO_OPS_DOCUMENT_FONT_PATH)))
+  : undefined;
 mkdirSync(dirname(databasePath), { recursive: true });
 const store = new SqliteStore(databasePath);
 const auth = new AuthService(store.db);
@@ -109,6 +121,30 @@ const requireOperationWrite = (request: Request, response: Response): CurrentUse
   }
   return user;
 };
+
+const documentTemplateForEngine = (template: DocumentTemplateRecord) => ({
+  id: template.id,
+  version: template.version,
+  name: template.name,
+  companyName: template.companyName,
+  ...(template.companyAddress === null ? {} : { companyAddress: template.companyAddress }),
+  ...(template.footerText === null ? {} : { footerText: template.footerText }),
+  locale: template.locale,
+  direction: template.direction,
+  ...(template.body ? { body: template.body } : {}),
+  ...(documentFontBytes ? { fontBytes: documentFontBytes } : {}),
+});
+
+const documentFormatForAction = (
+  action: 'generate-invoice' | 'generate-thermal' | 'generate-label' | 'print-documents',
+): DocumentFormat | undefined =>
+  action === 'generate-invoice'
+    ? 'a4'
+    : action === 'generate-thermal'
+      ? 'thermal-80mm'
+      : action === 'generate-label'
+        ? 'label-100x150mm'
+        : undefined;
 
 app.disable('x-powered-by');
 app.use(
@@ -1072,6 +1108,243 @@ app.post('/api/v1/orders/:orderId/export-state/unexport', (request, response) =>
         request.params.orderId,
         parsed.data.reason,
       ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/document-templates', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({ items: store.listDocumentTemplates(operationContext(user, response)) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/document-templates', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = documentTemplateCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(
+      response,
+      400,
+      'DOCUMENT_TEMPLATE_INPUT_INVALID',
+      'Document template input is invalid',
+    );
+    return;
+  }
+  try {
+    const body = parsed.data;
+    response.status(201).json({
+      template: store.createDocumentTemplate(operationContext(user, response), {
+        name: body.name,
+        format: body.format,
+        ...(body.locale === undefined ? {} : { locale: body.locale }),
+        ...(body.direction === undefined ? {} : { direction: body.direction }),
+        ...(body.body === undefined ? {} : { body: body.body }),
+        companyName: body.companyName,
+        ...(body.companyAddress === undefined ? {} : { companyAddress: body.companyAddress }),
+        ...(body.footerText === undefined ? {} : { footerText: body.footerText }),
+      }),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.patch('/api/v1/document-templates/:templateId', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = documentTemplateUpdateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(
+      response,
+      400,
+      'DOCUMENT_TEMPLATE_INPUT_INVALID',
+      'Document template input is invalid',
+    );
+    return;
+  }
+  try {
+    const body = parsed.data;
+    response.json({
+      template: store.updateDocumentTemplate(
+        operationContext(user, response),
+        request.params.templateId,
+        {
+          ...(body.name === undefined ? {} : { name: body.name }),
+          ...(body.format === undefined ? {} : { format: body.format }),
+          ...(body.locale === undefined ? {} : { locale: body.locale }),
+          ...(body.direction === undefined ? {} : { direction: body.direction }),
+          ...(body.body === undefined ? {} : { body: body.body }),
+          ...(body.companyName === undefined ? {} : { companyName: body.companyName }),
+          ...(body.companyAddress === undefined ? {} : { companyAddress: body.companyAddress }),
+          ...(body.footerText === undefined ? {} : { footerText: body.footerText }),
+          ...(body.active === undefined ? {} : { active: body.active }),
+        },
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/document-templates/:templateId/preview', async (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const parsed = documentPreviewSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(
+      response,
+      400,
+      'DOCUMENT_PREVIEW_INPUT_INVALID',
+      'Document preview input is invalid',
+    );
+    return;
+  }
+  try {
+    const template = store.getDocumentTemplate(
+      operationContext(user, response),
+      request.params.templateId,
+    );
+    const result = await generateDocument({
+      order: parsed.data.order as DocumentOrder,
+      format: parsed.data.format ?? template.format,
+      template: documentTemplateForEngine(template),
+      ...(parsed.data.orderId === undefined ? {} : { orderId: parsed.data.orderId }),
+      ...(parsed.data.documentNumber === undefined
+        ? {}
+        : { documentNumber: parsed.data.documentNumber }),
+      ...(parsed.data.barcodeValue === undefined ? {} : { barcodeValue: parsed.data.barcodeValue }),
+      ...(parsed.data.qrValue === undefined ? {} : { qrValue: parsed.data.qrValue }),
+      ...(parsed.data.thermalHeightMm === undefined
+        ? {}
+        : { thermalHeightMm: parsed.data.thermalHeightMm }),
+    });
+    response.setHeader('Content-Type', 'application/pdf');
+    response.setHeader('Content-Length', result.bytes.byteLength);
+    response.setHeader('Content-Security-Policy', "default-src 'none'");
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('X-Document-Checksum', result.checksum);
+    response.setHeader('Content-Disposition', 'inline; filename="document-preview.pdf"');
+    response.send(Buffer.from(result.bytes));
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/document-templates/:templateId/orders/:orderId', async (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = documentPreviewSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    sendApiError(
+      response,
+      400,
+      'DOCUMENT_GENERATION_INPUT_INVALID',
+      'Document generation input is invalid',
+    );
+    return;
+  }
+  try {
+    const context = operationContext(user, response);
+    const template = store.getDocumentTemplate(context, request.params.templateId);
+    const order = store.getOrder(context, request.params.orderId);
+    if (!order) throw new Error('ORDER_NOT_FOUND');
+    const format = parsed.data.format ?? template.format;
+    const result = await generateDocument({
+      order: order as DocumentOrder,
+      format,
+      template: documentTemplateForEngine(template),
+      orderId: request.params.orderId,
+      ...(parsed.data.documentNumber === undefined
+        ? {}
+        : { documentNumber: parsed.data.documentNumber }),
+      ...(parsed.data.barcodeValue === undefined ? {} : { barcodeValue: parsed.data.barcodeValue }),
+      ...(parsed.data.qrValue === undefined ? {} : { qrValue: parsed.data.qrValue }),
+      ...(parsed.data.thermalHeightMm === undefined
+        ? {}
+        : { thermalHeightMm: parsed.data.thermalHeightMm }),
+    });
+    const fileId = randomUUID();
+    const stored = writePrivatePdf(documentStorageRoot, user.accountId, fileId, result.bytes);
+    const orderNumber = String(order.orderNumber ?? request.params.orderId);
+    const filename = `${template.name}-${orderNumber}-${format}.pdf`
+      .replace(/[^A-Za-z0-9._-]/gu, '_')
+      .slice(0, 160);
+    const file = store.registerDocumentFile(context, {
+      id: fileId,
+      orderId: request.params.orderId,
+      templateId: template.id,
+      format,
+      relativePath: stored.relativePath,
+      filename: filename.endsWith('.pdf') ? filename : `${filename}.pdf`,
+      byteSize: stored.byteSize,
+      checksum: stored.checksum,
+    });
+    response.status(201).json({ file });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/orders/:orderId/documents', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({
+      items: store.listDocumentFiles(operationContext(user, response), request.params.orderId),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/document-files/:fileId', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    const file = store.getDocumentFile(operationContext(user, response), request.params.fileId);
+    const bytes = readPrivatePdf(documentStorageRoot, file.relativePath, file.checksum);
+    const safeFilename = file.filename.replace(/[^A-Za-z0-9._-]/gu, '_');
+    response.setHeader('Content-Type', file.mimeType);
+    response.setHeader('Content-Length', bytes.byteLength);
+    response.setHeader('Content-Disposition', `inline; filename="${safeFilename}"`);
+    response.setHeader('Content-Security-Policy', "default-src 'none'");
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('X-Document-Checksum', file.checksum);
+    response.send(bytes);
+  } catch (error) {
+    const code = error instanceof Error ? (error as Error & { code?: string }).code : undefined;
+    if (code === 'ENOENT') {
+      sendApiError(response, 404, 'DOCUMENT_FILE_NOT_FOUND', 'Document file not found');
+      return;
+    }
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/document-jobs', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = documentJobCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'DOCUMENT_JOB_INPUT_INVALID', 'Document job input is invalid');
+    return;
+  }
+  try {
+    const body = parsed.data;
+    const context = operationContext(user, response);
+    store.getDocumentTemplate(context, body.templateId);
+    const format = body.format ?? documentFormatForAction(body.action);
+    response.status(202).json({
+      job: store.createBulkJob(context, {
+        selectionId: body.selectionId,
+        action: body.action as BulkAction,
+        parameters: {
+          templateId: body.templateId,
+          ...(format === undefined ? {} : { format }),
+        },
+        idempotencyKey: body.idempotencyKey,
+      }),
     });
   } catch (error) {
     sendOperationError(response, error);

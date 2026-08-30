@@ -44,7 +44,12 @@ store.db
   )
   .run(connectionId, accountId, 'woocommerce', 'https://shop.example.test', 'connected', now, now);
 const adminContext = { accountId, actorId: adminId, role: 'admin', correlationId: randomUUID() };
-const operatorContext = { accountId, actorId: operatorId, role: 'operator', correlationId: randomUUID() };
+const operatorContext = {
+  accountId,
+  actorId: operatorId,
+  role: 'operator',
+  correlationId: randomUUID(),
+};
 const otherContext = {
   accountId: otherAccountId,
   actorId: otherActorId,
@@ -94,10 +99,16 @@ const completeBatch = (key) => {
 };
 
 test('successful batches derive local exported state and keep append-only history', () => {
-  assert.equal(schemaVersion, 12);
+  assert.equal(schemaVersion, 13);
   const batchId = completeBatch('state-1');
-  assert.equal(store.recordExportedOrders(adminContext, batchId, [orderId], '2'.repeat(64)).recorded, 1);
-  assert.equal(store.recordExportedOrders(adminContext, batchId, [orderId], '2'.repeat(64)).recorded, 0);
+  assert.equal(
+    store.recordExportedOrders(adminContext, batchId, [orderId], '2'.repeat(64)).recorded,
+    1,
+  );
+  assert.equal(
+    store.recordExportedOrders(adminContext, batchId, [orderId], '2'.repeat(64)).recorded,
+    0,
+  );
   assert.equal(store.getOrder(adminContext, orderId).exportState, 'exported');
   assert.equal(store.listOrderExportEvents(adminContext, orderId).length, 1);
   const secondBatchId = completeBatch('state-2');
@@ -141,10 +152,7 @@ test('unexport requires admin permission, keeps history, and is local-only', () 
   assert.equal(event.reason, 'Customer cancelled shipment');
   assert.equal(store.getOrder(adminContext, orderId).exportState, 'never-exported');
   assert.equal(store.listOrderExportEvents(adminContext, orderId).length, 4);
-  assert.throws(
-    () => store.listOrderExportEvents(otherContext, orderId),
-    /ORDER_NOT_FOUND/,
-  );
+  assert.throws(() => store.listOrderExportEvents(otherContext, orderId), /ORDER_NOT_FOUND/);
 });
 
 test.after(() => {

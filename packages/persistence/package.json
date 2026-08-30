@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@woo-ops/application": "workspace:*",
+    "@woo-ops/documents": "workspace:*",
     "better-sqlite3": "^12.4.1"
   },
   "devDependencies": {
