@@ -19,9 +19,11 @@ export {
   toCatalogItems,
   WooCommerceConnector,
   canonicalizeStoreUrl,
+  assertPublicStoreUrl,
   createAuthorizationUrl,
   encryptCredentialEnvelope,
   verifyWebhookSignature,
+  validateWooOrder,
 } from './woocommerce.js';
 export type {
   NormalizedCatalogItem,
@@ -30,4 +32,5 @@ export type {
   WooCatalogPage,
   WooOrderKind,
   WooCredentials,
+  WooOrderValidation,
 } from './woocommerce.js';

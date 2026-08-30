@@ -4959,6 +4959,32 @@ export class SqliteStore {
     body: Uint8Array;
     checksum: string;
   }): { accepted: boolean; inboxId: string } {
+    if (
+      typeof input.accountId !== 'string' ||
+      typeof input.connectionId !== 'string' ||
+      typeof input.deliveryKey !== 'string' ||
+      typeof input.topic !== 'string' ||
+      !(input.body instanceof Uint8Array) ||
+      typeof input.checksum !== 'string' ||
+      input.deliveryKey.length < 1 ||
+      input.deliveryKey.length > 200 ||
+      /[\u0000-\u001f\u007f]/u.test(input.deliveryKey) ||
+      input.topic.length < 1 ||
+      input.topic.length > 120 ||
+      /[\u0000-\u001f\u007f]/u.test(input.topic) ||
+      input.body.byteLength > 256 * 1024 ||
+      !/^[a-f0-9]{64}$/iu.test(input.checksum)
+    )
+      throw new Error('WEBHOOK_INPUT_INVALID');
+    const connection = this.db
+      .prepare('SELECT account_id FROM connections WHERE id = ? AND platform = ?')
+      .get(input.connectionId, 'woocommerce') as { account_id: string } | undefined;
+    if (!connection || connection.account_id !== input.accountId)
+      throw new Error('WEBHOOK_CONNECTION_NOT_FOUND');
+    const body = Buffer.from(input.body);
+    const actualChecksum = createHash('sha256').update(body).digest('hex');
+    if (actualChecksum !== input.checksum.toLowerCase())
+      throw new Error('WEBHOOK_CHECKSUM_INVALID');
     const result = this.db
       .prepare(
         `INSERT INTO webhook_inbox (id, account_id, connection_id, delivery_key, topic, body_checksum, raw_body, status, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'accepted', ?) ON CONFLICT(account_id, connection_id, delivery_key) DO NOTHING`,
@@ -4969,8 +4995,8 @@ export class SqliteStore {
         input.connectionId,
         input.deliveryKey,
         input.topic,
-        input.checksum,
-        Buffer.from(input.body),
+        actualChecksum,
+        body,
         new Date().toISOString(),
       );
     if (result.changes === 1) return { accepted: true, inboxId: input.id };
@@ -4979,6 +5005,7 @@ export class SqliteStore {
         'SELECT id FROM webhook_inbox WHERE account_id = ? AND connection_id = ? AND delivery_key = ?',
       )
       .get(input.accountId, input.connectionId, input.deliveryKey) as { id: string };
+    if (!existing) throw new Error('WEBHOOK_DUPLICATE_LOOKUP_FAILED');
     return { accepted: false, inboxId: existing.id };
   }
 }

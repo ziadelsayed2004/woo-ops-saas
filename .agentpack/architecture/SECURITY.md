@@ -77,6 +77,22 @@
 - The SQLite data directory is private and filesystem-protected; HTTPS/TLS is required for public and outbound traffic.
 - Backups and restore drills have documented RPO/RTO.
 
+The Woo connector enforces HTTPS, rejects private and special-use IP ranges (including DNS
+addresses resolved immediately before each request), sends only explicit `GET` requests, disables
+redirect following, and rejects response-origin changes. Schema validation failures are returned by
+`validateWooOrder()` as a quarantined schema-drift result so an ingestion boundary can dead-letter
+the payload without treating it as a valid order.
+
+Webhook persistence binds the connection to its owning account, verifies the raw-body checksum and
+bounded headers before insertion, and deduplicates by account/connection/delivery key. OAuth state
+values are hashed at rest, signed with a constant-time comparison, single-use, and atomically
+claimed. Production session cookies require `Secure`.
+
+Release checks include `pnpm test:security`, `pnpm test:tenant-isolation`,
+`pnpm test:contract --filter woocommerce`, `pnpm security:scan`, and
+`pnpm security:audit`. The lockfile pins the patched `uuid` release required by the production
+dependency graph.
+
 ## High-risk change review
 
 The following require explicit security review and an ADR:
