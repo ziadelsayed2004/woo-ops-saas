@@ -23,17 +23,27 @@ for (const [accountId, name] of [
 test('job idempotency and account scope', () => {
   const first = store.enqueueJob(accountA, {
     id: randomUUID(),
-    type: 'sync',
+    type: 'sync.incremental',
     idempotencyKey: 'same',
     payload: { connectionId: 'one' },
   });
   const duplicate = store.enqueueJob(accountA, {
     id: randomUUID(),
-    type: 'sync',
+    type: 'sync.incremental',
     idempotencyKey: 'same',
-    payload: { connectionId: 'two' },
+    payload: { connectionId: 'one' },
   });
   assert.equal(duplicate.id, first.id);
+  assert.throws(
+    () =>
+      store.enqueueJob(accountA, {
+        id: randomUUID(),
+        type: 'sync.incremental',
+        idempotencyKey: 'same',
+        payload: { connectionId: 'different' },
+      }),
+    /JOB_IDEMPOTENCY_CONFLICT/,
+  );
   assert.equal(store.claimNext(accountB), null);
   assert.equal(store.claimNext(accountA)?.id, first.id);
 });
@@ -41,7 +51,7 @@ test('job idempotency and account scope', () => {
 test('failed jobs become dead letters after max attempts', () => {
   const job = store.enqueueJob(accountA, {
     id: randomUUID(),
-    type: 'poison',
+    type: 'maintenance',
     idempotencyKey: randomUUID(),
     payload: {},
     maxAttempts: 1,
@@ -90,7 +100,7 @@ test('webhook inbox deduplicates delivery keys and preserves raw bytes', () => {
 test('jobs recover expired leases and reject invalid payloads', () => {
   const job = store.enqueueJob(accountA, {
     id: randomUUID(),
-    type: 'restartable',
+    type: 'sync.incremental',
     idempotencyKey: randomUUID(),
     payload: { ok: true },
   });
@@ -101,7 +111,7 @@ test('jobs recover expired leases and reject invalid payloads', () => {
     () =>
       store.enqueueJob(accountA, {
         id: randomUUID(),
-        type: 'invalid',
+        type: 'maintenance',
         idempotencyKey: randomUUID(),
         payload: BigInt(1),
       }),

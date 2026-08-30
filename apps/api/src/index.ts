@@ -40,6 +40,7 @@ import {
   passwordResetRequestSchema,
   passwordResetConfirmSchema,
   sessionTargetSchema,
+  operationJobListSchema,
 } from '@woo-ops/contracts';
 import { SqliteStore } from '@woo-ops/persistence';
 import type {
@@ -67,6 +68,7 @@ import { verifyWebhookSignature } from '@woo-ops/connectors';
 import { generateDocument } from '@woo-ops/documents';
 import type { DocumentFormat, DocumentOrder } from '@woo-ops/documents';
 import { readPrivatePdf, writePrivatePdf } from './document-files.js';
+import { createApiJobRunner } from './job-runner.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const dataDirectory = resolve(process.env.WOO_OPS_DATA_DIR ?? './data');
@@ -88,6 +90,27 @@ const documentFontBytes = process.env.WOO_OPS_DOCUMENT_FONT_PATH
 mkdirSync(dirname(databasePath), { recursive: true });
 const store = new SqliteStore(databasePath);
 const auth = new AuthService(store.db);
+const boundedJobConfig = (
+  name: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number | undefined => {
+  const raw = process.env[name];
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < minimum || value > maximum)
+    throw new Error(`${name}_INVALID`);
+  return value === fallback ? undefined : value;
+};
+const configuredConcurrency = boundedJobConfig('WOO_OPS_JOB_CONCURRENCY', 2, 1, 16);
+const configuredLeaseSeconds = boundedJobConfig('WOO_OPS_JOB_LEASE_SECONDS', 60, 5, 3600);
+const configuredPollIntervalMs = boundedJobConfig('WOO_OPS_JOB_POLL_MS', 1000, 10, 60_000);
+const jobRunner = createApiJobRunner(store, {
+  ...(configuredConcurrency === undefined ? {} : { concurrency: configuredConcurrency }),
+  ...(configuredLeaseSeconds === undefined ? {} : { leaseSeconds: configuredLeaseSeconds }),
+  ...(configuredPollIntervalMs === undefined ? {} : { pollIntervalMs: configuredPollIntervalMs }),
+});
 const app: Express = express();
 const attempts = new Map<string, { count: number; resetAt: number }>();
 const callbackSecret = process.env.SESSION_SECRET ?? 'development-only-session-secret';
@@ -295,6 +318,120 @@ const healthBody = (): {
 app.get(['/health', '/ready'], (_request, response) => {
   const result = healthBody();
   response.status(result.healthy ? 200 : 503).json(result.body);
+});
+app.get('/api/v1/operations/health', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({
+      health: store.accountHealthSnapshot(operationContext(user, response)),
+      runner: {
+        running: jobRunner.isRunning,
+        active: jobRunner.activeCount,
+        registeredTypes: jobRunner.registeredTypes,
+      },
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+const operationJobPaging = (request: Request) =>
+  operationJobListSchema.safeParse({
+    cursor: request.query.cursor === undefined ? undefined : String(request.query.cursor),
+    limit: request.query.limit === undefined ? undefined : Number(request.query.limit),
+    status: request.query.status === undefined ? undefined : String(request.query.status),
+    type: request.query.type === undefined ? undefined : String(request.query.type),
+  });
+const operationJobInput = (value: {
+  cursor?: string | null | undefined;
+  limit?: number | undefined;
+  status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'dead-lettered' | undefined;
+  type?:
+    | 'webhook.process'
+    | 'sync.initial'
+    | 'sync.incremental'
+    | 'sync.reconcile'
+    | 'bulk.process'
+    | 'export.generate'
+    | 'document.generate'
+    | 'analytics.rebuild'
+    | 'backup.create'
+    | 'maintenance'
+    | undefined;
+}) => ({
+  ...(value.cursor === undefined ? {} : { cursor: value.cursor }),
+  ...(value.limit === undefined ? {} : { limit: value.limit }),
+  ...(value.status === undefined ? {} : { status: value.status }),
+  ...(value.type === undefined ? {} : { type: value.type }),
+});
+app.get('/api/v1/operations/jobs', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const parsed = operationJobPaging(request);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'JOB_LIST_INPUT_INVALID', 'Job list input is invalid');
+    return;
+  }
+  try {
+    response.json(store.listJobs(operationContext(user, response), operationJobInput(parsed.data)));
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/operations/jobs/:jobId', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({ job: store.getJob(operationContext(user, response), request.params.jobId) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/operations/jobs/:jobId/cancel', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  try {
+    store.cancelJob(operationContext(user, response), request.params.jobId);
+    response.json({ job: store.getJob(operationContext(user, response), request.params.jobId) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/operations/dead-letters', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const parsed = operationJobPaging(request);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'DEAD_LETTER_LIST_INPUT_INVALID', 'Dead-letter input is invalid');
+    return;
+  }
+  try {
+    response.json(
+      store.listDeadLetters(operationContext(user, response), operationJobInput(parsed.data)),
+    );
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/operations/dead-letters/:jobId/replay', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  try {
+    response.json({
+      job: store.replayDeadLetter(operationContext(user, response), request.params.jobId),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/operations/usage', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({ usage: store.getJobUsage(operationContext(user, response)) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
 });
 app.post('/api/v1/orders/query', (request, response) => {
   const user = auth.current(request);
@@ -1850,6 +1987,20 @@ if (webDistDirectory) {
   });
 }
 
-app.listen(port, () => console.log(`Woo Ops API listening on ${port}`));
+const server = app.listen(port, () => {
+  jobRunner.start();
+  console.log(`Woo Ops API listening on ${port}`);
+});
+let shuttingDown = false;
+const shutdown = (): void => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  void jobRunner
+    .stop({ drain: true, timeoutMs: 5_000 })
+    .catch(() => undefined)
+    .finally(() => server.close());
+};
+process.once('SIGTERM', shutdown);
+process.once('SIGINT', shutdown);
 
-export { app, store };
+export { app, store, jobRunner };

@@ -329,3 +329,31 @@ export const bulkJobListSchema = z
     status: z.enum(['queued', 'running', 'succeeded', 'failed', 'partial', 'cancelled']).optional(),
   })
   .strict();
+
+export const durableJobTypeSchema = z.enum([
+  'webhook.process',
+  'sync.initial',
+  'sync.incremental',
+  'sync.reconcile',
+  'bulk.process',
+  'export.generate',
+  'document.generate',
+  'analytics.rebuild',
+  'backup.create',
+  'maintenance',
+]);
+export const durableJobStatusSchema = z.enum([
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+  'dead-lettered',
+]);
+export const operationJobListSchema = z
+  .object({
+    cursor: z.string().max(512).nullable().optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+    status: durableJobStatusSchema.optional(),
+    type: durableJobTypeSchema.optional(),
+  })
+  .strict();

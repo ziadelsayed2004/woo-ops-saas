@@ -41,9 +41,13 @@ immutable snapshots. Local workflow, exported state, notes, tags, assignments, d
 orders are owned by the application. Manual orders always use `syncPolicy=never` and
 `inventoryPolicy=ignore`.
 
-Requests create small, versioned durable jobs. Job handlers use lease-safe transitions, deterministic
-idempotency keys, bounded retries and dead-letter records. Exports and documents are generated from
-immutable snapshots and stored outside the public web root.
+Requests create small, versioned durable jobs. The SQLite `jobs` table is the source of truth for
+queued, running, succeeded, failed and dead-lettered work. A bounded in-process registry claims
+jobs with leases, renews active leases, reports progress, observes cancellation and drains safely
+for Hostinger Cron. Handlers are registered against a closed job-type catalog; an unregistered type
+fails visibly and can never be reported as successful. Transitions use deterministic idempotency
+keys, exponential retry backoff, account-derived worker contexts and redacted bounded errors.
+Exports and documents are generated from immutable snapshots and stored outside the public web root.
 
 Money uses integer minor units plus ISO currency. Dates persist in UTC with source timezone/raw values
 when needed. API filters are server-catalogued typed ASTs; clients cannot submit SQL or arbitrary paths.

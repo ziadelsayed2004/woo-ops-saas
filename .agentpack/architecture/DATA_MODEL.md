@@ -183,6 +183,26 @@ Indexes:
 - account + state + createdAt
 - TTL for old detailed item results according to retention
 
+### jobs
+
+Durable execution envelope with `accountId`, closed-catalog `type`, idempotency key, compact
+validated payload, status, attempt/max-attempt counters, availability time, lease expiry,
+cancel-request flag, progress, bounded redacted error, and UTC timestamps. Payloads are available
+only to the worker effect boundary; operations responses expose summaries and usage counts without
+payload contents or credentials. A bulk job with work creates one `bulk.process` envelope and may
+schedule deterministic child export, document, or read-only sync envelopes.
+
+Indexes:
+
+- unique account + type + idempotency key
+- account + status + createdAt
+- account + status + availableAt + createdAt for claims
+
+Worker transitions are lease-guarded and account-scoped. Expired leases are re-queued (or marked
+cancelled), retries use bounded exponential backoff, and exhausted attempts become inspectable
+dead letters. Replay resets only execution state and retains the original payload and idempotency
+identity.
+
 ### exportProfiles and exportProfileVersions
 
 Mutable profile identity plus immutable versions. Version stores row mode, column sources,
@@ -225,8 +245,10 @@ aggregate as the only financial evidence.
 
 ### webhookInbox and syncRuns
 
-Inbox is append-only delivery intake with uniqueness and processing state. Sync runs track type,
-cursor range, counts, lag, retries, errors, and completion.
+Inbox is append-only delivery intake with uniqueness and processing state. Accepted deliveries are
+scheduled as `webhook.process` jobs; processing normalizes the immutable source snapshot and uses
+the delivery/job key as the idempotency boundary. Sync runs track type, cursor range, counts, lag,
+retries, errors, and completion.
 
 ### auditEvents
 

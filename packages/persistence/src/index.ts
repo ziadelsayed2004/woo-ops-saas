@@ -14,6 +14,8 @@ import type {
   MetricTotals,
   OrderMetricResult,
 } from '@woo-ops/analytics';
+import { DURABLE_JOB_TYPES } from '@woo-ops/application';
+import type { DurableJob, DurableJobType } from '@woo-ops/application';
 
 export type AccountRole = 'owner' | 'admin' | 'operator' | 'viewer';
 export type AccountContext = Readonly<{
@@ -22,13 +24,23 @@ export type AccountContext = Readonly<{
   correlationId: string;
   role?: AccountRole;
 }>;
-type DurableJob = {
-  id: string;
-  type: string;
-  idempotencyKey: string;
-  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'dead-lettered';
-  attempts: number;
-};
+export type JobSummary = Omit<DurableJob, 'payload'>;
+export type JobUsage = Readonly<{
+  total: number;
+  queued: number;
+  running: number;
+  succeeded: number;
+  failed: number;
+  deadLettered: number;
+  payloadBytes: number;
+  byType: readonly {
+    type: string;
+    total: number;
+    queued: number;
+    running: number;
+    deadLettered: number;
+  }[];
+}>;
 export type CatalogItem = {
   identity: string;
   kind: 'product' | 'variation' | 'category' | 'tag' | 'shipping_class';
@@ -1143,6 +1155,12 @@ const migrations: readonly Migration[] = [
 const MAX_SELECTION_IDS = 5_000;
 const MAX_SELECTION_JSON = 32 * 1024;
 const MAX_BULK_PARAMETERS_JSON = 32 * 1024;
+const MAX_JOB_ID_LENGTH = 256;
+const MAX_JOB_IDEMPOTENCY_LENGTH = 200;
+const MAX_JOB_ATTEMPTS = 10;
+const MAX_JOB_ERROR_LENGTH = 500;
+const JOB_RETRY_BASE_MS = 2_000;
+const JOB_RETRY_MAX_MS = 5 * 60_000;
 const MAX_VIEW_COLUMNS = 100;
 const BULK_ACTIONS: readonly BulkAction[] = [
   'update-local-status',
@@ -1161,6 +1179,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const isBulkAction = (value: unknown): value is BulkAction =>
   typeof value === 'string' && BULK_ACTIONS.includes(value as BulkAction);
+const isDurableJobType = (value: unknown): value is DurableJobType =>
+  typeof value === 'string' && DURABLE_JOB_TYPES.includes(value as DurableJobType);
 const normalizeIdList = (value: unknown, errorCode: string): string[] => {
   if (!Array.isArray(value) || value.length > MAX_SELECTION_IDS) throw new Error(errorCode);
   const ids = value.map((item) => {
@@ -1736,6 +1756,72 @@ type BulkJobRow = {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+};
+type JobRow = {
+  id: string;
+  account_id: string;
+  type: string;
+  idempotency_key: string;
+  status: DurableJob['status'];
+  attempts: number;
+  max_attempts: number;
+  progress: number;
+  payload_json: string;
+  cancel_requested: number;
+  lease_until: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+const parseJobPayload = (value: string): unknown =>
+  parseStoredJson<unknown>(value, 'JOB_PAYLOAD_INVALID');
+const jobFromRow = (row: JobRow): DurableJob => ({
+  id: row.id,
+  accountId: row.account_id,
+  type: row.type,
+  idempotencyKey: row.idempotency_key,
+  status: row.status,
+  attempts: row.attempts,
+  maxAttempts: row.max_attempts,
+  progress: row.progress,
+  payload: parseJobPayload(row.payload_json),
+  cancelRequested: row.cancel_requested === 1,
+  leaseUntil: row.lease_until,
+  lastError: row.last_error,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+const jobSummary = (row: JobRow): JobSummary => {
+  return {
+    id: row.id,
+    accountId: row.account_id,
+    type: row.type,
+    idempotencyKey: row.idempotency_key,
+    status: row.status,
+    attempts: row.attempts,
+    maxAttempts: row.max_attempts,
+    progress: row.progress,
+    cancelRequested: row.cancel_requested === 1,
+    leaseUntil: row.lease_until,
+    lastError: row.last_error,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+};
+const redactedJobError = (value: unknown): string => {
+  const source = value instanceof Error ? value.message : String(value);
+  return (
+    source
+      .replace(
+        /((?:password|secret|token|credential|authorization))\s*[:=]\s*[^\s,;]+/giu,
+        '$1=[REDACTED]',
+      )
+      .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu, '[REDACTED_EMAIL]')
+      .replace(/\b(?:sk|pk)_[A-Za-z0-9_-]+\b/gu, '[REDACTED_KEY]')
+      .replace(/[\u0000-\u001f\u007f]/gu, ' ')
+      .trim()
+      .slice(0, MAX_JOB_ERROR_LENGTH) || 'JOB_HANDLER_FAILED'
+  );
 };
 const bulkParameterValue = (parameters: Record<string, unknown>, name: string): string => {
   const value = parameters[name];
@@ -2920,6 +3006,13 @@ export class SqliteStore {
     input: { scope?: CostRuleScope; currency?: string } = {},
   ): CostRuleRecord[] {
     this.assertMember(context);
+    return this.listCostRulesForContext(context, input);
+  }
+
+  private listCostRulesForContext(
+    context: AccountContext,
+    input: { scope?: CostRuleScope; currency?: string } = {},
+  ): CostRuleRecord[] {
     const clauses = ['account_id = ?'];
     const params: (string | number)[] = [context.accountId];
     if (input.scope !== undefined) {
@@ -3363,6 +3456,21 @@ export class SqliteStore {
     input: AnalyticsFilter = {},
   ): AnalyticsRebuildResult {
     this.assertMember(context);
+    return this.rebuildAnalyticsFactsInternal(context, input);
+  }
+
+  rebuildAnalyticsFactsForWorker(
+    context: AccountContext,
+    input: AnalyticsFilter = {},
+  ): AnalyticsRebuildResult {
+    this.assertContext(context);
+    return this.rebuildAnalyticsFactsInternal(context, input);
+  }
+
+  private rebuildAnalyticsFactsInternal(
+    context: AccountContext,
+    input: AnalyticsFilter = {},
+  ): AnalyticsRebuildResult {
     const from = input.from === undefined ? null : normalizeAnalyticsDateKey(input.from);
     const to = input.to === undefined ? null : normalizeAnalyticsDateKey(input.to);
     if (from !== null && to !== null && from > to) throw new Error('ANALYTICS_DATE_RANGE_INVALID');
@@ -3373,7 +3481,7 @@ export class SqliteStore {
       .prepare('SELECT timezone FROM accounts WHERE id = ?')
       .get(context.accountId) as { timezone: string } | undefined;
     if (!account) throw new Error('ACCOUNT_NOT_FOUND');
-    const rules = this.listCostRules(context);
+    const rules = this.listCostRulesForContext(context);
     const orderRows = this.db
       .prepare(
         `SELECT id, origin, connection_id, order_number, external_order_id, remote_status,
@@ -4354,6 +4462,24 @@ export class SqliteStore {
           now,
           totalCount === 0 ? now : null,
         );
+      if (totalCount > 0) {
+        this.db
+          .prepare(
+            `INSERT INTO jobs (id, account_id, type, idempotency_key, status, attempts, created_at, updated_at,
+              payload_json, max_attempts, available_at)
+             VALUES (?, ?, 'bulk.process', ?, 'queued', 0, ?, ?, ?, 5, ?)`,
+          )
+          .run(
+            randomId(),
+            context.accountId,
+            `bulk:${jobId}`,
+            now,
+            now,
+            JSON.stringify({ bulkJobId: jobId }),
+            now,
+          );
+        this.audit(context, 'job.queued', 'job', jobId, { type: 'bulk.process' });
+      }
       if (selection.mode === 'explicit') {
         const where = this.compileSelectionWhere(context, selection);
         const orders = this.db
@@ -4375,6 +4501,10 @@ export class SqliteStore {
 
   getBulkJob(context: AccountContext, jobId: string): BulkJobSummary {
     this.assertMember(context);
+    return this.bulkJobSummary(this.bulkJobRow(context, jobId));
+  }
+
+  getBulkJobForWorker(context: AccountContext, jobId: string): BulkJobSummary {
     return this.bulkJobSummary(this.bulkJobRow(context, jobId));
   }
 
@@ -4572,6 +4702,146 @@ export class SqliteStore {
     })();
   }
 
+  applyBulkItem(context: AccountContext, jobId: string, orderId: string): void {
+    this.assertContext(context);
+    const job = this.bulkJobRow(context, jobId);
+    const item = this.db
+      .prepare(
+        'SELECT status FROM bulk_job_items WHERE account_id = ? AND job_id = ? AND order_id = ?',
+      )
+      .get(context.accountId, jobId, orderId) as { status: BulkItemStatus } | undefined;
+    if (!item) throw new Error('BULK_ITEM_NOT_FOUND');
+    if (item.status === 'succeeded') return;
+    if (item.status !== 'running') throw new Error('BULK_ITEM_STATE_INVALID');
+    const parameters = parseStoredJson<Record<string, unknown>>(
+      job.parameters_json,
+      'BULK_PARAMETERS_INVALID',
+    );
+    const order = this.db
+      .prepare(
+        'SELECT id, origin, connection_id, local_status, assignee_id, tags_json, export_state, stale_export_at FROM orders WHERE account_id = ? AND id = ?',
+      )
+      .get(context.accountId, orderId) as
+      | {
+          id: string;
+          origin: 'woo' | 'manual';
+          connection_id: string | null;
+          local_status: string;
+          assignee_id: string | null;
+          tags_json: string;
+          export_state: string;
+          stale_export_at: string | null;
+        }
+      | undefined;
+    if (!order) throw new Error('ORDER_NOT_FOUND');
+    const now = new Date().toISOString();
+    let changed = false;
+    switch (job.action) {
+      case 'update-local-status': {
+        const status = bulkParameterValue(parameters, 'status');
+        if (order.local_status !== status) {
+          this.db
+            .prepare(
+              `UPDATE orders SET local_status = ?, stale_export_at = CASE WHEN export_state = 'exported' THEN COALESCE(stale_export_at, ?) ELSE stale_export_at END,
+                version = version + 1, updated_at = ? WHERE account_id = ? AND id = ?`,
+            )
+            .run(status, now, now, context.accountId, orderId);
+          changed = true;
+        }
+        break;
+      }
+      case 'assign': {
+        const assigneeId = bulkParameterValue(parameters, 'assigneeId');
+        this.assertManualAssignee(context, assigneeId);
+        if (order.assignee_id !== assigneeId) {
+          this.db
+            .prepare(
+              `UPDATE orders SET assignee_id = ?, stale_export_at = CASE WHEN export_state = 'exported' THEN COALESCE(stale_export_at, ?) ELSE stale_export_at END,
+                version = version + 1, updated_at = ? WHERE account_id = ? AND id = ?`,
+            )
+            .run(assigneeId, now, now, context.accountId, orderId);
+          changed = true;
+        }
+        break;
+      }
+      case 'add-tag':
+      case 'remove-tag': {
+        const tag = bulkParameterValue(parameters, 'tag');
+        const tags = parseStoredJson<unknown[]>(order.tags_json, 'ORDER_TAGS_INVALID').filter(
+          (value): value is string => typeof value === 'string',
+        );
+        const next =
+          job.action === 'add-tag'
+            ? [...new Set([...tags, tag])]
+            : tags.filter((value) => value !== tag);
+        if (next.length > 50 || next.some((value) => value.length > 80))
+          throw new Error('ORDER_TAGS_INVALID');
+        if (JSON.stringify(next) !== JSON.stringify(tags)) {
+          this.db
+            .prepare(
+              `UPDATE orders SET tags_json = ?, stale_export_at = CASE WHEN export_state = 'exported' THEN COALESCE(stale_export_at, ?) ELSE stale_export_at END,
+                version = version + 1, updated_at = ? WHERE account_id = ? AND id = ?`,
+            )
+            .run(JSON.stringify(next), now, now, context.accountId, orderId);
+          changed = true;
+        }
+        break;
+      }
+      case 'mark-export-ready':
+        if (order.local_status !== 'ready-for-export') {
+          this.db
+            .prepare(
+              `UPDATE orders SET local_status = 'ready-for-export', updated_at = ?, version = version + 1 WHERE account_id = ? AND id = ?`,
+            )
+            .run(now, context.accountId, orderId);
+          changed = true;
+        }
+        break;
+      case 'resync':
+        if (order.origin === 'woo' && order.connection_id) {
+          this.enqueueJob(context, {
+            id: randomId(),
+            type: 'sync.incremental',
+            idempotencyKey: `bulk:${jobId}:${orderId}:resync`,
+            payload: { connectionId: order.connection_id, orderId },
+            maxAttempts: 5,
+          });
+        }
+        break;
+      case 'create-export':
+        this.enqueueJob(context, {
+          id: randomId(),
+          type: 'export.generate',
+          idempotencyKey: `bulk:${jobId}:${orderId}:export`,
+          payload: { orderId, profileId: bulkParameterValue(parameters, 'profileId') },
+          maxAttempts: 3,
+        });
+        break;
+      case 'generate-invoice':
+      case 'generate-thermal':
+      case 'generate-label':
+      case 'print-documents':
+        this.enqueueJob(context, {
+          id: randomId(),
+          type: 'document.generate',
+          idempotencyKey: `bulk:${jobId}:${orderId}:document`,
+          payload: {
+            orderId,
+            templateId: bulkParameterValue(parameters, 'templateId'),
+            action: job.action,
+          },
+          maxAttempts: 3,
+        });
+        break;
+      default:
+        throw new Error('BULK_ACTION_HANDLER_NOT_CONFIGURED');
+    }
+    this.audit(context, 'bulk-item.applied', 'bulk_job_item', `${jobId}:${orderId}`, {
+      action: job.action,
+      changed,
+    });
+  }
+
   retryBulkFailures(context: AccountContext, jobId: string): BulkJobSummary {
     this.requireMutationActor(context);
     const job = this.bulkJobRow(context, jobId);
@@ -4615,6 +4885,28 @@ export class SqliteStore {
       this.refreshBulkJob(context, jobId, now);
     })();
     this.audit(context, 'bulk-job.cancelled', 'bulk_job', jobId, {});
+    return this.bulkJobSummary(this.bulkJobRow(context, jobId));
+  }
+
+  cancelBulkJobForWorker(context: AccountContext, jobId: string): BulkJobSummary {
+    this.assertContext(context);
+    const job = this.bulkJobRow(context, jobId);
+    if (!['queued', 'running'].includes(job.status)) return this.bulkJobSummary(job);
+    const now = new Date().toISOString();
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          "UPDATE bulk_job_items SET status = 'cancelled', updated_at = ? WHERE account_id = ? AND job_id = ? AND status = 'queued'",
+        )
+        .run(now, context.accountId, jobId);
+      this.db
+        .prepare(
+          'UPDATE bulk_jobs SET cancel_requested = 1, updated_at = ? WHERE account_id = ? AND id = ?',
+        )
+        .run(now, context.accountId, jobId);
+      this.refreshBulkJob(context, jobId, now);
+    })();
+    this.audit(context, 'bulk-job.cancelled-by-worker', 'bulk_job', jobId, {});
     return this.bulkJobSummary(this.bulkJobRow(context, jobId));
   }
 
@@ -4837,13 +5129,29 @@ export class SqliteStore {
     })();
   }
 
-  complete(context: AccountContext, id: string): Promise<void> {
-    this.db
+  complete(context: AccountContext, id: string): void {
+    this.assertContext(context);
+    const now = new Date().toISOString();
+    const result = this.db
       .prepare(
-        "UPDATE jobs SET status = 'succeeded', updated_at = ? WHERE account_id = ? AND id = ?",
+        "UPDATE jobs SET status = 'succeeded', progress = 100, lease_until = NULL, updated_at = ? WHERE account_id = ? AND id = ? AND status = 'running' AND cancel_requested = 0",
       )
-      .run(new Date().toISOString(), context.accountId, id);
-    return Promise.resolve();
+      .run(now, context.accountId, id);
+    if (result.changes === 1) {
+      this.audit(context, 'job.succeeded', 'job', id, {});
+      return;
+    }
+    const row = this.db
+      .prepare('SELECT status, cancel_requested FROM jobs WHERE account_id = ? AND id = ?')
+      .get(context.accountId, id) as
+      { status: DurableJob['status']; cancel_requested: number } | undefined;
+    if (!row) throw new Error('JOB_NOT_FOUND');
+    if (row.status === 'running' && row.cancel_requested === 1) {
+      this.cancelRunningJob(context, id);
+      throw new Error('JOB_CANCELLED');
+    }
+    if (row.status === 'succeeded') return;
+    throw new Error('JOB_STATE_INVALID');
   }
 
   enqueueJob(
@@ -4856,52 +5164,137 @@ export class SqliteStore {
       maxAttempts?: number;
     },
   ): DurableJob {
+    this.assertContext(context);
+    if (
+      typeof input.id !== 'string' ||
+      input.id.length < 1 ||
+      input.id.length > MAX_JOB_ID_LENGTH ||
+      /[\u0000-\u001f\u007f]/u.test(input.id)
+    )
+      throw new Error('JOB_ID_INVALID');
+    if (!isDurableJobType(input.type)) throw new Error('JOB_TYPE_NOT_ALLOWED');
+    if (
+      typeof input.idempotencyKey !== 'string' ||
+      input.idempotencyKey.length < 1 ||
+      input.idempotencyKey.length > MAX_JOB_IDEMPOTENCY_LENGTH ||
+      /[\u0000-\u001f\u007f]/u.test(input.idempotencyKey)
+    )
+      throw new Error('JOB_IDEMPOTENCY_KEY_INVALID');
+    const maxAttempts = input.maxAttempts ?? 3;
+    if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > MAX_JOB_ATTEMPTS)
+      throw new Error('JOB_MAX_ATTEMPTS_INVALID');
+    const payloadJson = serializeJobPayload(input.payload);
+    if (!this.db.prepare('SELECT id FROM accounts WHERE id = ?').get(context.accountId))
+      throw new Error('JOB_ACCOUNT_NOT_FOUND');
     const now = new Date().toISOString();
-    this.db
-      .prepare(
-        `INSERT INTO jobs (id, account_id, type, idempotency_key, status, attempts, created_at, updated_at, payload_json, max_attempts, available_at)
-      VALUES (?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?) ON CONFLICT(account_id, type, idempotency_key) DO NOTHING`,
-      )
-      .run(
-        input.id,
-        context.accountId,
-        input.type,
-        input.idempotencyKey,
-        now,
-        now,
-        serializeJobPayload(input.payload),
-        input.maxAttempts ?? 3,
-        now,
-      );
-    const row = this.db
-      .prepare(
-        'SELECT id, type, idempotency_key, status, attempts FROM jobs WHERE account_id = ? AND type = ? AND idempotency_key = ?',
-      )
-      .get(context.accountId, input.type, input.idempotencyKey) as {
-      id: string;
-      type: string;
-      idempotency_key: string;
-      status: DurableJob['status'];
-      attempts: number;
-    };
-    return {
-      id: row.id,
-      type: row.type,
-      idempotencyKey: row.idempotency_key,
-      status: row.status,
-      attempts: row.attempts,
-    };
+    const row = this.db.transaction(() => {
+      const existing = this.db
+        .prepare(
+          'SELECT id, account_id, type, idempotency_key, status, attempts, max_attempts, progress, payload_json, cancel_requested, lease_until, last_error, created_at, updated_at FROM jobs WHERE account_id = ? AND type = ? AND idempotency_key = ?',
+        )
+        .get(context.accountId, input.type, input.idempotencyKey) as JobRow | undefined;
+      if (existing) {
+        if (existing.payload_json !== payloadJson) throw new Error('JOB_IDEMPOTENCY_CONFLICT');
+        return existing;
+      }
+      this.db
+        .prepare(
+          `INSERT INTO jobs (id, account_id, type, idempotency_key, status, attempts, created_at, updated_at, payload_json, max_attempts, available_at)
+          VALUES (?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          input.id,
+          context.accountId,
+          input.type,
+          input.idempotencyKey,
+          now,
+          now,
+          payloadJson,
+          maxAttempts,
+          now,
+        );
+      this.audit(context, 'job.queued', 'job', input.id, { type: input.type });
+      return this.db
+        .prepare(
+          'SELECT id, account_id, type, idempotency_key, status, attempts, max_attempts, progress, payload_json, cancel_requested, lease_until, last_error, created_at, updated_at FROM jobs WHERE account_id = ? AND id = ?',
+        )
+        .get(context.accountId, input.id) as JobRow;
+    })();
+    return jobFromRow(row);
   }
 
   claimNext(context: AccountContext, leaseSeconds = 60): DurableJob | null {
+    this.assertContext(context);
+    return this.claimNextForAccount(context.accountId, leaseSeconds, context.correlationId);
+  }
+
+  recoverExpiredJobs(context: AccountContext): number {
+    this.assertContext(context);
+    return this.recoverExpiredJobsForAccount(context.accountId, context.correlationId);
+  }
+
+  updateJobProgress(context: AccountContext, id: string, progress: number): void {
+    if (!Number.isInteger(progress) || progress < 0 || progress > 100) {
+      throw new Error('JOB_PROGRESS_INVALID');
+    }
+    const result = this.db
+      .prepare(
+        `UPDATE jobs SET progress = ?, updated_at = ? WHERE account_id = ? AND id = ? AND status = 'running'`,
+      )
+      .run(progress, new Date().toISOString(), context.accountId, id);
+    if (result.changes !== 1) throw new Error('JOB_NOT_RUNNING');
+  }
+
+  updateProgress(context: AccountContext, id: string, progress: number): void {
+    this.updateJobProgress(context, id, progress);
+  }
+
+  claimNextAny(input: { leaseSeconds: number; correlationId: string }): DurableJob | null {
+    if (
+      !Number.isInteger(input.leaseSeconds) ||
+      input.leaseSeconds < 0 ||
+      input.leaseSeconds > 3600 ||
+      !input.correlationId
+    )
+      throw new Error('JOB_LEASE_INVALID');
+    const candidate = this.db
+      .prepare(
+        `SELECT account_id FROM jobs WHERE status = 'queued' AND available_at <= ? AND cancel_requested = 0 ORDER BY created_at ASC, id ASC LIMIT 1`,
+      )
+      .get(new Date().toISOString()) as { account_id: string } | undefined;
+    if (!candidate) return null;
+    return this.claimNextForAccount(candidate.account_id, input.leaseSeconds, input.correlationId);
+  }
+
+  recoverExpiredJobsAny(correlationId: string): number {
+    if (!correlationId) throw new Error('ACCOUNT_CONTEXT_INVALID');
+    const accounts = this.db
+      .prepare(
+        "SELECT DISTINCT account_id FROM jobs WHERE status = 'running' AND lease_until IS NOT NULL AND lease_until <= ?",
+      )
+      .all(new Date().toISOString()) as Array<{ account_id: string }>;
+    return accounts.reduce(
+      (count, account) =>
+        count + this.recoverExpiredJobsForAccount(account.account_id, correlationId),
+      0,
+    );
+  }
+
+  private claimNextForAccount(
+    accountId: string,
+    leaseSeconds: number,
+    correlationId: string,
+  ): DurableJob | null {
+    if (!Number.isInteger(leaseSeconds) || leaseSeconds < 0 || leaseSeconds > 3600)
+      throw new Error('JOB_LEASE_INVALID');
     const now = new Date();
     const nowIso = now.toISOString();
     const id = this.db.transaction(() => {
       const candidate = this.db
         .prepare(
-          `SELECT id FROM jobs WHERE account_id = ? AND status = 'queued' AND available_at <= ? AND cancel_requested = 0 ORDER BY created_at LIMIT 1`,
+          `SELECT id FROM jobs WHERE account_id = ? AND status = 'queued' AND available_at <= ? AND cancel_requested = 0 ORDER BY created_at ASC, id ASC LIMIT 1`,
         )
-        .get(context.accountId, nowIso) as { id: string } | undefined;
+        .get(accountId, nowIso) as { id: string } | undefined;
       if (!candidate) return null;
       const result = this.db
         .prepare(
@@ -4910,50 +5303,85 @@ export class SqliteStore {
         .run(
           new Date(now.getTime() + leaseSeconds * 1000).toISOString(),
           nowIso,
-          context.accountId,
+          accountId,
           candidate.id,
         );
       return result.changes === 1 ? candidate.id : null;
     })();
     if (!id) return null;
-    const job = this.db
+    const row = this.db
       .prepare(
-        'SELECT id, type, idempotency_key, status, attempts FROM jobs WHERE account_id = ? AND id = ?',
+        'SELECT id, account_id, type, idempotency_key, status, attempts, max_attempts, progress, payload_json, cancel_requested, lease_until, last_error, created_at, updated_at FROM jobs WHERE account_id = ? AND id = ?',
       )
-      .get(context.accountId, id) as {
-      id: string;
-      type: string;
-      idempotency_key: string;
-      status: DurableJob['status'];
-      attempts: number;
-    };
-    return {
-      id: job.id,
-      type: job.type,
-      idempotencyKey: job.idempotency_key,
-      status: job.status,
-      attempts: job.attempts,
-    };
+      .get(accountId, id) as JobRow;
+    void correlationId;
+    return jobFromRow(row);
   }
 
-  recoverExpiredJobs(context: AccountContext): number {
+  private recoverExpiredJobsForAccount(accountId: string, correlationId: string): number {
     const now = new Date().toISOString();
-    return this.db
+    const rows = this.db
       .prepare(
-        `UPDATE jobs SET status = CASE WHEN cancel_requested = 1 THEN 'failed' ELSE 'queued' END, lease_until = NULL, available_at = ?, updated_at = ? WHERE account_id = ? AND status = 'running' AND lease_until <= ?`,
+        "SELECT id, cancel_requested FROM jobs WHERE account_id = ? AND status = 'running' AND lease_until IS NOT NULL AND lease_until <= ?",
       )
-      .run(now, now, context.accountId, now).changes;
+      .all(accountId, now) as Array<{ id: string; cancel_requested: number }>;
+    if (rows.length === 0) return 0;
+    const result = this.db
+      .prepare(
+        `UPDATE jobs SET status = CASE WHEN cancel_requested = 1 THEN 'failed' ELSE 'queued' END,
+          lease_until = NULL, available_at = ?, last_error = CASE WHEN cancel_requested = 1 THEN 'JOB_CANCELLED' ELSE last_error END,
+          updated_at = ? WHERE account_id = ? AND status = 'running' AND lease_until IS NOT NULL AND lease_until <= ?`,
+      )
+      .run(now, now, accountId, now);
+    for (const row of rows) {
+      this.audit(
+        { accountId, correlationId },
+        row.cancel_requested === 1 ? 'job.cancelled-after-lease' : 'job.lease-recovered',
+        'job',
+        row.id,
+        {},
+      );
+    }
+    return result.changes;
   }
 
-  updateJobProgress(context: AccountContext, id: string, progress: number): void {
-    if (!Number.isInteger(progress) || progress < 0 || progress > 100) {
-      throw new Error('JOB_PROGRESS_INVALID');
-    }
-    this.db
+  getWorkerJob(context: AccountContext, id: string): DurableJob {
+    this.assertContext(context);
+    const row = this.db
       .prepare(
-        `UPDATE jobs SET progress = ?, updated_at = ? WHERE account_id = ? AND id = ? AND status = 'running'`,
+        'SELECT id, account_id, type, idempotency_key, status, attempts, max_attempts, progress, payload_json, cancel_requested, lease_until, last_error, created_at, updated_at FROM jobs WHERE account_id = ? AND id = ?',
       )
-      .run(progress, new Date().toISOString(), context.accountId, id);
+      .get(context.accountId, id) as JobRow | undefined;
+    if (!row) throw new Error('JOB_NOT_FOUND');
+    return jobFromRow(row);
+  }
+
+  isCancellationRequested(context: AccountContext, id: string): boolean {
+    this.assertContext(context);
+    const row = this.db
+      .prepare('SELECT cancel_requested FROM jobs WHERE account_id = ? AND id = ?')
+      .get(context.accountId, id) as { cancel_requested: number } | undefined;
+    if (!row) throw new Error('JOB_NOT_FOUND');
+    return row.cancel_requested === 1;
+  }
+
+  heartbeatJob(context: AccountContext, id: string, leaseSeconds: number): void {
+    this.assertContext(context);
+    if (!Number.isInteger(leaseSeconds) || leaseSeconds < 1 || leaseSeconds > 3600)
+      throw new Error('JOB_LEASE_INVALID');
+    const now = new Date();
+    const result = this.db
+      .prepare(
+        "UPDATE jobs SET lease_until = ?, updated_at = ? WHERE account_id = ? AND id = ? AND status = 'running' AND lease_until > ?",
+      )
+      .run(
+        new Date(now.getTime() + leaseSeconds * 1000).toISOString(),
+        now.toISOString(),
+        context.accountId,
+        id,
+        now.toISOString(),
+      );
+    if (result.changes !== 1) throw new Error('JOB_LEASE_LOST');
   }
 
   upsertCatalogPage(
@@ -5464,27 +5892,340 @@ export class SqliteStore {
     };
   }
 
-  failJob(context: AccountContext, id: string, error: string): void {
+  listJobs(
+    context: AccountContext,
+    input: {
+      cursor?: string | null | undefined;
+      limit?: number | undefined;
+      status?: DurableJob['status'] | undefined;
+      type?: DurableJobType | undefined;
+    } = {},
+  ): { items: readonly JobSummary[]; nextCursor: string | null; hasMore: boolean } {
+    this.assertMember(context);
+    const limit = input.limit ?? 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error('JOB_LIST_LIMIT_INVALID');
+    const clauses = ['account_id = ?'];
+    const params: (string | number)[] = [context.accountId];
+    if (input.status !== undefined) {
+      if (!['queued', 'running', 'succeeded', 'failed', 'dead-lettered'].includes(input.status))
+        throw new Error('JOB_STATUS_INVALID');
+      clauses.push('status = ?');
+      params.push(input.status);
+    }
+    if (input.type !== undefined) {
+      if (!isDurableJobType(input.type)) throw new Error('JOB_TYPE_NOT_ALLOWED');
+      clauses.push('type = ?');
+      params.push(input.type);
+    }
+    if (input.cursor) {
+      const cursor = decodedCursor(input.cursor);
+      clauses.push('(updated_at < ? OR (updated_at = ? AND id < ?))');
+      params.push(cursor.sortValue, cursor.sortValue, cursor.id);
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT id, account_id, type, idempotency_key, status, attempts, max_attempts, progress,
+          cancel_requested, lease_until, last_error, created_at, updated_at, payload_json
+         FROM jobs WHERE ${clauses.join(' AND ')} ORDER BY updated_at DESC, id DESC LIMIT ?`,
+      )
+      .all(...params, limit + 1) as JobRow[];
+    const hasMore = rows.length > limit;
+    const visible = rows.slice(0, limit);
+    const last = visible.at(-1);
+    return {
+      items: visible.map(jobSummary),
+      hasMore,
+      nextCursor:
+        hasMore && last ? encodedCursor({ sortValue: last.updated_at, id: last.id }) : null,
+    };
+  }
+
+  getJob(context: AccountContext, id: string): JobSummary {
+    this.assertMember(context);
+    const row = this.db
+      .prepare(
+        'SELECT id, account_id, type, idempotency_key, status, attempts, max_attempts, progress, payload_json, cancel_requested, lease_until, last_error, created_at, updated_at FROM jobs WHERE account_id = ? AND id = ?',
+      )
+      .get(context.accountId, id) as JobRow | undefined;
+    if (!row) throw new Error('JOB_NOT_FOUND');
+    return jobSummary(row);
+  }
+
+  listDeadLetters(
+    context: AccountContext,
+    input: {
+      cursor?: string | null | undefined;
+      limit?: number | undefined;
+      type?: DurableJobType | undefined;
+    } = {},
+  ): { items: readonly JobSummary[]; nextCursor: string | null; hasMore: boolean } {
+    return this.listJobs(context, { ...input, status: 'dead-lettered' });
+  }
+
+  replayDeadLetter(context: AccountContext, id: string): JobSummary {
+    const actorId = this.requireMutationActor(context);
     const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE jobs SET status = 'queued', attempts = 0, progress = 0, cancel_requested = 0,
+          lease_until = NULL, available_at = ?, last_error = NULL, updated_at = ?
+         WHERE account_id = ? AND id = ? AND status = 'dead-lettered'`,
+      )
+      .run(now, now, context.accountId, id);
+    if (result.changes !== 1) {
+      const row = this.db
+        .prepare('SELECT status FROM jobs WHERE account_id = ? AND id = ?')
+        .get(context.accountId, id) as { status: DurableJob['status'] } | undefined;
+      if (!row) throw new Error('JOB_NOT_FOUND');
+      throw new Error('JOB_REPLAY_NOT_AVAILABLE');
+    }
+    this.audit(context, 'job.replayed', 'job', id, { actorId });
+    return this.getJob(context, id);
+  }
+
+  getJobUsage(context: AccountContext): JobUsage {
+    this.assertMember(context);
+    const counts = this.db
+      .prepare(
+        `SELECT
+          COUNT(*) AS total,
+          COALESCE(SUM(status = 'queued'), 0) AS queued,
+          COALESCE(SUM(status = 'running'), 0) AS running,
+          COALESCE(SUM(status = 'succeeded'), 0) AS succeeded,
+          COALESCE(SUM(status = 'failed'), 0) AS failed,
+          COALESCE(SUM(status = 'dead-lettered'), 0) AS dead_lettered,
+          COALESCE(SUM(LENGTH(payload_json)), 0) AS payload_bytes
+         FROM jobs WHERE account_id = ?`,
+      )
+      .get(context.accountId) as {
+      total: number;
+      queued: number;
+      running: number;
+      succeeded: number;
+      failed: number;
+      dead_lettered: number;
+      payload_bytes: number;
+    };
+    const byType = this.db
+      .prepare(
+        `SELECT type, COUNT(*) AS total,
+          COALESCE(SUM(status = 'queued'), 0) AS queued,
+          COALESCE(SUM(status = 'running'), 0) AS running,
+          COALESCE(SUM(status = 'dead-lettered'), 0) AS dead_lettered
+         FROM jobs WHERE account_id = ? GROUP BY type ORDER BY type LIMIT 100`,
+      )
+      .all(context.accountId) as Array<{
+      type: string;
+      total: number;
+      queued: number;
+      running: number;
+      dead_lettered: number;
+    }>;
+    return {
+      total: Number(counts.total),
+      queued: Number(counts.queued),
+      running: Number(counts.running),
+      succeeded: Number(counts.succeeded),
+      failed: Number(counts.failed),
+      deadLettered: Number(counts.dead_lettered),
+      payloadBytes: Number(counts.payload_bytes),
+      byType: byType.map((row) => ({
+        type: row.type,
+        total: Number(row.total),
+        queued: Number(row.queued),
+        running: Number(row.running),
+        deadLettered: Number(row.dead_lettered),
+      })),
+    };
+  }
+
+  accountHealthSnapshot(context: AccountContext): StoreHealth {
+    this.assertMember(context);
+    const queue = this.db
+      .prepare(
+        `SELECT
+          COALESCE(SUM(status = 'queued'), 0) AS queued,
+          COALESCE(SUM(status = 'running'), 0) AS running,
+          COALESCE(SUM(status = 'dead-lettered'), 0) AS dead_lettered
+         FROM jobs WHERE account_id = ?`,
+      )
+      .get(context.accountId) as { queued: number; running: number; dead_lettered: number };
+    return {
+      database: this.db.open ? 'connected' : 'degraded',
+      schemaVersion,
+      queue: {
+        queued: Number(queue.queued),
+        running: Number(queue.running),
+        deadLettered: Number(queue.dead_lettered),
+      },
+    };
+  }
+
+  failJob(context: AccountContext, id: string, error: string): void {
+    this.assertContext(context);
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const row = this.db
+      .prepare(
+        'SELECT type, attempts, max_attempts, status FROM jobs WHERE account_id = ? AND id = ?',
+      )
+      .get(context.accountId, id) as
+      | { type: string; attempts: number; max_attempts: number; status: DurableJob['status'] }
+      | undefined;
+    if (!row) throw new Error('JOB_NOT_FOUND');
+    if (row.status !== 'running') {
+      if (row.status === 'dead-lettered') return;
+      throw new Error('JOB_STATE_INVALID');
+    }
+    const deadLettered = row.attempts >= row.max_attempts;
+    const delayMs = Math.min(
+      JOB_RETRY_MAX_MS,
+      JOB_RETRY_BASE_MS * 2 ** Math.max(0, row.attempts - 1),
+    );
+    const nextAvailable = new Date(now.getTime() + delayMs).toISOString();
+    const safeError = redactedJobError(error);
     this.db
       .prepare(
-        `UPDATE jobs SET status = CASE WHEN attempts >= max_attempts THEN 'dead-lettered' ELSE 'queued' END, available_at = CASE WHEN attempts >= max_attempts THEN available_at ELSE ? END, lease_until = NULL, last_error = ?, updated_at = ? WHERE account_id = ? AND id = ? AND status = 'running'`,
+        `UPDATE jobs SET status = ?, available_at = ?, lease_until = NULL, last_error = ?, updated_at = ?
+         WHERE account_id = ? AND id = ? AND status = 'running'`,
       )
       .run(
-        new Date(Date.now() + 2000).toISOString(),
-        error.slice(0, 500),
-        now,
+        deadLettered ? 'dead-lettered' : 'queued',
+        deadLettered ? nowIso : nextAvailable,
+        safeError,
+        nowIso,
         context.accountId,
         id,
       );
+    this.audit(context, deadLettered ? 'job.dead-lettered' : 'job.retry-scheduled', 'job', id, {
+      type: row.type,
+      attempts: row.attempts,
+      retryAt: deadLettered ? null : nextAvailable,
+    });
   }
 
   cancelJob(context: AccountContext, id: string): void {
-    this.db
+    this.requireMutationActor(context);
+    const now = new Date().toISOString();
+    const result = this.db
       .prepare(
-        `UPDATE jobs SET cancel_requested = 1, status = CASE WHEN status = 'queued' THEN 'failed' ELSE status END, updated_at = ? WHERE account_id = ? AND id = ? AND status IN ('queued', 'running')`,
+        `UPDATE jobs SET cancel_requested = 1,
+          status = CASE WHEN status = 'queued' THEN 'failed' ELSE status END,
+          last_error = CASE WHEN status = 'queued' THEN 'JOB_CANCELLED' ELSE last_error END,
+          lease_until = CASE WHEN status = 'queued' THEN NULL ELSE lease_until END,
+          updated_at = ? WHERE account_id = ? AND id = ? AND status IN ('queued', 'running')`,
       )
-      .run(new Date().toISOString(), context.accountId, id);
+      .run(now, context.accountId, id);
+    if (result.changes !== 1) {
+      const exists = this.db
+        .prepare('SELECT id FROM jobs WHERE account_id = ? AND id = ?')
+        .get(context.accountId, id);
+      if (!exists) throw new Error('JOB_NOT_FOUND');
+      return;
+    }
+    this.audit(context, 'job.cancel-requested', 'job', id, {});
+  }
+
+  cancelRunningJob(context: AccountContext, id: string): void {
+    this.assertContext(context);
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE jobs SET cancel_requested = 1, status = 'failed', last_error = 'JOB_CANCELLED',
+          lease_until = NULL, updated_at = ? WHERE account_id = ? AND id = ? AND status = 'running'`,
+      )
+      .run(now, context.accountId, id);
+    if (result.changes === 1) this.audit(context, 'job.cancelled', 'job', id, {});
+  }
+
+  beginWebhookProcessing(
+    context: AccountContext,
+    inboxId: string,
+  ): {
+    id: string;
+    accountId: string;
+    connectionId: string;
+    topic: string;
+    rawBody: Uint8Array;
+    status: 'processing';
+    attempts: number;
+  } | null {
+    this.assertContext(context);
+    const row = this.db
+      .prepare(
+        'SELECT id, account_id, connection_id, topic, raw_body, status, attempts FROM webhook_inbox WHERE account_id = ? AND id = ?',
+      )
+      .get(context.accountId, inboxId) as
+      | {
+          id: string;
+          account_id: string;
+          connection_id: string;
+          topic: string;
+          raw_body: Buffer;
+          status: 'accepted' | 'processing' | 'processed' | 'failed' | 'dead-lettered';
+          attempts: number;
+        }
+      | undefined;
+    if (!row) throw new Error('WEBHOOK_NOT_FOUND');
+    if (row.status === 'processed') return null;
+    const result = this.db
+      .prepare(
+        `UPDATE webhook_inbox SET status = 'processing', attempts = attempts + 1
+         WHERE account_id = ? AND id = ? AND status IN ('accepted', 'failed', 'processing')`,
+      )
+      .run(context.accountId, inboxId);
+    if (result.changes !== 1) return null;
+    const updated = this.db
+      .prepare('SELECT attempts FROM webhook_inbox WHERE account_id = ? AND id = ?')
+      .get(context.accountId, inboxId) as { attempts: number };
+    return {
+      id: row.id,
+      accountId: row.account_id,
+      connectionId: row.connection_id,
+      topic: row.topic,
+      rawBody: new Uint8Array(row.raw_body),
+      status: 'processing',
+      attempts: updated.attempts,
+    };
+  }
+
+  completeWebhook(context: AccountContext, inboxId: string): void {
+    this.assertContext(context);
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE webhook_inbox SET status = 'processed', processed_at = ?, last_error = NULL
+         WHERE account_id = ? AND id = ? AND status = 'processing'`,
+      )
+      .run(now, context.accountId, inboxId);
+    if (result.changes === 1)
+      this.audit(context, 'webhook.processed', 'webhook_inbox', inboxId, {});
+  }
+
+  failWebhook(context: AccountContext, inboxId: string, error: string): void {
+    this.assertContext(context);
+    const row = this.db
+      .prepare('SELECT attempts FROM webhook_inbox WHERE account_id = ? AND id = ?')
+      .get(context.accountId, inboxId) as { attempts: number } | undefined;
+    if (!row) throw new Error('WEBHOOK_NOT_FOUND');
+    const status = row.attempts >= 5 ? 'dead-lettered' : 'failed';
+    const safeError = redactedJobError(error);
+    const result = this.db
+      .prepare(
+        "UPDATE webhook_inbox SET status = ?, last_error = ? WHERE account_id = ? AND id = ? AND status = 'processing'",
+      )
+      .run(status, safeError, context.accountId, inboxId);
+    if (result.changes === 1)
+      this.audit(
+        context,
+        status === 'dead-lettered' ? 'webhook.dead-lettered' : 'webhook.failed',
+        'webhook_inbox',
+        inboxId,
+        {
+          attempts: row.attempts,
+        },
+      );
   }
 
   acceptWebhook(input: {

@@ -81,7 +81,7 @@ test('repositories scope reads, selections and jobs by the authenticated account
   );
   const job = store.enqueueJob(contextA, {
     id: randomUUID(),
-    type: 'security-fixture',
+    type: 'maintenance',
     idempotencyKey: 'account-a-job',
     payload: { orderId: orderA.id },
   });
