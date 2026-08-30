@@ -35,6 +35,52 @@ const orderSortSchema = z
   .strict();
 const savedViewVisibilitySchema = z.enum(['private', 'shared']);
 
+const minorAmountSchema = z.string().regex(/^-?\d{1,18}$/);
+const manualJsonObjectSchema = z.record(z.string(), z.unknown());
+const manualLineSchema = z
+  .object({
+    name: z.string().trim().min(1).max(240),
+    sku: z.string().trim().max(120).optional(),
+    productId: z.string().trim().max(256).optional(),
+    variationId: z.string().trim().max(256).optional(),
+    quantity: z.number().int().min(1).max(100000),
+    unitPriceMinor: minorAmountSchema,
+    discountMinor: minorAmountSchema.optional(),
+    taxMinor: minorAmountSchema.optional(),
+    notes: z.string().max(500).optional(),
+  })
+  .strict();
+const manualOrderFieldsSchema = {
+  currency: z
+    .string()
+    .regex(/^[A-Za-z]{3}$/)
+    .optional(),
+  customer: manualJsonObjectSchema.optional(),
+  billing: manualJsonObjectSchema.optional(),
+  shipping: manualJsonObjectSchema.optional(),
+  payment: manualJsonObjectSchema.optional(),
+  shippingMethod: manualJsonObjectSchema.optional(),
+  lines: z.array(manualLineSchema).min(1).max(500).optional(),
+  shippingCollectedMinor: minorAmountSchema.optional(),
+  taxMinor: minorAmountSchema.optional(),
+  discountMinor: minorAmountSchema.optional(),
+  feesMinor: minorAmountSchema.optional(),
+  localStatus: z.string().trim().min(1).max(80).optional(),
+  tags: z.array(z.string().trim().min(1).max(80)).max(50).optional(),
+  notes: z.string().max(5000).optional(),
+  assigneeId: z.string().trim().max(256).nullable().optional(),
+};
+export const manualOrderCreateSchema = z
+  .object({
+    ...manualOrderFieldsSchema,
+    currency: z.string().regex(/^[A-Za-z]{3}$/),
+    lines: z.array(manualLineSchema).min(1).max(500),
+  })
+  .strict();
+export const manualOrderUpdateSchema = z
+  .object({ ...manualOrderFieldsSchema, version: z.number().int().min(1) })
+  .strict();
+
 export const selectionCreateSchema = z
   .object({
     mode: selectionModeSchema,

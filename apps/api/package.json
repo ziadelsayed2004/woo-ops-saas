@@ -9,7 +9,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test:unit": "tsx --test tests/unit/*.test.js",
-    "test:e2e": "node --test tests/bulk.e2e.test.js",
+    "test:e2e": "node --test tests/*.e2e.test.js",
     "start": "node dist/index.js",
     "db:migrate": "tsx src/db-cli.ts migrate",
     "db:backup": "tsx src/db-cli.ts backup"

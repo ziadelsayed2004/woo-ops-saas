@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   AppBar,
@@ -132,6 +132,35 @@ const copy = {
     audit: 'سجل التدقيق',
     restricted: 'البيانات الخام محمية وتحتاج صلاحية مخصصة.',
     errors: 'تعذر تحميل الطلبات، يمكنك المحاولة مرة أخرى',
+    manualOrders: '\u0625\u0646\u0634\u0627\u0621 \u0637\u0644\u0628 \u064a\u062f\u0648\u064a',
+    manualTitle: '\u0637\u0644\u0628 \u064a\u062f\u0648\u064a \u0645\u062d\u0644\u064a',
+    localOnly:
+      '\u0645\u062d\u0644\u064a \u0641\u0642\u0637: \u0644\u0627 \u064a\u0645\u0633 WooCommerce \u0623\u0648 \u0627\u0644\u0645\u062e\u0632\u0648\u0646',
+    customerName: '\u0627\u0633\u0645 \u0627\u0644\u0639\u0645\u064a\u0644',
+    customerEmail: '\u0627\u0644\u0628\u0631\u064a\u062f',
+    customerPhone: '\u0627\u0644\u0647\u0627\u062a\u0641',
+    currency: '\u0627\u0644\u0639\u0645\u0644\u0629',
+    productName: '\u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062a\u062c',
+    productSku: 'SKU',
+    unitPriceMinor:
+      '\u0633\u0639\u0631 \u0627\u0644\u0648\u062d\u062f\u0629 \u0628\u0627\u0644\u0642\u0631\u0648\u0634',
+    shippingMinor: '\u0627\u0644\u0634\u062d\u0646 \u0628\u0627\u0644\u0642\u0631\u0648\u0634',
+    discountMinor: '\u0627\u0644\u062e\u0635\u0645 \u0628\u0627\u0644\u0642\u0631\u0648\u0634',
+    taxMinor:
+      '\u0627\u0644\u0636\u0631\u064a\u0628\u0629 \u0628\u0627\u0644\u0642\u0631\u0648\u0634',
+    feesMinor: '\u0627\u0644\u0631\u0633\u0648\u0645 \u0628\u0627\u0644\u0642\u0631\u0648\u0634',
+    localStatusInput:
+      '\u0627\u0644\u062d\u0627\u0644\u0629 \u0627\u0644\u0645\u062d\u0644\u064a\u0629',
+    tagsInput:
+      '\u0627\u0644\u0648\u0633\u0648\u0645 \u0645\u0641\u0635\u0648\u0644\u0629 \u0628\u0641\u0648\u0627\u0635\u0644',
+    notesInput: '\u0645\u0644\u0627\u062d\u0638\u0627\u062a',
+    address: '\u0627\u0644\u0639\u0646\u0648\u0627\u0646',
+    saveManual: '\u062d\u0641\u0638 \u0627\u0644\u0637\u0644\u0628',
+    cancel: '\u0625\u0644\u063a\u0627\u0621',
+    invalidManual:
+      '\u062a\u062d\u0642\u0642 \u0645\u0646 \u062d\u0642\u0648\u0644 \u0627\u0644\u0637\u0644\u0628',
+    createdManual:
+      '\u062a\u0645 \u062d\u0641\u0638 \u0627\u0644\u0637\u0644\u0628 \u0627\u0644\u0645\u062d\u0644\u064a',
   },
   en: {
     app: 'Woo Ops',
@@ -214,6 +243,28 @@ const copy = {
     audit: 'Audit history',
     restricted: 'Raw source data is protected and requires a dedicated permission.',
     errors: 'Could not load orders. Try again',
+    manualOrders: 'Create manual order',
+    manualTitle: 'New local manual order',
+    localOnly: 'Local only: this order never calls WooCommerce or changes inventory',
+    customerName: 'Customer name',
+    customerEmail: 'Customer email',
+    customerPhone: 'Customer phone',
+    currency: 'Currency',
+    productName: 'Product name',
+    productSku: 'SKU',
+    unitPriceMinor: 'Unit price in minor units',
+    shippingMinor: 'Shipping in minor units',
+    discountMinor: 'Discount in minor units',
+    taxMinor: 'Tax in minor units',
+    feesMinor: 'Fees in minor units',
+    localStatusInput: 'Local status',
+    tagsInput: 'Tags separated by commas',
+    notesInput: 'Notes',
+    address: 'Address',
+    saveManual: 'Save manual order',
+    cancel: 'Cancel',
+    invalidManual: 'Check the manual order fields',
+    createdManual: 'Manual order saved locally',
   },
 } as const;
 
@@ -651,6 +702,267 @@ function OrderDetail({
   );
 }
 
+function csrfToken(): string {
+  return (
+    document.cookie
+      .split(';')
+      .map((item) => item.trim())
+      .find((item) => item.startsWith('woo_ops_csrf='))
+      ?.slice('woo_ops_csrf='.length) ?? ''
+  );
+}
+
+function ManualOrderForm({
+  locale,
+  t,
+  onSaved,
+  onCancel,
+}: {
+  locale: Locale;
+  t: (typeof copy)[Locale];
+  onSaved: (order: Order) => void;
+  onCancel: () => void;
+}) {
+  const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [address, setAddress] = useState('');
+  const [currency, setCurrency] = useState('EGP');
+  const [productName, setProductName] = useState('');
+  const [productSku, setProductSku] = useState('');
+  const [quantity, setQuantity] = useState('1');
+  const [unitPriceMinor, setUnitPriceMinor] = useState('0');
+  const [shippingMinor, setShippingMinor] = useState('0');
+  const [discountMinor, setDiscountMinor] = useState('0');
+  const [taxMinor, setTaxMinor] = useState('0');
+  const [feesMinor, setFeesMinor] = useState('0');
+  const [localStatus, setLocalStatus] = useState('new');
+  const [tags, setTags] = useState('manual');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const total = useMemo(() => {
+    try {
+      const subtotal = BigInt(unitPriceMinor || '0') * BigInt(quantity || '0');
+      const value =
+        subtotal -
+        BigInt(discountMinor || '0') +
+        BigInt(taxMinor || '0') +
+        BigInt(shippingMinor || '0') +
+        BigInt(feesMinor || '0');
+      return formatMinor(value.toString(), currency.toUpperCase(), locale);
+    } catch {
+      return '—';
+    }
+  }, [
+    currency,
+    discountMinor,
+    feesMinor,
+    locale,
+    quantity,
+    shippingMinor,
+    taxMinor,
+    unitPriceMinor,
+  ]);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaving(true);
+    setError(false);
+    try {
+      const response = await fetch('/api/v1/manual-orders', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        credentials: 'include',
+        body: JSON.stringify({
+          currency: currency.trim().toUpperCase(),
+          customer: { name: customerName, email: customerEmail, phone: customerPhone },
+          billing: { first_name: customerName, email: customerEmail, phone: customerPhone },
+          shipping: { first_name: customerName, address_1: address },
+          payment: { method: 'manual', title: 'Manual payment' },
+          shippingMethod: { methodId: 'manual', title: 'Manual shipping' },
+          lines: [
+            {
+              name: productName,
+              sku: productSku || undefined,
+              quantity: Number(quantity),
+              unitPriceMinor,
+            },
+          ],
+          shippingCollectedMinor: shippingMinor,
+          discountMinor,
+          taxMinor,
+          feesMinor,
+          localStatus,
+          tags: tags
+            .split(',')
+            .map((tag) => tag.trim())
+            .filter(Boolean),
+          notes,
+        }),
+      });
+      if (!response.ok) throw new Error('MANUAL_ORDER_CREATE_FAILED');
+      const body = (await response.json()) as OrderResponse;
+      setSaved(true);
+      onSaved(body.order);
+    } catch {
+      setError(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Paper component="form" onSubmit={submit} variant="outlined" sx={{ p: { xs: 2, md: 4 } }}>
+      <Stack gap={3}>
+        <Box>
+          <Typography variant="h4" component="h1" fontWeight={800}>
+            {t.manualTitle}
+          </Typography>
+          <Typography color="text.secondary">{t.localOnly}</Typography>
+        </Box>
+        <Alert severity="info">{t.localOnly}</Alert>
+        {error && <Alert severity="error">{t.invalidManual}</Alert>}
+        {saved && <Alert severity="success">{t.createdManual}</Alert>}
+        <Section title={t.customer}>
+          <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
+            <TextField
+              required
+              fullWidth
+              label={t.customerName}
+              value={customerName}
+              onChange={(event) => setCustomerName(event.target.value)}
+            />
+            <TextField
+              fullWidth
+              label={t.customerEmail}
+              type="email"
+              value={customerEmail}
+              onChange={(event) => setCustomerEmail(event.target.value)}
+            />
+            <TextField
+              fullWidth
+              label={t.customerPhone}
+              value={customerPhone}
+              onChange={(event) => setCustomerPhone(event.target.value)}
+            />
+          </Stack>
+          <TextField
+            fullWidth
+            sx={{ mt: 2 }}
+            label={t.address}
+            value={address}
+            onChange={(event) => setAddress(event.target.value)}
+          />
+        </Section>
+        <Section title={t.items}>
+          <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
+            <TextField
+              required
+              fullWidth
+              label={t.productName}
+              value={productName}
+              onChange={(event) => setProductName(event.target.value)}
+            />
+            <TextField
+              fullWidth
+              label={t.productSku}
+              value={productSku}
+              onChange={(event) => setProductSku(event.target.value)}
+            />
+            <TextField
+              required
+              label={t.quantity}
+              type="number"
+              inputProps={{ min: 1, step: 1 }}
+              value={quantity}
+              onChange={(event) => setQuantity(event.target.value)}
+            />
+            <TextField
+              required
+              label={t.unitPriceMinor}
+              type="number"
+              inputProps={{ min: 0, step: 1 }}
+              value={unitPriceMinor}
+              onChange={(event) => setUnitPriceMinor(event.target.value)}
+            />
+          </Stack>
+        </Section>
+        <Section title={t.finance}>
+          <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
+            <TextField
+              label={t.currency}
+              value={currency}
+              onChange={(event) => setCurrency(event.target.value)}
+            />
+            <TextField
+              label={t.shippingMinor}
+              type="number"
+              inputProps={{ min: 0, step: 1 }}
+              value={shippingMinor}
+              onChange={(event) => setShippingMinor(event.target.value)}
+            />
+            <TextField
+              label={t.discountMinor}
+              type="number"
+              inputProps={{ min: 0, step: 1 }}
+              value={discountMinor}
+              onChange={(event) => setDiscountMinor(event.target.value)}
+            />
+            <TextField
+              label={t.taxMinor}
+              type="number"
+              inputProps={{ min: 0, step: 1 }}
+              value={taxMinor}
+              onChange={(event) => setTaxMinor(event.target.value)}
+            />
+            <TextField
+              label={t.feesMinor}
+              type="number"
+              inputProps={{ min: 0, step: 1 }}
+              value={feesMinor}
+              onChange={(event) => setFeesMinor(event.target.value)}
+            />
+          </Stack>
+          <Typography sx={{ mt: 2 }} fontWeight={800}>
+            {t.total}: {total}
+          </Typography>
+        </Section>
+        <Section title={t.workflow}>
+          <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
+            <TextField
+              label={t.localStatusInput}
+              value={localStatus}
+              onChange={(event) => setLocalStatus(event.target.value)}
+            />
+            <TextField
+              fullWidth
+              label={t.tagsInput}
+              value={tags}
+              onChange={(event) => setTags(event.target.value)}
+            />
+            <TextField
+              fullWidth
+              label={t.notesInput}
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+            />
+          </Stack>
+        </Section>
+        <Stack direction="row" gap={2} justifyContent="flex-end">
+          <Button type="button" onClick={onCancel} disabled={saving}>
+            {t.cancel}
+          </Button>
+          <Button type="submit" variant="contained" disabled={saving}>
+            {saving ? <CircularProgress size={18} aria-label={t.loading} /> : t.saveManual}
+          </Button>
+        </Stack>
+      </Stack>
+    </Paper>
+  );
+}
+
 export function App({
   locale,
   direction,
@@ -672,6 +984,7 @@ export function App({
   const [visibleColumns, setVisibleColumns] = useState<string[]>([...columns]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [view, setView] = useState<'orders' | 'manual'>('orders');
 
   const loadOrders = async (append = false) => {
     setLoading(true);
@@ -760,6 +1073,9 @@ export function App({
           <Typography variant="h6" color="primary" sx={{ flexGrow: 1, fontWeight: 800 }}>
             {t.app}
           </Typography>
+          <Button variant="contained" size="small" onClick={() => setView('manual')}>
+            {t.manualOrders}
+          </Button>
           <Button
             onClick={onToggleDirection}
             color="inherit"
@@ -774,163 +1090,178 @@ export function App({
         </Toolbar>
       </AppBar>
       <Container component="main" maxWidth="xl" sx={{ py: 4 }}>
-        <Stack
-          direction={{ xs: 'column', md: 'row' }}
-          alignItems={{ md: 'center' }}
-          justifyContent="space-between"
-          gap={2}
-          mb={3}
-        >
-          <Box>
-            <Typography variant="h4" fontWeight={800} component="h1">
-              {t.orders}
-            </Typography>
-            <Typography color="text.secondary">{t.subtitle}</Typography>
-          </Box>
-          <Stack direction="row" gap={1}>
-            <Button variant="outlined" onClick={() => void loadOrders()} disabled={loading}>
-              {loading ? <CircularProgress size={18} aria-label={t.loading} /> : t.refresh}
-            </Button>
-            <FormControl size="small" sx={{ minWidth: 150 }}>
-              <InputLabel id="orders-columns-label">{t.columns}</InputLabel>
-              <Select
-                multiple
-                value={visibleColumns}
-                labelId="orders-columns-label"
-                label={t.columns}
-                onChange={(event) => setVisibleColumns(event.target.value as string[])}
-                renderValue={(value) => `${(value as string[]).length}/${columns.length}`}
-              >
-                {columns.map((column) => (
-                  <MenuItem key={column} value={column}>
-                    {labelFor(column)}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Stack>
-        </Stack>
-        <Paper
-          variant="outlined"
-          sx={{ p: 2, mb: 2 }}
-          component="form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void loadOrders();
-          }}
-        >
-          <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
-            <TextField
-              fullWidth
-              size="small"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={t.search}
-              inputProps={{ 'aria-label': t.search }}
-            />
-            <FormControl size="small" sx={{ minWidth: 170 }}>
-              <InputLabel id="orders-status-label">{t.status}</InputLabel>
-              <Select
-                value={status}
-                labelId="orders-status-label"
-                label={t.status}
-                onChange={(event) => setStatus(event.target.value)}
-              >
-                <MenuItem value="">{t.all}</MenuItem>
-                <MenuItem value="processing">{t.processing}</MenuItem>
-                <MenuItem value="completed">{t.completed}</MenuItem>
-              </Select>
-            </FormControl>
-            <Button type="submit" variant="contained">
-              {t.searchButton}
-            </Button>
-          </Stack>
-        </Paper>
-        {error && (
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            {t.errors}
-          </Alert>
-        )}
-        <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
-          <Table size="small" aria-label={t.orders} data-testid="orders-table">
-            <caption
-              style={{
-                position: 'absolute',
-                width: 1,
-                height: 1,
-                overflow: 'hidden',
-                clip: 'rect(0 0 0 0)',
+        {view === 'manual' ? (
+          <ManualOrderForm
+            locale={locale}
+            t={t}
+            onCancel={() => setView('orders')}
+            onSaved={(order) => {
+              setOrders((previous) => [order, ...previous]);
+            }}
+          />
+        ) : (
+          <>
+            <Stack
+              direction={{ xs: 'column', md: 'row' }}
+              alignItems={{ md: 'center' }}
+              justifyContent="space-between"
+              gap={2}
+              mb={3}
+            >
+              <Box>
+                <Typography variant="h4" fontWeight={800} component="h1">
+                  {t.orders}
+                </Typography>
+                <Typography color="text.secondary">{t.subtitle}</Typography>
+              </Box>
+              <Stack direction="row" gap={1}>
+                <Button variant="outlined" onClick={() => void loadOrders()} disabled={loading}>
+                  {loading ? <CircularProgress size={18} aria-label={t.loading} /> : t.refresh}
+                </Button>
+                <FormControl size="small" sx={{ minWidth: 150 }}>
+                  <InputLabel id="orders-columns-label">{t.columns}</InputLabel>
+                  <Select
+                    multiple
+                    value={visibleColumns}
+                    labelId="orders-columns-label"
+                    label={t.columns}
+                    onChange={(event) => setVisibleColumns(event.target.value as string[])}
+                    renderValue={(value) => `${(value as string[]).length}/${columns.length}`}
+                  >
+                    {columns.map((column) => (
+                      <MenuItem key={column} value={column}>
+                        {labelFor(column)}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Stack>
+            </Stack>
+            <Paper
+              variant="outlined"
+              sx={{ p: 2, mb: 2 }}
+              component="form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void loadOrders();
               }}
             >
-              {t.orders}
-            </caption>
-            <TableHead>
-              <TableRow>
-                {renderedColumns.map((column) => (
-                  <TableCell key={column} sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
-                    {labelFor(column)}
-                  </TableCell>
-                ))}
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {orders.map((order) => (
-                <TableRow
-                  key={order.id}
-                  hover
-                  tabIndex={0}
-                  data-testid={`order-row-${order.id}`}
-                  onClick={() => void openOrder(order)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      void openOrder(order);
-                    }
+              <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder={t.search}
+                  inputProps={{ 'aria-label': t.search }}
+                />
+                <FormControl size="small" sx={{ minWidth: 170 }}>
+                  <InputLabel id="orders-status-label">{t.status}</InputLabel>
+                  <Select
+                    value={status}
+                    labelId="orders-status-label"
+                    label={t.status}
+                    onChange={(event) => setStatus(event.target.value)}
+                  >
+                    <MenuItem value="">{t.all}</MenuItem>
+                    <MenuItem value="processing">{t.processing}</MenuItem>
+                    <MenuItem value="completed">{t.completed}</MenuItem>
+                  </Select>
+                </FormControl>
+                <Button type="submit" variant="contained">
+                  {t.searchButton}
+                </Button>
+              </Stack>
+            </Paper>
+            {error && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                {t.errors}
+              </Alert>
+            )}
+            <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+              <Table size="small" aria-label={t.orders} data-testid="orders-table">
+                <caption
+                  style={{
+                    position: 'absolute',
+                    width: 1,
+                    height: 1,
+                    overflow: 'hidden',
+                    clip: 'rect(0 0 0 0)',
                   }}
-                  sx={{ cursor: 'pointer' }}
                 >
-                  {renderedColumns.map((column) => (
-                    <TableCell key={column}>
-                      {column === 'remoteStatus' ? (
-                        <Chip
-                          size="small"
-                          label={display(order, column)}
-                          variant="outlined"
-                          sx={
-                            order.remoteStatus === 'completed'
-                              ? { color: '#1b5e20', borderColor: '#1b5e20' }
-                              : { color: '#8a4b00', borderColor: '#8a4b00' }
-                          }
-                        />
-                      ) : (
-                        <span dir={column === 'orderNumber' ? 'ltr' : undefined}>
-                          {display(order, column)}
-                        </span>
-                      )}
-                    </TableCell>
+                  {t.orders}
+                </caption>
+                <TableHead>
+                  <TableRow>
+                    {renderedColumns.map((column) => (
+                      <TableCell key={column} sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
+                        {labelFor(column)}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {orders.map((order) => (
+                    <TableRow
+                      key={order.id}
+                      hover
+                      tabIndex={0}
+                      data-testid={`order-row-${order.id}`}
+                      onClick={() => void openOrder(order)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          void openOrder(order);
+                        }
+                      }}
+                      sx={{ cursor: 'pointer' }}
+                    >
+                      {renderedColumns.map((column) => (
+                        <TableCell key={column}>
+                          {column === 'remoteStatus' ? (
+                            <Chip
+                              size="small"
+                              label={display(order, column)}
+                              variant="outlined"
+                              sx={
+                                order.remoteStatus === 'completed'
+                                  ? { color: '#1b5e20', borderColor: '#1b5e20' }
+                                  : { color: '#8a4b00', borderColor: '#8a4b00' }
+                              }
+                            />
+                          ) : (
+                            <span dir={column === 'orderNumber' ? 'ltr' : undefined}>
+                              {display(order, column)}
+                            </span>
+                          )}
+                        </TableCell>
+                      ))}
+                    </TableRow>
                   ))}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {!loading && orders.length === 0 && (
-            <Box textAlign="center" py={8}>
-              <Typography color="text.secondary">{error ? t.noConnection : t.noOrders}</Typography>
-            </Box>
-          )}
-          {loading && orders.length === 0 && (
-            <Box textAlign="center" py={6}>
-              <CircularProgress aria-label={t.loading} />
-            </Box>
-          )}
-          {hasMore && (
-            <Box textAlign="center" p={2}>
-              <Button onClick={() => void loadOrders(true)} disabled={loading}>
-                {t.loadMore}
-              </Button>
-            </Box>
-          )}
-        </Paper>
+                </TableBody>
+              </Table>
+              {!loading && orders.length === 0 && (
+                <Box textAlign="center" py={8}>
+                  <Typography color="text.secondary">
+                    {error ? t.noConnection : t.noOrders}
+                  </Typography>
+                </Box>
+              )}
+              {loading && orders.length === 0 && (
+                <Box textAlign="center" py={6}>
+                  <CircularProgress aria-label={t.loading} />
+                </Box>
+              )}
+              {hasMore && (
+                <Box textAlign="center" p={2}>
+                  <Button onClick={() => void loadOrders(true)} disabled={loading}>
+                    {t.loadMore}
+                  </Button>
+                </Box>
+              )}
+            </Paper>
+          </>
+        )}
       </Container>
       <Drawer
         anchor={direction === 'rtl' ? 'left' : 'right'}
