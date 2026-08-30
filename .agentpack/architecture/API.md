@@ -130,6 +130,14 @@ GET    /bulk-jobs/:id/errors
 Action payload references a selection ID and typed action parameters. Server authorization and
 entitlement checks run both at job creation and execution.
 
+The current API exposes these routes under `/api/v1`. Selection snapshots are either bounded
+explicit IDs or a compact query plus exclusions and a UTC watermark; query snapshots exclude orders
+created after that watermark. Bulk job creation is idempotent by account, action, and key, and job
+progress is updated from per-order item results. Operation writes require an authenticated
+owner/admin/operator session plus the CSRF token. Viewer sessions can preview and read progress but
+cannot create, retry, or cancel jobs. The action allowlist is local/read-only (`resync` schedules a
+read-only pull); no route in this group mutates WooCommerce.
+
 ## Export profiles and batches
 
 ```text

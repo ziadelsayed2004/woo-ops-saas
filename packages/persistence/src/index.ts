@@ -1,7 +1,13 @@
 import Database from 'better-sqlite3';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
-type AccountContext = Readonly<{ accountId: string; actorId?: string; correlationId: string }>;
+export type AccountRole = 'owner' | 'admin' | 'operator' | 'viewer';
+export type AccountContext = Readonly<{
+  accountId: string;
+  actorId?: string;
+  correlationId: string;
+  role?: AccountRole;
+}>;
 type DurableJob = {
   id: string;
   type: string;
@@ -58,10 +64,115 @@ export type OrderQueryInput = {
     direction: 'asc' | 'desc';
   };
 };
+export type OrderSort = NonNullable<OrderQueryInput['sort']>;
 export type OrderQueryResult = {
   items: readonly Record<string, unknown>[];
   nextCursor: string | null;
   hasMore: boolean;
+};
+export type MetadataSensitivity = 'safe' | 'private' | 'unknown';
+export type MetadataType = 'text' | 'number' | 'money' | 'boolean' | 'date' | 'enum' | 'entity';
+export type MetadataEntry = {
+  sourceKey: string;
+  scope: string;
+  sensitivity: MetadataSensitivity;
+  inferredType: MetadataType | 'unknown';
+  occurrences: number;
+  sample: unknown;
+};
+export type FieldMapping = {
+  id: string;
+  sourceKey: string;
+  label: string;
+  type: MetadataType;
+  targetFacet: string | null;
+  version: number;
+};
+
+export type SelectionMode = 'explicit' | 'query';
+export type SelectionQuery = { orderIds: readonly string[] } | OrderQueryInput;
+export type SelectionSnapshot = {
+  id: string;
+  accountId: string;
+  createdBy: string;
+  mode: SelectionMode;
+  query: SelectionQuery;
+  exclusions: readonly string[];
+  watermark: string;
+  estimatedCount: number;
+  expiresAt: string;
+  createdAt: string;
+};
+export type SelectionPage = {
+  items: readonly string[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  totalCount: number;
+};
+export type SavedViewVisibility = 'private' | 'shared';
+export type SavedView = {
+  id: string;
+  accountId: string;
+  userId: string;
+  name: string;
+  query: OrderQueryInput;
+  sort: OrderSort | null;
+  columns: readonly string[];
+  pageSize: number;
+  visibility: SavedViewVisibility;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type BulkAction =
+  | 'update-local-status'
+  | 'assign'
+  | 'add-tag'
+  | 'remove-tag'
+  | 'mark-export-ready'
+  | 'create-export'
+  | 'generate-invoice'
+  | 'generate-thermal'
+  | 'generate-label'
+  | 'print-documents'
+  | 'resync';
+export type BulkJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'partial' | 'cancelled';
+export type BulkItemStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+export type BulkJobSummary = {
+  id: string;
+  accountId: string;
+  selectionId: string;
+  action: BulkAction;
+  status: BulkJobStatus;
+  progress: number;
+  totalCount: number;
+  succeededCount: number;
+  failedCount: number;
+  cancelledCount: number;
+  idempotencyKey: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+};
+export type BulkJobItem = {
+  jobId: string;
+  orderId: string;
+  status: BulkItemStatus;
+  attemptCount: number;
+  lastError: string | null;
+  updatedAt: string;
+};
+export type BulkPreview = {
+  selectionId: string;
+  action: BulkAction;
+  estimatedCount: number;
+  currentCount: number;
+  watermark: string;
+  expiresAt: string;
+  currencies: readonly string[];
+  stores: readonly string[];
+  warnings: readonly string[];
 };
 
 const isJsonValue = (value: unknown, depth = 0): boolean => {
@@ -77,14 +188,74 @@ const isJsonValue = (value: unknown, depth = 0): boolean => {
   return false;
 };
 
-const serializeJobPayload = (payload: unknown): string => {
-  if (!isJsonValue(payload)) throw new Error('JOB_PAYLOAD_INVALID');
+const serializeBoundedJson = (payload: unknown, maxLength: number, errorCode: string): string => {
+  if (!isJsonValue(payload)) throw new Error(errorCode.replace('TOO_LARGE', 'INVALID'));
   const serialized = JSON.stringify(payload);
-  if (serialized.length > 64 * 1024) throw new Error('JOB_PAYLOAD_TOO_LARGE');
+  if (typeof serialized !== 'string' || serialized.length > maxLength) throw new Error(errorCode);
   return serialized;
 };
+const serializeJobPayload = (payload: unknown): string =>
+  serializeBoundedJson(payload, 64 * 1024, 'JOB_PAYLOAD_TOO_LARGE');
 
 const requireHash = (value: string): string => createHash('sha256').update(value).digest('hex');
+const randomId = (): string => randomUUID();
+const privateMetadataKey =
+  /(password|passwd|secret|token|authorization|api[_-]?key|private[_-]?key|access[_-]?key)/i;
+const metadataType = (values: readonly unknown[]): MetadataType | 'unknown' => {
+  if (values.length === 0) return 'unknown';
+  if (values.every((value) => typeof value === 'boolean')) return 'boolean';
+  if (values.every((value) => typeof value === 'number' && Number.isFinite(value))) return 'number';
+  if (values.every((value) => typeof value === 'string' && !Number.isNaN(Date.parse(value))))
+    return 'date';
+  if (values.every((value) => typeof value === 'string')) return 'text';
+  return 'unknown';
+};
+const metadataSensitivity = (key: string): MetadataSensitivity =>
+  privateMetadataKey.test(key) || key.startsWith('_') ? 'private' : 'safe';
+const readMetadata = (source: unknown): Array<{ key: string; value: unknown }> => {
+  if (!source || typeof source !== 'object') return [];
+  const record = source as Record<string, unknown>;
+  if (Array.isArray(record.meta_data))
+    return record.meta_data.flatMap((item) => {
+      if (!item || typeof item !== 'object') return [];
+      const entry = item as Record<string, unknown>;
+      return typeof entry.key === 'string'
+        ? [{ key: entry.key.slice(0, 120), value: entry.value }]
+        : [];
+    });
+  return Object.entries(record)
+    .filter(([key]) => key === 'meta_data')
+    .map(([key, value]) => ({ key, value }));
+};
+export const discoverMetadata = (samples: readonly unknown[], scope = 'order'): MetadataEntry[] => {
+  const grouped = new Map<string, unknown[]>();
+  for (const sample of samples)
+    for (const item of readMetadata(sample))
+      grouped.set(item.key, [...(grouped.get(item.key) ?? []), item.value]);
+  return [...grouped.entries()].map(([sourceKey, values]) => ({
+    sourceKey,
+    scope,
+    sensitivity: metadataSensitivity(sourceKey),
+    inferredType: metadataType(values),
+    occurrences: values.length,
+    sample: metadataSensitivity(sourceKey) === 'safe' ? values[0] : undefined,
+  }));
+};
+const coerceMappedValue = (value: unknown, type: MetadataType): string | null => {
+  if (type === 'text' || type === 'enum' || type === 'entity')
+    return typeof value === 'string' || typeof value === 'number' ? String(value) : null;
+  if (type === 'number' || type === 'money')
+    return (typeof value === 'number' && Number.isFinite(value)) ||
+      (typeof value === 'string' && /^-?\d+(?:\.\d+)?$/.test(value))
+      ? String(value)
+      : null;
+  if (type === 'boolean') return typeof value === 'boolean' ? String(value) : null;
+  if (type === 'date')
+    return typeof value === 'string' && !Number.isNaN(Date.parse(value))
+      ? new Date(value).toISOString()
+      : null;
+  return null;
+};
 
 const filterColumns: Record<OrderFilterField, string> = {
   orderNumber: 'o.order_number',
@@ -157,11 +328,15 @@ const decodedCursor = (value: string): { sortValue: string; id: string } => {
   }
 };
 
-const compileFilter = (filter: OrderFilter): { sql: string; params: (string | number)[] } => {
+const compileFilter = (
+  filter: OrderFilter,
+  depth = 0,
+): { sql: string; params: (string | number)[] } => {
+  if (depth > 10) throw new Error('ORDER_FILTER_TOO_DEEP');
   if (!filter || typeof filter !== 'object') throw new Error('ORDER_FILTER_INVALID');
   if ('op' in filter) {
     if (filter.children.length === 0) throw new Error('ORDER_FILTER_EMPTY_GROUP');
-    const children = filter.children.map(compileFilter);
+    const children = filter.children.map((child) => compileFilter(child, depth + 1));
     return {
       sql: `(${children.map((child) => child.sql).join(` ${filter.op.toUpperCase()} `)})`,
       params: children.flatMap((child) => child.params),
@@ -220,7 +395,7 @@ const compileFilter = (filter: OrderFilter): { sql: string; params: (string | nu
   return { sql: `${column} ${sqlOperator} ?`, params: [filter.value] };
 };
 
-export const schemaVersion = 7;
+export const schemaVersion = 9;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -362,7 +537,280 @@ const migrations: readonly Migration[] = [
       CREATE INDEX order_sync_runs_account ON order_sync_runs(account_id, connection_id, started_at);
     `,
   },
+  {
+    version: 8,
+    name: 'metadata-discovery-and-mappings',
+    sql: `
+      CREATE TABLE field_catalogs (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), connection_id TEXT NOT NULL REFERENCES connections(id),
+        scope TEXT NOT NULL, source_key TEXT NOT NULL, sensitivity TEXT NOT NULL CHECK(sensitivity IN ('safe', 'private', 'unknown')),
+        inferred_type TEXT NOT NULL, occurrences INTEGER NOT NULL DEFAULT 0, sample_json TEXT, discovered_at TEXT NOT NULL,
+        UNIQUE(account_id, connection_id, scope, source_key)
+      );
+      CREATE INDEX field_catalogs_account_safe ON field_catalogs(account_id, connection_id, sensitivity, scope);
+      CREATE TABLE field_mappings (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), connection_id TEXT NOT NULL REFERENCES connections(id),
+        source_key TEXT NOT NULL, label TEXT NOT NULL, type TEXT NOT NULL CHECK(type IN ('text', 'number', 'money', 'boolean', 'date', 'enum', 'entity')),
+        target_facet TEXT, version INTEGER NOT NULL DEFAULT 1, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE(account_id, connection_id, source_key)
+      );
+      CREATE INDEX field_mappings_account_active ON field_mappings(account_id, connection_id, active);
+      CREATE TABLE order_mapped_fields (
+        account_id TEXT NOT NULL REFERENCES accounts(id), order_id TEXT NOT NULL REFERENCES orders(id), mapping_id TEXT NOT NULL REFERENCES field_mappings(id),
+        value_text TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(account_id, order_id, mapping_id)
+      );
+      CREATE INDEX order_mapped_fields_lookup ON order_mapped_fields(account_id, mapping_id, value_text);
+    `,
+  },
+  {
+    version: 9,
+    name: 'selections-saved-views-and-bulk-jobs',
+    sql: `
+      CREATE TABLE selection_snapshots (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), created_by TEXT NOT NULL REFERENCES users(id),
+        mode TEXT NOT NULL CHECK(mode IN ('explicit', 'query')), query_json TEXT NOT NULL,
+        query_hash TEXT NOT NULL, exclusions_json TEXT NOT NULL DEFAULT '[]', watermark TEXT NOT NULL,
+        estimated_count INTEGER NOT NULL CHECK(estimated_count >= 0), expires_at TEXT NOT NULL, created_at TEXT NOT NULL,
+        UNIQUE(account_id, id)
+      );
+      CREATE INDEX selection_snapshots_account_expiry ON selection_snapshots(account_id, expires_at, created_at);
+      CREATE TABLE saved_views (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), user_id TEXT NOT NULL REFERENCES users(id),
+        name TEXT NOT NULL, query_json TEXT NOT NULL, sort_json TEXT, columns_json TEXT NOT NULL,
+        page_size INTEGER NOT NULL CHECK(page_size BETWEEN 1 AND 100),
+        visibility TEXT NOT NULL CHECK(visibility IN ('private', 'shared')), version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE(account_id, user_id, name)
+      );
+      CREATE INDEX saved_views_account_visibility ON saved_views(account_id, visibility, updated_at);
+      CREATE UNIQUE INDEX orders_account_id_id ON orders(account_id, id);
+      CREATE TABLE bulk_jobs (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), selection_id TEXT NOT NULL,
+        action TEXT NOT NULL CHECK(action IN ('update-local-status', 'assign', 'add-tag', 'remove-tag', 'mark-export-ready', 'create-export', 'generate-invoice', 'generate-thermal', 'generate-label', 'print-documents', 'resync')),
+        parameters_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'succeeded', 'failed', 'partial', 'cancelled')),
+        progress INTEGER NOT NULL DEFAULT 0 CHECK(progress BETWEEN 0 AND 100), total_count INTEGER NOT NULL CHECK(total_count >= 0),
+        succeeded_count INTEGER NOT NULL DEFAULT 0, failed_count INTEGER NOT NULL DEFAULT 0, cancelled_count INTEGER NOT NULL DEFAULT 0,
+        idempotency_key TEXT NOT NULL, created_by TEXT NOT NULL REFERENCES users(id), cancel_requested INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT,
+        UNIQUE(account_id, action, idempotency_key), UNIQUE(account_id, id),
+        FOREIGN KEY(account_id, selection_id) REFERENCES selection_snapshots(account_id, id)
+      );
+      CREATE INDEX bulk_jobs_account_status ON bulk_jobs(account_id, status, updated_at);
+      CREATE TABLE bulk_job_items (
+        account_id TEXT NOT NULL REFERENCES accounts(id), job_id TEXT NOT NULL, order_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
+        attempt_count INTEGER NOT NULL DEFAULT 0, last_error TEXT, updated_at TEXT NOT NULL,
+        PRIMARY KEY(account_id, job_id, order_id),
+        FOREIGN KEY(account_id, job_id) REFERENCES bulk_jobs(account_id, id),
+        FOREIGN KEY(account_id, order_id) REFERENCES orders(account_id, id)
+      );
+      CREATE INDEX bulk_job_items_retry ON bulk_job_items(account_id, job_id, status, updated_at);
+    `,
+  },
 ];
+
+const MAX_SELECTION_IDS = 5_000;
+const MAX_SELECTION_JSON = 32 * 1024;
+const MAX_BULK_PARAMETERS_JSON = 32 * 1024;
+const MAX_VIEW_COLUMNS = 100;
+const BULK_ACTIONS: readonly BulkAction[] = [
+  'update-local-status',
+  'assign',
+  'add-tag',
+  'remove-tag',
+  'mark-export-ready',
+  'create-export',
+  'generate-invoice',
+  'generate-thermal',
+  'generate-label',
+  'print-documents',
+  'resync',
+];
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const isBulkAction = (value: unknown): value is BulkAction =>
+  typeof value === 'string' && BULK_ACTIONS.includes(value as BulkAction);
+const normalizeIdList = (value: unknown, errorCode: string): string[] => {
+  if (!Array.isArray(value) || value.length > MAX_SELECTION_IDS) throw new Error(errorCode);
+  const ids = value.map((item) => {
+    if (typeof item !== 'string' || item.length < 1 || item.length > 256)
+      throw new Error(errorCode);
+    return item;
+  });
+  if (new Set(ids).size !== ids.length) throw new Error(errorCode);
+  return ids;
+};
+const normalizeOrderQuery = (value: unknown, errorCode: string): OrderQueryInput => {
+  if (!isRecord(value)) throw new Error(errorCode);
+  const query: OrderQueryInput = {};
+  if (value.search !== undefined) {
+    if (typeof value.search !== 'string' || value.search.length > 200) throw new Error(errorCode);
+    query.search = value.search;
+  }
+  if (value.filter !== undefined) {
+    if (!isRecord(value.filter)) throw new Error(errorCode);
+    const filter = value.filter as unknown as OrderFilter;
+    try {
+      compileFilter(filter);
+    } catch {
+      throw new Error(errorCode);
+    }
+    query.filter = filter;
+  }
+  if (value.sort !== undefined) {
+    if (!isRecord(value.sort)) throw new Error(errorCode);
+    const field = value.sort.field;
+    const direction = value.sort.direction;
+    if (
+      !['remoteCreatedAt', 'updatedAt', 'orderNumber', 'grandTotalMinor', 'id'].includes(
+        String(field),
+      ) ||
+      !['asc', 'desc'].includes(String(direction))
+    )
+      throw new Error(errorCode);
+    query.sort = {
+      field: field as OrderSort['field'],
+      direction: direction as OrderSort['direction'],
+    };
+  }
+  if (value.cursor !== undefined && value.cursor !== null) throw new Error(errorCode);
+  if (value.limit !== undefined && value.limit !== null) {
+    if (
+      typeof value.limit !== 'number' ||
+      !Number.isInteger(value.limit) ||
+      value.limit < 1 ||
+      value.limit > 100
+    )
+      throw new Error(errorCode);
+  }
+  serializeBoundedJson(query, MAX_SELECTION_JSON, errorCode);
+  return query;
+};
+const normalizeWatermark = (value: unknown): string => {
+  if (typeof value !== 'string') throw new Error('SELECTION_WATERMARK_INVALID');
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp) || timestamp > Date.now() + 60_000)
+    throw new Error('SELECTION_WATERMARK_INVALID');
+  return new Date(timestamp).toISOString();
+};
+const normalizeExpiry = (value: unknown): string => {
+  const timestamp =
+    value === undefined ? Date.now() + 24 * 60 * 60 * 1000 : Date.parse(String(value));
+  if (
+    !Number.isFinite(timestamp) ||
+    timestamp <= Date.now() ||
+    timestamp > Date.now() + 30 * 24 * 60 * 60 * 1000
+  )
+    throw new Error('SELECTION_EXPIRY_INVALID');
+  return new Date(timestamp).toISOString();
+};
+const parseStoredJson = <T>(value: string, errorCode: string): T => {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    throw new Error(errorCode);
+  }
+};
+const selectionCursor = (id: string): string => encodedCursor({ sortValue: '', id });
+const readSelectionCursor = (value: string): string => decodedCursor(value).id;
+const operationError = (error: unknown, fallback: string): Error =>
+  error instanceof Error ? error : new Error(fallback);
+
+type SelectionData = {
+  mode: SelectionMode;
+  query: SelectionQuery;
+  exclusions: readonly string[];
+  watermark: string;
+};
+type SelectionRow = {
+  id: string;
+  account_id: string;
+  created_by: string;
+  mode: SelectionMode;
+  query_json: string;
+  exclusions_json: string;
+  watermark: string;
+  estimated_count: number;
+  expires_at: string;
+  created_at: string;
+};
+type SavedViewRow = {
+  id: string;
+  account_id: string;
+  user_id: string;
+  name: string;
+  query_json: string;
+  sort_json: string | null;
+  columns_json: string;
+  page_size: number;
+  visibility: SavedViewVisibility;
+  version: number;
+  created_at: string;
+  updated_at: string;
+};
+type BulkJobRow = {
+  id: string;
+  account_id: string;
+  selection_id: string;
+  action: BulkAction;
+  parameters_json: string;
+  status: BulkJobStatus;
+  progress: number;
+  total_count: number;
+  succeeded_count: number;
+  failed_count: number;
+  cancelled_count: number;
+  idempotency_key: string;
+  created_by: string;
+  cancel_requested: number;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+};
+const bulkParameterValue = (parameters: Record<string, unknown>, name: string): string => {
+  const value = parameters[name];
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > 256)
+    throw new Error('BULK_PARAMETERS_INVALID');
+  return value.trim();
+};
+const normalizeBulkParameters = (action: BulkAction, value: unknown): Record<string, unknown> => {
+  if (!isRecord(value)) throw new Error('BULK_PARAMETERS_INVALID');
+  const serialized = serializeBoundedJson(
+    value,
+    MAX_BULK_PARAMETERS_JSON,
+    'BULK_PARAMETERS_TOO_LARGE',
+  );
+  const parameters = parseStoredJson<Record<string, unknown>>(
+    serialized,
+    'BULK_PARAMETERS_INVALID',
+  );
+  const forbiddenKey = (key: string): boolean =>
+    ['orderids', 'selectedorderids', 'selectionids', 'remoteaction', 'remoteupdate'].includes(
+      key.replace(/[_-]/g, '').toLowerCase(),
+    );
+  const visit = (item: unknown): void => {
+    if (Array.isArray(item)) {
+      item.forEach(visit);
+      return;
+    }
+    if (!isRecord(item)) return;
+    for (const [key, nested] of Object.entries(item)) {
+      if (forbiddenKey(key)) throw new Error('BULK_PARAMETERS_INVALID');
+      visit(nested);
+    }
+  };
+  visit(parameters);
+  if (action === 'update-local-status') bulkParameterValue(parameters, 'status');
+  if (action === 'assign') bulkParameterValue(parameters, 'assigneeId');
+  if (action === 'add-tag' || action === 'remove-tag') bulkParameterValue(parameters, 'tag');
+  if (action === 'create-export') bulkParameterValue(parameters, 'profileId');
+  if (
+    ['generate-invoice', 'generate-thermal', 'generate-label', 'print-documents'].includes(action)
+  )
+    bulkParameterValue(parameters, 'templateId');
+  return parameters;
+};
 
 export class SqliteStore {
   readonly db: Database.Database;
@@ -375,6 +823,988 @@ export class SqliteStore {
       'CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)',
     );
     this.applyMigrations();
+  }
+
+  private assertContext(context: AccountContext): void {
+    if (!context.accountId || !context.correlationId) throw new Error('ACCOUNT_CONTEXT_INVALID');
+  }
+
+  private assertMember(context: AccountContext): AccountRole {
+    this.assertContext(context);
+    if (!context.actorId) throw new Error('BULK_PERMISSION_DENIED');
+    const membership = this.db
+      .prepare('SELECT role FROM account_memberships WHERE account_id = ? AND user_id = ?')
+      .get(context.accountId, context.actorId) as { role: AccountRole } | undefined;
+    if (!membership) throw new Error('BULK_PERMISSION_DENIED');
+    return membership.role;
+  }
+
+  private requireMutationActor(context: AccountContext): string {
+    const role = this.assertMember(context);
+    if (context.role === 'viewer' || role === 'viewer') throw new Error('BULK_PERMISSION_DENIED');
+    return context.actorId as string;
+  }
+
+  private selectionRow(context: AccountContext, selectionId: string): SelectionRow {
+    this.assertContext(context);
+    const row = this.db
+      .prepare(
+        'SELECT id, account_id, created_by, mode, query_json, exclusions_json, watermark, estimated_count, expires_at, created_at FROM selection_snapshots WHERE account_id = ? AND id = ?',
+      )
+      .get(context.accountId, selectionId) as SelectionRow | undefined;
+    if (!row) throw new Error('SELECTION_NOT_FOUND');
+    return row;
+  }
+
+  private selectionData(row: SelectionRow): SelectionData {
+    const rawQuery = parseStoredJson<unknown>(row.query_json, 'SELECTION_DATA_INVALID');
+    const query: SelectionQuery =
+      row.mode === 'explicit'
+        ? {
+            orderIds: normalizeIdList(
+              isRecord(rawQuery) ? rawQuery.orderIds : undefined,
+              'SELECTION_DATA_INVALID',
+            ),
+          }
+        : normalizeOrderQuery(rawQuery, 'SELECTION_DATA_INVALID');
+    const exclusions = normalizeIdList(
+      parseStoredJson<unknown>(row.exclusions_json, 'SELECTION_DATA_INVALID'),
+      'SELECTION_DATA_INVALID',
+    );
+    return { mode: row.mode, query, exclusions, watermark: row.watermark };
+  }
+
+  private selectionSnapshot(row: SelectionRow): SelectionSnapshot {
+    const data = this.selectionData(row);
+    return {
+      id: row.id,
+      accountId: row.account_id,
+      createdBy: row.created_by,
+      mode: row.mode,
+      query: data.query,
+      exclusions: data.exclusions,
+      watermark: row.watermark,
+      estimatedCount: row.estimated_count,
+      expiresAt: row.expires_at,
+      createdAt: row.created_at,
+    };
+  }
+
+  private assertSelectionActive(row: SelectionRow): void {
+    if (row.expires_at <= new Date().toISOString()) throw new Error('SELECTION_EXPIRED');
+  }
+
+  private verifyOrderIds(context: AccountContext, ids: readonly string[]): void {
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => '?').join(',');
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM orders WHERE account_id = ? AND id IN (${placeholders})`,
+      )
+      .get(context.accountId, ...ids) as { count: number };
+    if (Number(row.count) !== ids.length) throw new Error('SELECTION_ORDER_NOT_FOUND');
+  }
+
+  private compileSelectionWhere(
+    context: AccountContext,
+    selection: SelectionData,
+  ): { sql: string; params: (string | number)[] } {
+    const clauses = ['o.account_id = ?'];
+    const params: (string | number)[] = [context.accountId];
+    if (selection.mode === 'explicit') {
+      const ids = (selection.query as { orderIds: readonly string[] }).orderIds;
+      if (ids.length === 0) clauses.push('0 = 1');
+      else {
+        clauses.push(`o.id IN (${ids.map(() => '?').join(',')})`);
+        params.push(...ids);
+      }
+    } else {
+      clauses.push('o.created_at <= ?');
+      params.push(selection.watermark);
+      const query = selection.query as OrderQueryInput;
+      if (query.search !== undefined) {
+        const search = `%${query.search}%`;
+        clauses.push(
+          `(o.order_number LIKE ? OR o.external_order_id LIKE ? OR o.remote_status LIKE ? OR o.local_status LIKE ? OR o.currency LIKE ? OR o.normalized_json LIKE ?)`,
+        );
+        params.push(search, search, search, search, search, search);
+      }
+      if (query.filter) {
+        const compiled = compileFilter(query.filter);
+        clauses.push(compiled.sql);
+        params.push(...compiled.params);
+      }
+    }
+    if (selection.exclusions.length > 0) {
+      clauses.push(`o.id NOT IN (${selection.exclusions.map(() => '?').join(',')})`);
+      params.push(...selection.exclusions);
+    }
+    return { sql: clauses.join(' AND '), params };
+  }
+
+  private countSelection(context: AccountContext, selection: SelectionData): number {
+    const where = this.compileSelectionWhere(context, selection);
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS count FROM orders o WHERE ${where.sql}`)
+      .get(...where.params) as { count: number };
+    return Number(row.count);
+  }
+
+  createSelection(
+    context: AccountContext,
+    input: {
+      mode: SelectionMode;
+      orderIds?: readonly string[];
+      query?: OrderQueryInput;
+      exclusions?: readonly string[];
+      watermark?: string;
+      expiresAt?: string;
+    },
+  ): SelectionSnapshot {
+    const actorId = this.requireMutationActor(context);
+    if (input.mode !== 'explicit' && input.mode !== 'query')
+      throw new Error('SELECTION_MODE_INVALID');
+    const watermark = normalizeWatermark(input.watermark ?? new Date().toISOString());
+    const exclusions = normalizeIdList(input.exclusions ?? [], 'SELECTION_EXCLUSIONS_INVALID');
+    let query: SelectionQuery;
+    if (input.mode === 'explicit') {
+      const orderIds = normalizeIdList(input.orderIds, 'SELECTION_ORDER_IDS_INVALID');
+      if (exclusions.some((id) => !orderIds.includes(id)))
+        throw new Error('SELECTION_EXCLUSIONS_INVALID');
+      this.verifyOrderIds(context, orderIds);
+      query = { orderIds };
+    } else {
+      query = normalizeOrderQuery(input.query ?? {}, 'SELECTION_QUERY_INVALID');
+      this.verifyOrderIds(context, exclusions);
+    }
+    const selection: SelectionData = { mode: input.mode, query, exclusions, watermark };
+    const queryJson = serializeBoundedJson(query, MAX_SELECTION_JSON, 'SELECTION_QUERY_TOO_LARGE');
+    const exclusionsJson = serializeBoundedJson(
+      exclusions,
+      MAX_SELECTION_JSON,
+      'SELECTION_EXCLUSIONS_TOO_LARGE',
+    );
+    const now = new Date().toISOString();
+    const expiresAt = normalizeExpiry(input.expiresAt);
+    const estimatedCount = this.countSelection(context, selection);
+    const id = randomId();
+    this.db
+      .prepare(
+        'INSERT INTO selection_snapshots (id, account_id, created_by, mode, query_json, query_hash, exclusions_json, watermark, estimated_count, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        id,
+        context.accountId,
+        actorId,
+        input.mode,
+        queryJson,
+        requireHash(queryJson),
+        exclusionsJson,
+        watermark,
+        estimatedCount,
+        expiresAt,
+        now,
+      );
+    this.audit(context, 'selection.created', 'selection', id, {
+      mode: input.mode,
+      estimatedCount,
+      exclusionCount: exclusions.length,
+      watermark,
+    });
+    return this.selectionSnapshot(this.selectionRow(context, id));
+  }
+
+  getSelection(context: AccountContext, selectionId: string): SelectionSnapshot {
+    this.assertMember(context);
+    return this.selectionSnapshot(this.selectionRow(context, selectionId));
+  }
+
+  deleteSelection(context: AccountContext, selectionId: string): void {
+    this.requireMutationActor(context);
+    this.selectionRow(context, selectionId);
+    const activeJobs = this.db
+      .prepare('SELECT COUNT(*) AS count FROM bulk_jobs WHERE account_id = ? AND selection_id = ?')
+      .get(context.accountId, selectionId) as { count: number };
+    if (Number(activeJobs.count) > 0) throw new Error('SELECTION_IN_USE');
+    const result = this.db
+      .prepare('DELETE FROM selection_snapshots WHERE account_id = ? AND id = ?')
+      .run(context.accountId, selectionId);
+    if (result.changes !== 1) throw new Error('SELECTION_NOT_FOUND');
+    this.audit(context, 'selection.deleted', 'selection', selectionId, {});
+  }
+
+  resolveSelection(
+    context: AccountContext,
+    selectionId: string,
+    input: { cursor?: string | null; limit?: number } = {},
+  ): SelectionPage {
+    this.assertMember(context);
+    const row = this.selectionRow(context, selectionId);
+    this.assertSelectionActive(row);
+    const selection = this.selectionData(row);
+    const limit = input.limit ?? 100;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error('SELECTION_LIMIT_INVALID');
+    const cursor = input.cursor ? readSelectionCursor(input.cursor) : null;
+    const where = this.compileSelectionWhere(context, selection);
+    if (cursor) {
+      where.sql += ' AND o.id > ?';
+      where.params.push(cursor);
+    }
+    const rows = this.db
+      .prepare(`SELECT o.id FROM orders o WHERE ${where.sql} ORDER BY o.id ASC LIMIT ?`)
+      .all(...where.params, limit + 1) as Array<{ id: string }>;
+    const hasMore = rows.length > limit;
+    const visible = rows.slice(0, limit).map((item) => item.id);
+    return {
+      items: visible,
+      hasMore,
+      nextCursor: hasMore && visible.length > 0 ? selectionCursor(visible.at(-1) as string) : null,
+      totalCount: this.countSelection(context, selection),
+    };
+  }
+
+  private normalizeColumns(value: unknown): string[] {
+    if (value === undefined) return [];
+    if (!Array.isArray(value) || value.length > MAX_VIEW_COLUMNS)
+      throw new Error('SAVED_VIEW_COLUMNS_INVALID');
+    const columns = value.map((column) => {
+      if (typeof column !== 'string' || column.length < 1 || column.length > 80)
+        throw new Error('SAVED_VIEW_COLUMNS_INVALID');
+      return column;
+    });
+    if (new Set(columns).size !== columns.length) throw new Error('SAVED_VIEW_COLUMNS_INVALID');
+    return columns;
+  }
+
+  private savedView(row: SavedViewRow): SavedView {
+    const query = normalizeOrderQuery(
+      parseStoredJson<unknown>(row.query_json, 'SAVED_VIEW_DATA_INVALID'),
+      'SAVED_VIEW_DATA_INVALID',
+    );
+    const columns = normalizeIdList(
+      parseStoredJson<unknown>(row.columns_json, 'SAVED_VIEW_DATA_INVALID'),
+      'SAVED_VIEW_DATA_INVALID',
+    );
+    const sort = row.sort_json
+      ? (normalizeOrderQuery(
+          { sort: parseStoredJson<unknown>(row.sort_json, 'SAVED_VIEW_DATA_INVALID') },
+          'SAVED_VIEW_DATA_INVALID',
+        ).sort ?? null)
+      : null;
+    return {
+      id: row.id,
+      accountId: row.account_id,
+      userId: row.user_id,
+      name: row.name,
+      query,
+      sort,
+      columns,
+      pageSize: row.page_size,
+      visibility: row.visibility,
+      version: row.version,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  private savedViewRow(context: AccountContext, viewId: string, ownerOnly = false): SavedViewRow {
+    const actorId = context.actorId;
+    const row = this.db
+      .prepare(
+        `SELECT id, account_id, user_id, name, query_json, sort_json, columns_json, page_size, visibility, version, created_at, updated_at FROM saved_views WHERE account_id = ? AND id = ?${ownerOnly ? ' AND user_id = ?' : ''}`,
+      )
+      .get(...(ownerOnly ? [context.accountId, viewId, actorId] : [context.accountId, viewId])) as
+      SavedViewRow | undefined;
+    if (!row) throw new Error('SAVED_VIEW_NOT_FOUND');
+    if (!ownerOnly && row.visibility !== 'shared' && row.user_id !== actorId)
+      throw new Error('SAVED_VIEW_NOT_FOUND');
+    return row;
+  }
+
+  createSavedView(
+    context: AccountContext,
+    input: {
+      name: string;
+      query?: OrderQueryInput;
+      sort?: OrderSort | null;
+      columns?: readonly string[];
+      pageSize?: number;
+      visibility?: SavedViewVisibility;
+    },
+  ): SavedView {
+    const actorId = this.requireMutationActor(context);
+    const name = input.name.trim();
+    if (!name || name.length > 120) throw new Error('SAVED_VIEW_NAME_INVALID');
+    const query = normalizeOrderQuery(input.query ?? {}, 'SAVED_VIEW_QUERY_INVALID');
+    const sort =
+      input.sort === undefined || input.sort === null
+        ? (query.sort ?? null)
+        : (normalizeOrderQuery({ sort: input.sort }, 'SAVED_VIEW_SORT_INVALID').sort ?? null);
+    const columns = this.normalizeColumns(input.columns);
+    const pageSize = input.pageSize ?? 50;
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100)
+      throw new Error('SAVED_VIEW_PAGE_SIZE_INVALID');
+    const visibility = input.visibility ?? 'private';
+    if (visibility !== 'private' && visibility !== 'shared')
+      throw new Error('SAVED_VIEW_VISIBILITY_INVALID');
+    const existing = this.db
+      .prepare('SELECT id FROM saved_views WHERE account_id = ? AND user_id = ? AND name = ?')
+      .get(context.accountId, actorId, name);
+    if (existing) throw new Error('SAVED_VIEW_NAME_EXISTS');
+    const now = new Date().toISOString();
+    const id = randomId();
+    this.db
+      .prepare(
+        'INSERT INTO saved_views (id, account_id, user_id, name, query_json, sort_json, columns_json, page_size, visibility, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)',
+      )
+      .run(
+        id,
+        context.accountId,
+        actorId,
+        name,
+        serializeBoundedJson(query, MAX_SELECTION_JSON, 'SAVED_VIEW_QUERY_TOO_LARGE'),
+        sort ? serializeBoundedJson(sort, 8 * 1024, 'SAVED_VIEW_SORT_TOO_LARGE') : null,
+        serializeBoundedJson(columns, MAX_SELECTION_JSON, 'SAVED_VIEW_COLUMNS_TOO_LARGE'),
+        pageSize,
+        visibility,
+        now,
+        now,
+      );
+    this.audit(context, 'saved-view.created', 'saved_view', id, { visibility });
+    return this.savedView(this.savedViewRow(context, id, true));
+  }
+
+  listSavedViews(context: AccountContext): SavedView[] {
+    this.assertMember(context);
+    const rows = this.db
+      .prepare(
+        "SELECT id, account_id, user_id, name, query_json, sort_json, columns_json, page_size, visibility, version, created_at, updated_at FROM saved_views WHERE account_id = ? AND (visibility = 'shared' OR user_id = ?) ORDER BY name COLLATE NOCASE, id",
+      )
+      .all(context.accountId, context.actorId) as SavedViewRow[];
+    return rows.map((row) => this.savedView(row));
+  }
+
+  updateSavedView(
+    context: AccountContext,
+    viewId: string,
+    input: {
+      name?: string;
+      query?: OrderQueryInput;
+      sort?: OrderSort | null;
+      columns?: readonly string[];
+      pageSize?: number;
+      visibility?: SavedViewVisibility;
+      version?: number;
+    },
+  ): SavedView {
+    const actorId = this.requireMutationActor(context);
+    const current = this.savedViewRow(context, viewId, true);
+    if (input.version !== undefined && input.version !== current.version)
+      throw new Error('SAVED_VIEW_VERSION_CONFLICT');
+    const name = input.name === undefined ? current.name : input.name.trim();
+    if (!name || name.length > 120) throw new Error('SAVED_VIEW_NAME_INVALID');
+    const query =
+      input.query === undefined
+        ? normalizeOrderQuery(
+            parseStoredJson<unknown>(current.query_json, 'SAVED_VIEW_DATA_INVALID'),
+            'SAVED_VIEW_DATA_INVALID',
+          )
+        : normalizeOrderQuery(input.query, 'SAVED_VIEW_QUERY_INVALID');
+    const sort =
+      input.sort === undefined
+        ? current.sort_json
+          ? (normalizeOrderQuery(
+              { sort: parseStoredJson<unknown>(current.sort_json, 'SAVED_VIEW_DATA_INVALID') },
+              'SAVED_VIEW_DATA_INVALID',
+            ).sort ?? null)
+          : null
+        : input.sort === null
+          ? null
+          : (normalizeOrderQuery({ sort: input.sort }, 'SAVED_VIEW_SORT_INVALID').sort ?? null);
+    const columns =
+      input.columns === undefined
+        ? this.normalizeColumns(
+            parseStoredJson<unknown>(current.columns_json, 'SAVED_VIEW_DATA_INVALID'),
+          )
+        : this.normalizeColumns(input.columns);
+    const pageSize = input.pageSize ?? current.page_size;
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100)
+      throw new Error('SAVED_VIEW_PAGE_SIZE_INVALID');
+    const visibility = input.visibility ?? current.visibility;
+    if (visibility !== 'private' && visibility !== 'shared')
+      throw new Error('SAVED_VIEW_VISIBILITY_INVALID');
+    const duplicate = this.db
+      .prepare(
+        'SELECT id FROM saved_views WHERE account_id = ? AND user_id = ? AND name = ? AND id <> ?',
+      )
+      .get(context.accountId, actorId, name, viewId);
+    if (duplicate) throw new Error('SAVED_VIEW_NAME_EXISTS');
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        'UPDATE saved_views SET name = ?, query_json = ?, sort_json = ?, columns_json = ?, page_size = ?, visibility = ?, version = version + 1, updated_at = ? WHERE account_id = ? AND user_id = ? AND id = ? AND version = ?',
+      )
+      .run(
+        name,
+        serializeBoundedJson(query, MAX_SELECTION_JSON, 'SAVED_VIEW_QUERY_TOO_LARGE'),
+        sort ? serializeBoundedJson(sort, 8 * 1024, 'SAVED_VIEW_SORT_TOO_LARGE') : null,
+        serializeBoundedJson(columns, MAX_SELECTION_JSON, 'SAVED_VIEW_COLUMNS_TOO_LARGE'),
+        pageSize,
+        visibility,
+        now,
+        context.accountId,
+        actorId,
+        viewId,
+        current.version,
+      );
+    if (result.changes !== 1) throw new Error('SAVED_VIEW_VERSION_CONFLICT');
+    this.audit(context, 'saved-view.updated', 'saved_view', viewId, {
+      version: current.version + 1,
+    });
+    return this.savedView(this.savedViewRow(context, viewId, true));
+  }
+
+  deleteSavedView(context: AccountContext, viewId: string): void {
+    const actorId = this.requireMutationActor(context);
+    const result = this.db
+      .prepare('DELETE FROM saved_views WHERE account_id = ? AND user_id = ? AND id = ?')
+      .run(context.accountId, actorId, viewId);
+    if (result.changes !== 1) throw new Error('SAVED_VIEW_NOT_FOUND');
+    this.audit(context, 'saved-view.deleted', 'saved_view', viewId, {});
+  }
+
+  private bulkJobRow(context: AccountContext, jobId: string): BulkJobRow {
+    this.assertContext(context);
+    const row = this.db
+      .prepare(
+        'SELECT id, account_id, selection_id, action, parameters_json, status, progress, total_count, succeeded_count, failed_count, cancelled_count, idempotency_key, created_by, cancel_requested, last_error, created_at, updated_at, completed_at FROM bulk_jobs WHERE account_id = ? AND id = ?',
+      )
+      .get(context.accountId, jobId) as BulkJobRow | undefined;
+    if (!row) throw new Error('BULK_JOB_NOT_FOUND');
+    return row;
+  }
+
+  private bulkJobSummary(row: BulkJobRow): BulkJobSummary {
+    return {
+      id: row.id,
+      accountId: row.account_id,
+      selectionId: row.selection_id,
+      action: row.action,
+      status: row.status,
+      progress: row.progress,
+      totalCount: row.total_count,
+      succeededCount: row.succeeded_count,
+      failedCount: row.failed_count,
+      cancelledCount: row.cancelled_count,
+      idempotencyKey: row.idempotency_key,
+      createdBy: row.created_by,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      completedAt: row.completed_at,
+    };
+  }
+
+  private bulkItem(row: {
+    job_id: string;
+    order_id: string;
+    status: BulkItemStatus;
+    attempt_count: number;
+    last_error: string | null;
+    updated_at: string;
+  }): BulkJobItem {
+    return {
+      jobId: row.job_id,
+      orderId: row.order_id,
+      status: row.status,
+      attemptCount: row.attempt_count,
+      lastError: row.last_error,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  private audit(
+    context: AccountContext,
+    action: string,
+    targetType: string,
+    targetId: string,
+    summary: Record<string, unknown>,
+  ): void {
+    this.db
+      .prepare(
+        'INSERT INTO audit_events (id, account_id, actor_id, action, target_type, target_id, summary_json, correlation_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        randomId(),
+        context.accountId,
+        context.actorId ?? null,
+        action,
+        targetType,
+        targetId,
+        serializeBoundedJson(summary, 8 * 1024, 'AUDIT_SUMMARY_TOO_LARGE'),
+        context.correlationId,
+        new Date().toISOString(),
+      );
+  }
+
+  private refreshBulkJob(
+    context: AccountContext,
+    jobId: string,
+    now = new Date().toISOString(),
+  ): void {
+    const counts = this.db
+      .prepare(
+        `SELECT
+          COALESCE(SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END), 0) AS succeeded,
+          COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed,
+          COALESCE(SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled,
+          COALESCE(SUM(CASE WHEN status IN ('queued', 'running') THEN 1 ELSE 0 END), 0) AS pending
+         FROM bulk_job_items WHERE account_id = ? AND job_id = ?`,
+      )
+      .get(context.accountId, jobId) as {
+      succeeded: number;
+      failed: number;
+      cancelled: number;
+      pending: number;
+    };
+    const job = this.bulkJobRow(context, jobId);
+    const succeededCount = Number(counts.succeeded);
+    const failedCount = Number(counts.failed);
+    const cancelledCount = Number(counts.cancelled);
+    const pending = Number(counts.pending);
+    const processed = succeededCount + failedCount + cancelledCount;
+    let status = job.status;
+    let completedAt = job.completed_at;
+    if (job.cancel_requested === 1 && pending === 0) {
+      status = 'cancelled';
+      completedAt ??= now;
+    } else if (pending === 0 && processed >= job.total_count) {
+      status = failedCount > 0 ? 'partial' : 'succeeded';
+      completedAt ??= now;
+    } else if (job.status !== 'queued') {
+      status = 'running';
+      completedAt = null;
+    }
+    const progress =
+      status === 'succeeded' || status === 'partial' || status === 'cancelled'
+        ? 100
+        : job.total_count === 0
+          ? 0
+          : Math.min(99, Math.floor((processed / job.total_count) * 100));
+    this.db
+      .prepare(
+        'UPDATE bulk_jobs SET status = ?, progress = ?, succeeded_count = ?, failed_count = ?, cancelled_count = ?, completed_at = ?, updated_at = ? WHERE account_id = ? AND id = ?',
+      )
+      .run(
+        status,
+        progress,
+        succeededCount,
+        failedCount,
+        cancelledCount,
+        completedAt,
+        now,
+        context.accountId,
+        jobId,
+      );
+  }
+
+  previewBulk(
+    context: AccountContext,
+    input: { selectionId: string; action: BulkAction; parameters?: unknown },
+  ): BulkPreview {
+    this.assertMember(context);
+    if (!isBulkAction(input.action)) throw new Error('BULK_ACTION_NOT_ALLOWED');
+    const parameters = normalizeBulkParameters(input.action, input.parameters ?? {});
+    void parameters;
+    const row = this.selectionRow(context, input.selectionId);
+    this.assertSelectionActive(row);
+    const selection = this.selectionData(row);
+    const currentCount = this.countSelection(context, selection);
+    const where = this.compileSelectionWhere(context, selection);
+    const facets = this.db
+      .prepare(
+        `SELECT DISTINCT o.currency AS currency, COALESCE(o.connection_id, 'manual') AS store FROM orders o WHERE ${where.sql} ORDER BY o.currency, store`,
+      )
+      .all(...where.params) as Array<{ currency: string; store: string }>;
+    const warnings: string[] = [];
+    if (selection.mode === 'query') warnings.push('SELECTION_WATERMARK_EXCLUDES_LATER_ARRIVALS');
+    if (currentCount !== row.estimated_count) warnings.push('SELECTION_COUNT_CHANGED');
+    if (input.action === 'resync') warnings.push('RESYNC_IS_READ_ONLY');
+    return {
+      selectionId: row.id,
+      action: input.action,
+      estimatedCount: row.estimated_count,
+      currentCount,
+      watermark: row.watermark,
+      expiresAt: row.expires_at,
+      currencies: [...new Set(facets.map((facet) => facet.currency))],
+      stores: [...new Set(facets.map((facet) => facet.store))],
+      warnings,
+    };
+  }
+
+  createBulkJob(
+    context: AccountContext,
+    input: {
+      selectionId: string;
+      action: BulkAction;
+      parameters?: unknown;
+      idempotencyKey: string;
+    },
+  ): BulkJobSummary {
+    const actorId = this.requireMutationActor(context);
+    if (!isBulkAction(input.action)) throw new Error('BULK_ACTION_NOT_ALLOWED');
+    if (
+      typeof input.idempotencyKey !== 'string' ||
+      input.idempotencyKey.length < 1 ||
+      input.idempotencyKey.length > 200
+    )
+      throw new Error('BULK_IDEMPOTENCY_KEY_INVALID');
+    const parametersJson = serializeBoundedJson(
+      normalizeBulkParameters(input.action, input.parameters ?? {}),
+      MAX_BULK_PARAMETERS_JSON,
+      'BULK_PARAMETERS_TOO_LARGE',
+    );
+    const existing = this.db
+      .prepare(
+        'SELECT id, account_id, selection_id, action, parameters_json, status, progress, total_count, succeeded_count, failed_count, cancelled_count, idempotency_key, created_by, cancel_requested, last_error, created_at, updated_at, completed_at FROM bulk_jobs WHERE account_id = ? AND action = ? AND idempotency_key = ?',
+      )
+      .get(context.accountId, input.action, input.idempotencyKey) as BulkJobRow | undefined;
+    if (existing) {
+      if (
+        existing.selection_id !== input.selectionId ||
+        existing.parameters_json !== parametersJson
+      )
+        throw new Error('BULK_IDEMPOTENCY_CONFLICT');
+      return this.bulkJobSummary(existing);
+    }
+    const selectionRow = this.selectionRow(context, input.selectionId);
+    this.assertSelectionActive(selectionRow);
+    const selection = this.selectionData(selectionRow);
+    const totalCount = this.countSelection(context, selection);
+    const now = new Date().toISOString();
+    const jobId = randomId();
+    const status: BulkJobStatus = totalCount === 0 ? 'succeeded' : 'queued';
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          'INSERT INTO bulk_jobs (id, account_id, selection_id, action, parameters_json, status, progress, total_count, idempotency_key, created_by, created_at, updated_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(
+          jobId,
+          context.accountId,
+          input.selectionId,
+          input.action,
+          parametersJson,
+          status,
+          totalCount === 0 ? 100 : 0,
+          totalCount,
+          input.idempotencyKey,
+          actorId,
+          now,
+          now,
+          totalCount === 0 ? now : null,
+        );
+      if (selection.mode === 'explicit') {
+        const where = this.compileSelectionWhere(context, selection);
+        const orders = this.db
+          .prepare(`SELECT o.id FROM orders o WHERE ${where.sql} ORDER BY o.id`)
+          .all(...where.params) as Array<{ id: string }>;
+        const insertItem = this.db.prepare(
+          "INSERT INTO bulk_job_items (account_id, job_id, order_id, status, updated_at) VALUES (?, ?, ?, 'queued', ?)",
+        );
+        for (const order of orders) insertItem.run(context.accountId, jobId, order.id, now);
+      }
+      this.audit(context, 'bulk-job.created', 'bulk_job', jobId, {
+        action: input.action,
+        selectionId: input.selectionId,
+        totalCount,
+      });
+    })();
+    return this.bulkJobSummary(this.bulkJobRow(context, jobId));
+  }
+
+  getBulkJob(context: AccountContext, jobId: string): BulkJobSummary {
+    this.assertMember(context);
+    return this.bulkJobSummary(this.bulkJobRow(context, jobId));
+  }
+
+  listBulkJobs(
+    context: AccountContext,
+    input: { cursor?: string | null; limit?: number; status?: BulkJobStatus } = {},
+  ): { items: readonly BulkJobSummary[]; nextCursor: string | null; hasMore: boolean } {
+    this.assertMember(context);
+    const limit = input.limit ?? 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error('BULK_JOB_LIMIT_INVALID');
+    const clauses = ['account_id = ?'];
+    const params: (string | number)[] = [context.accountId];
+    if (input.status !== undefined) {
+      if (
+        !['queued', 'running', 'succeeded', 'failed', 'partial', 'cancelled'].includes(input.status)
+      )
+        throw new Error('BULK_JOB_STATUS_INVALID');
+      clauses.push('status = ?');
+      params.push(input.status);
+    }
+    if (input.cursor) {
+      const cursor = decodedCursor(input.cursor);
+      clauses.push('(updated_at < ? OR (updated_at = ? AND id < ?))');
+      params.push(cursor.sortValue, cursor.sortValue, cursor.id);
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT id, account_id, selection_id, action, parameters_json, status, progress, total_count, succeeded_count, failed_count, cancelled_count, idempotency_key, created_by, cancel_requested, last_error, created_at, updated_at, completed_at FROM bulk_jobs WHERE ${clauses.join(' AND ')} ORDER BY updated_at DESC, id DESC LIMIT ?`,
+      )
+      .all(...params, limit + 1) as BulkJobRow[];
+    const hasMore = rows.length > limit;
+    const visible = rows.slice(0, limit);
+    const last = visible.at(-1);
+    return {
+      items: visible.map((row) => this.bulkJobSummary(row)),
+      hasMore,
+      nextCursor:
+        hasMore && last ? encodedCursor({ sortValue: last.updated_at, id: last.id }) : null,
+    };
+  }
+
+  claimNextBulkItem(context: AccountContext, jobId: string): BulkJobItem | null {
+    this.assertContext(context);
+    const now = new Date().toISOString();
+    const result = this.db.transaction(() => {
+      let job = this.bulkJobRow(context, jobId);
+      if (
+        ['succeeded', 'failed', 'partial', 'cancelled'].includes(job.status) ||
+        job.cancel_requested === 1
+      )
+        return null;
+      type BulkItemRow = {
+        job_id: string;
+        order_id: string;
+        status: BulkItemStatus;
+        attempt_count: number;
+        last_error: string | null;
+        updated_at: string;
+      };
+      let candidate = this.db
+        .prepare(
+          "SELECT job_id, order_id, status, attempt_count, last_error, updated_at FROM bulk_job_items WHERE account_id = ? AND job_id = ? AND status = 'queued' ORDER BY order_id LIMIT 1",
+        )
+        .get(context.accountId, jobId) as BulkItemRow | undefined;
+      if (!candidate) {
+        const selectionRow = this.selectionRow(context, job.selection_id);
+        const selection = this.selectionData(selectionRow);
+        if (selection.mode === 'query') {
+          const where = this.compileSelectionWhere(context, selection);
+          const dynamicCandidate = this.db
+            .prepare(
+              `SELECT o.id AS order_id FROM orders o WHERE ${where.sql} AND NOT EXISTS (SELECT 1 FROM bulk_job_items item WHERE item.account_id = ? AND item.job_id = ? AND item.order_id = o.id) ORDER BY o.id LIMIT 1`,
+            )
+            .get(...where.params, context.accountId, jobId) as
+            | {
+                order_id: string;
+              }
+            | undefined;
+          if (dynamicCandidate) {
+            this.db
+              .prepare(
+                "INSERT OR IGNORE INTO bulk_job_items (account_id, job_id, order_id, status, updated_at) VALUES (?, ?, ?, 'queued', ?)",
+              )
+              .run(context.accountId, jobId, dynamicCandidate.order_id, now);
+            candidate = this.db
+              .prepare(
+                "SELECT job_id, order_id, status, attempt_count, last_error, updated_at FROM bulk_job_items WHERE account_id = ? AND job_id = ? AND order_id = ? AND status = 'queued'",
+              )
+              .get(context.accountId, jobId, dynamicCandidate.order_id) as BulkItemRow | undefined;
+          }
+        }
+      }
+      if (!candidate) {
+        this.refreshBulkJob(context, jobId, now);
+        job = this.bulkJobRow(context, jobId);
+        if (!['succeeded', 'partial', 'cancelled'].includes(job.status)) {
+          this.db
+            .prepare(
+              "UPDATE bulk_jobs SET status = 'failed', last_error = ?, progress = 100, completed_at = ?, updated_at = ? WHERE account_id = ? AND id = ?",
+            )
+            .run('BULK_SELECTION_RESOLUTION_INCOMPLETE', now, now, context.accountId, jobId);
+        }
+        return null;
+      }
+      const updated = this.db
+        .prepare(
+          "UPDATE bulk_job_items SET status = 'running', attempt_count = attempt_count + 1, updated_at = ? WHERE account_id = ? AND job_id = ? AND order_id = ? AND status = 'queued'",
+        )
+        .run(now, context.accountId, jobId, candidate.order_id);
+      if (updated.changes !== 1) return null;
+      this.db
+        .prepare(
+          "UPDATE bulk_jobs SET status = 'running', completed_at = NULL, updated_at = ? WHERE account_id = ? AND id = ? AND status = 'queued'",
+        )
+        .run(now, context.accountId, jobId);
+      const claimed = this.db
+        .prepare(
+          'SELECT job_id, order_id, status, attempt_count, last_error, updated_at FROM bulk_job_items WHERE account_id = ? AND job_id = ? AND order_id = ?',
+        )
+        .get(context.accountId, jobId, candidate.order_id) as {
+        job_id: string;
+        order_id: string;
+        status: BulkItemStatus;
+        attempt_count: number;
+        last_error: string | null;
+        updated_at: string;
+      };
+      return this.bulkItem(claimed);
+    })();
+    return result;
+  }
+
+  completeBulkItem(
+    context: AccountContext,
+    jobId: string,
+    orderId: string,
+    input: { success: boolean; error?: string },
+  ): BulkJobItem {
+    this.assertContext(context);
+    if (typeof input.success !== 'boolean') throw new Error('BULK_ITEM_RESULT_INVALID');
+    if (
+      input.error !== undefined &&
+      (typeof input.error !== 'string' || input.error.length > 1_000)
+    )
+      throw new Error('BULK_ITEM_ERROR_INVALID');
+    const now = new Date().toISOString();
+    return this.db.transaction(() => {
+      const item = this.db
+        .prepare(
+          'SELECT job_id, order_id, status, attempt_count, last_error, updated_at FROM bulk_job_items WHERE account_id = ? AND job_id = ? AND order_id = ?',
+        )
+        .get(context.accountId, jobId, orderId) as
+        | {
+            job_id: string;
+            order_id: string;
+            status: BulkItemStatus;
+            attempt_count: number;
+            last_error: string | null;
+            updated_at: string;
+          }
+        | undefined;
+      if (!item) throw new Error('BULK_ITEM_NOT_FOUND');
+      const nextStatus: BulkItemStatus = input.success ? 'succeeded' : 'failed';
+      if (item.status !== 'running') {
+        if (item.status === nextStatus) return this.bulkItem(item);
+        throw new Error('BULK_ITEM_STATE_INVALID');
+      }
+      this.db
+        .prepare(
+          "UPDATE bulk_job_items SET status = ?, last_error = ?, updated_at = ? WHERE account_id = ? AND job_id = ? AND order_id = ? AND status = 'running'",
+        )
+        .run(
+          nextStatus,
+          input.success ? null : (input.error?.slice(0, 500) ?? 'BULK_ITEM_FAILED'),
+          now,
+          context.accountId,
+          jobId,
+          orderId,
+        );
+      this.refreshBulkJob(context, jobId, now);
+      const updated = this.db
+        .prepare(
+          'SELECT job_id, order_id, status, attempt_count, last_error, updated_at FROM bulk_job_items WHERE account_id = ? AND job_id = ? AND order_id = ?',
+        )
+        .get(context.accountId, jobId, orderId) as {
+        job_id: string;
+        order_id: string;
+        status: BulkItemStatus;
+        attempt_count: number;
+        last_error: string | null;
+        updated_at: string;
+      };
+      return this.bulkItem(updated);
+    })();
+  }
+
+  retryBulkFailures(context: AccountContext, jobId: string): BulkJobSummary {
+    this.requireMutationActor(context);
+    const job = this.bulkJobRow(context, jobId);
+    if (!['partial', 'failed'].includes(job.status)) throw new Error('BULK_RETRY_NOT_AVAILABLE');
+    const now = new Date().toISOString();
+    const result = this.db.transaction(() => {
+      const retried = this.db
+        .prepare(
+          "UPDATE bulk_job_items SET status = 'queued', updated_at = ? WHERE account_id = ? AND job_id = ? AND status = 'failed'",
+        )
+        .run(now, context.accountId, jobId).changes;
+      if (retried === 0) throw new Error('BULK_NO_FAILURES');
+      this.db
+        .prepare(
+          "UPDATE bulk_jobs SET status = 'queued', cancel_requested = 0, last_error = NULL, completed_at = NULL, updated_at = ? WHERE account_id = ? AND id = ?",
+        )
+        .run(now, context.accountId, jobId);
+      this.refreshBulkJob(context, jobId, now);
+      return this.bulkJobSummary(this.bulkJobRow(context, jobId));
+    })();
+    this.audit(context, 'bulk-job.retried', 'bulk_job', jobId, { failedCount: job.failed_count });
+    return result;
+  }
+
+  cancelBulkJob(context: AccountContext, jobId: string): BulkJobSummary {
+    this.requireMutationActor(context);
+    const job = this.bulkJobRow(context, jobId);
+    if (!['queued', 'running'].includes(job.status)) return this.bulkJobSummary(job);
+    const now = new Date().toISOString();
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          "UPDATE bulk_job_items SET status = 'cancelled', updated_at = ? WHERE account_id = ? AND job_id = ? AND status = 'queued'",
+        )
+        .run(now, context.accountId, jobId);
+      this.db
+        .prepare(
+          'UPDATE bulk_jobs SET cancel_requested = 1, updated_at = ? WHERE account_id = ? AND id = ?',
+        )
+        .run(now, context.accountId, jobId);
+      this.refreshBulkJob(context, jobId, now);
+    })();
+    this.audit(context, 'bulk-job.cancelled', 'bulk_job', jobId, {});
+    return this.bulkJobSummary(this.bulkJobRow(context, jobId));
+  }
+
+  listBulkFailures(
+    context: AccountContext,
+    jobId: string,
+    input: { cursor?: string | null; limit?: number } = {},
+  ): { items: readonly BulkJobItem[]; nextCursor: string | null; hasMore: boolean } {
+    this.assertMember(context);
+    const limit = input.limit ?? 100;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error('BULK_FAILURE_LIMIT_INVALID');
+    this.bulkJobRow(context, jobId);
+    const cursor = input.cursor ? readSelectionCursor(input.cursor) : null;
+    const params: (string | number)[] = [context.accountId, jobId];
+    const clauses = ['account_id = ?', 'job_id = ?', "status = 'failed'"];
+    if (cursor) {
+      clauses.push('order_id > ?');
+      params.push(cursor);
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT job_id, order_id, status, attempt_count, last_error, updated_at FROM bulk_job_items WHERE ${clauses.join(' AND ')} ORDER BY order_id LIMIT ?`,
+      )
+      .all(...params, limit + 1) as Array<{
+      job_id: string;
+      order_id: string;
+      status: BulkItemStatus;
+      attempt_count: number;
+      last_error: string | null;
+      updated_at: string;
+    }>;
+    const hasMore = rows.length > limit;
+    const visible = rows.slice(0, limit).map((row) => this.bulkItem(row));
+    return {
+      items: visible,
+      hasMore,
+      nextCursor: hasMore && visible.length > 0 ? selectionCursor(visible.at(-1)!.orderId) : null,
+    };
   }
 
   queryOrders(context: AccountContext, input: OrderQueryInput = {}): OrderQueryResult {
@@ -805,6 +2235,171 @@ export class SqliteStore {
       )
       .run(now, now, context.accountId, connectionId, externalOrderId);
     return result.changes === 1;
+  }
+
+  discoverOrderMetadata(
+    context: AccountContext,
+    connectionId: string,
+    samples: readonly unknown[],
+    scope = 'order',
+  ): MetadataEntry[] {
+    const entries = discoverMetadata(samples, scope);
+    const now = new Date().toISOString();
+    const statement = this.db.prepare(
+      `INSERT INTO field_catalogs (id, account_id, connection_id, scope, source_key, sensitivity, inferred_type, occurrences, sample_json, discovered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, connection_id, scope, source_key) DO UPDATE SET sensitivity = excluded.sensitivity, inferred_type = excluded.inferred_type, occurrences = field_catalogs.occurrences + excluded.occurrences, sample_json = CASE WHEN field_catalogs.sensitivity = 'safe' THEN excluded.sample_json ELSE NULL END, discovered_at = excluded.discovered_at`,
+    );
+    this.db.transaction(() => {
+      for (const entry of entries)
+        statement.run(
+          `${context.accountId}:${connectionId}:${scope}:${entry.sourceKey}`,
+          context.accountId,
+          connectionId,
+          scope,
+          entry.sourceKey,
+          entry.sensitivity,
+          entry.inferredType,
+          entry.occurrences,
+          entry.sensitivity === 'safe' ? JSON.stringify(entry.sample) : null,
+          now,
+        );
+    })();
+    return entries;
+  }
+
+  createFieldMapping(
+    context: AccountContext,
+    input: {
+      connectionId: string;
+      sourceKey: string;
+      label: string;
+      type: MetadataType;
+      targetFacet?: string;
+    },
+  ): FieldMapping {
+    if (
+      !input.label.trim() ||
+      input.label.length > 120 ||
+      !['text', 'number', 'money', 'boolean', 'date', 'enum', 'entity'].includes(input.type)
+    )
+      throw new Error('FIELD_MAPPING_INVALID');
+    const catalog = this.db
+      .prepare(
+        'SELECT id, sensitivity FROM field_catalogs WHERE account_id = ? AND connection_id = ? AND scope = ? AND source_key = ?',
+      )
+      .get(context.accountId, input.connectionId, 'order', input.sourceKey) as
+      { id: string; sensitivity: MetadataSensitivity } | undefined;
+    if (!catalog || catalog.sensitivity !== 'safe') throw new Error('FIELD_MAPPING_PRIVATE');
+    const now = new Date().toISOString();
+    const id = `${context.accountId}:${input.connectionId}:mapping:${input.sourceKey}`;
+    this.db
+      .prepare(
+        `INSERT INTO field_mappings (id, account_id, connection_id, source_key, label, type, target_facet, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, connection_id, source_key) DO UPDATE SET label = excluded.label, type = excluded.type, target_facet = excluded.target_facet, version = field_mappings.version + 1, active = 1, updated_at = excluded.updated_at`,
+      )
+      .run(
+        id,
+        context.accountId,
+        input.connectionId,
+        input.sourceKey,
+        input.label.trim(),
+        input.type,
+        input.targetFacet ?? null,
+        now,
+        now,
+      );
+    const mapping = this.db
+      .prepare(
+        'SELECT id, source_key, label, type, target_facet, version FROM field_mappings WHERE id = ? AND account_id = ?',
+      )
+      .get(id, context.accountId) as {
+      id: string;
+      source_key: string;
+      label: string;
+      type: MetadataType;
+      target_facet: string | null;
+      version: number;
+    };
+    this.db
+      .prepare(
+        'INSERT INTO audit_events (id, account_id, actor_id, action, target_type, target_id, summary_json, correlation_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        randomId(),
+        context.accountId,
+        context.actorId ?? null,
+        'field-mapping.created',
+        'field_mapping',
+        id,
+        JSON.stringify({
+          sourceKey: input.sourceKey,
+          type: input.type,
+          targetFacet: input.targetFacet ?? null,
+        }),
+        context.correlationId,
+        now,
+      );
+    return {
+      id: mapping.id,
+      sourceKey: mapping.source_key,
+      label: mapping.label,
+      type: mapping.type,
+      targetFacet: mapping.target_facet,
+      version: mapping.version,
+    };
+  }
+
+  backfillFieldMapping(
+    context: AccountContext,
+    mappingId: string,
+    cursor: string | null = null,
+    limit = 100,
+  ): { processed: number; mapped: number; errors: number; nextCursor: string | null } {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error('FIELD_BACKFILL_LIMIT_INVALID');
+    const mapping = this.db
+      .prepare(
+        'SELECT id, connection_id, source_key, type FROM field_mappings WHERE id = ? AND account_id = ? AND active = 1',
+      )
+      .get(mappingId, context.accountId) as
+      { id: string; connection_id: string; source_key: string; type: MetadataType } | undefined;
+    if (!mapping) throw new Error('FIELD_MAPPING_NOT_FOUND');
+    const rows = this.db
+      .prepare(
+        `SELECT id, remote_payload_json FROM orders WHERE account_id = ? AND connection_id = ? AND id > ? ORDER BY id LIMIT ?`,
+      )
+      .all(context.accountId, mapping.connection_id, cursor ?? '', limit) as Array<{
+      id: string;
+      remote_payload_json: string | null;
+    }>;
+    let mapped = 0;
+    let errors = 0;
+    const upsert = this.db.prepare(
+      'INSERT INTO order_mapped_fields (account_id, order_id, mapping_id, value_text, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(account_id, order_id, mapping_id) DO UPDATE SET value_text = excluded.value_text, updated_at = excluded.updated_at',
+    );
+    this.db.transaction(() => {
+      for (const row of rows) {
+        try {
+          const source = row.remote_payload_json
+            ? (JSON.parse(row.remote_payload_json) as unknown)
+            : null;
+          const item = readMetadata(source).find((entry) => entry.key === mapping.source_key);
+          const value = item ? coerceMappedValue(item.value, mapping.type) : null;
+          if (value === null) {
+            errors += 1;
+            continue;
+          }
+          upsert.run(context.accountId, row.id, mapping.id, value, new Date().toISOString());
+          mapped += 1;
+        } catch {
+          errors += 1;
+        }
+      }
+    })();
+    return {
+      processed: rows.length,
+      mapped,
+      errors,
+      nextCursor: rows.length === limit ? (rows.at(-1)?.id ?? null) : null,
+    };
   }
 
   failJob(context: AccountContext, id: string, error: string): void {

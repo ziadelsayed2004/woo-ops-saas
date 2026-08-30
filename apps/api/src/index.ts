@@ -1,9 +1,27 @@
-import express, { type Express, type Request } from 'express';
+import express, { type Express, type Request, type Response } from 'express';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { healthResponseSchema } from '@woo-ops/contracts';
-import { SqliteStore, type OrderQueryInput } from '@woo-ops/persistence';
+import {
+  bulkCreateSchema,
+  bulkPreviewSchema,
+  bulkFailuresSchema,
+  bulkJobListSchema,
+  savedViewCreateSchema,
+  savedViewUpdateSchema,
+  selectionCreateSchema,
+  selectionResolveSchema,
+  healthResponseSchema,
+} from '@woo-ops/contracts';
+import { SqliteStore } from '@woo-ops/persistence';
+import type {
+  AccountContext,
+  AccountRole,
+  BulkAction,
+  OrderQueryInput,
+  OrderSort,
+  SavedViewVisibility,
+} from '@woo-ops/persistence';
 import {
   canonicalizeStoreUrl,
   createAuthorizationUrl,
@@ -30,6 +48,54 @@ const readState = (state: string): string | null => {
   return createHmac('sha256', callbackSecret).update(nonce).digest('base64url') === signature
     ? nonce
     : null;
+};
+type CurrentUser = { id: string; accountId: string; role: string };
+const correlationId = (response: Response): string =>
+  String(response.getHeader('x-correlation-id') ?? randomUUID());
+const sendApiError = (response: Response, status: number, code: string, message: string): void => {
+  response.status(status).json({
+    error: { code, message, correlationId: correlationId(response) },
+  });
+};
+const authenticatedUser = (request: Request, response: Response): CurrentUser | null => {
+  const user = auth.current(request);
+  if (!user) {
+    sendApiError(response, 401, 'AUTH_UNAUTHENTICATED', 'Authentication required');
+    return null;
+  }
+  return user;
+};
+const operationContext = (user: CurrentUser, response: Response): AccountContext => ({
+  accountId: user.accountId,
+  actorId: user.id,
+  role: ['owner', 'admin', 'operator', 'viewer'].includes(user.role)
+    ? (user.role as AccountRole)
+    : 'viewer',
+  correlationId: correlationId(response),
+});
+const operationStatus = (error: unknown): number => {
+  const code = error instanceof Error ? error.message : '';
+  if (code.includes('PERMISSION')) return 403;
+  if (code.includes('NOT_FOUND')) return 404;
+  if (code.includes('CONFLICT') || code.includes('EXPIRED') || code.includes('RETRY')) return 409;
+  return 400;
+};
+const sendOperationError = (response: Response, error: unknown): void => {
+  sendApiError(
+    response,
+    operationStatus(error),
+    error instanceof Error ? error.message : 'OPERATIONS_INVALID',
+    'Operation request could not be completed',
+  );
+};
+const requireOperationWrite = (request: Request, response: Response): CurrentUser | null => {
+  const user = authenticatedUser(request, response);
+  if (!user) return null;
+  if (!can(user.role, 'operations:write') || !auth.csrfValid(request)) {
+    sendApiError(response, 403, 'FORBIDDEN', 'Permission or CSRF validation failed');
+    return null;
+  }
+  return user;
 };
 
 app.disable('x-powered-by');
@@ -538,6 +604,275 @@ app.get('/api/v1/audit-events', (request, response) => {
     )
     .all(user.accountId, limit);
   response.json({ items: events, limit });
+});
+app.post('/api/v1/selections', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = selectionCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'SELECTION_INPUT_INVALID', 'Selection input is invalid');
+    return;
+  }
+  const body = parsed.data;
+  try {
+    const selection = store.createSelection(operationContext(user, response), {
+      mode: body.mode,
+      ...(body.orderIds !== undefined ? { orderIds: body.orderIds } : {}),
+      ...(body.query !== undefined ? { query: body.query as OrderQueryInput } : {}),
+      ...(body.exclusions !== undefined ? { exclusions: body.exclusions } : {}),
+      ...(body.watermark !== undefined ? { watermark: body.watermark } : {}),
+      ...(body.expiresAt !== undefined ? { expiresAt: body.expiresAt } : {}),
+    });
+    response.status(201).json({ selection });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/selections/:selectionId', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({
+      selection: store.getSelection(operationContext(user, response), request.params.selectionId),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.delete('/api/v1/selections/:selectionId', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  try {
+    store.deleteSelection(operationContext(user, response), request.params.selectionId);
+    response.status(204).end();
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/selections/:selectionId/resolve-count', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const parsed = selectionResolveSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    sendApiError(
+      response,
+      400,
+      'SELECTION_RESOLVE_INPUT_INVALID',
+      'Selection paging input is invalid',
+    );
+    return;
+  }
+  try {
+    const paging = {
+      ...(parsed.data.cursor !== undefined ? { cursor: parsed.data.cursor } : {}),
+      ...(parsed.data.limit !== undefined ? { limit: parsed.data.limit } : {}),
+    };
+    response.json({
+      page: store.resolveSelection(
+        operationContext(user, response),
+        request.params.selectionId,
+        paging,
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/saved-views', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({ items: store.listSavedViews(operationContext(user, response)) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/saved-views', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = savedViewCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'SAVED_VIEW_INPUT_INVALID', 'Saved view input is invalid');
+    return;
+  }
+  const body = parsed.data;
+  try {
+    const view = store.createSavedView(operationContext(user, response), {
+      name: body.name,
+      ...(body.query !== undefined ? { query: body.query as OrderQueryInput } : {}),
+      ...(body.sort !== undefined ? { sort: body.sort as OrderSort | null } : {}),
+      ...(body.columns !== undefined ? { columns: body.columns } : {}),
+      ...(body.pageSize !== undefined ? { pageSize: body.pageSize } : {}),
+      ...(body.visibility !== undefined
+        ? { visibility: body.visibility as SavedViewVisibility }
+        : {}),
+    });
+    response.status(201).json({ view });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.patch('/api/v1/saved-views/:viewId', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = savedViewUpdateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'SAVED_VIEW_INPUT_INVALID', 'Saved view input is invalid');
+    return;
+  }
+  const body = parsed.data;
+  try {
+    const view = store.updateSavedView(operationContext(user, response), request.params.viewId, {
+      ...(body.name !== undefined ? { name: body.name } : {}),
+      ...(body.query !== undefined ? { query: body.query as OrderQueryInput } : {}),
+      ...(body.sort !== undefined ? { sort: body.sort as OrderSort | null } : {}),
+      ...(body.columns !== undefined ? { columns: body.columns } : {}),
+      ...(body.pageSize !== undefined ? { pageSize: body.pageSize } : {}),
+      ...(body.visibility !== undefined
+        ? { visibility: body.visibility as SavedViewVisibility }
+        : {}),
+      ...(body.version !== undefined ? { version: body.version } : {}),
+    });
+    response.json({ view });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.delete('/api/v1/saved-views/:viewId', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  try {
+    store.deleteSavedView(operationContext(user, response), request.params.viewId);
+    response.status(204).end();
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/bulk-jobs/preview', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const parsed = bulkPreviewSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'BULK_INPUT_INVALID', 'Bulk preview input is invalid');
+    return;
+  }
+  const body = parsed.data;
+  try {
+    response.json({
+      preview: store.previewBulk(operationContext(user, response), {
+        selectionId: body.selectionId,
+        action: body.action as BulkAction,
+        ...(body.parameters !== undefined ? { parameters: body.parameters } : {}),
+      }),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/bulk-jobs', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = bulkCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'BULK_INPUT_INVALID', 'Bulk input is invalid');
+    return;
+  }
+  const body = parsed.data;
+  try {
+    const job = store.createBulkJob(operationContext(user, response), {
+      selectionId: body.selectionId,
+      action: body.action as BulkAction,
+      idempotencyKey: body.idempotencyKey,
+      ...(body.parameters !== undefined ? { parameters: body.parameters } : {}),
+    });
+    response.status(202).json({ job });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/bulk-jobs', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const parsed = bulkJobListSchema.safeParse({
+    cursor: request.query.cursor === undefined ? undefined : String(request.query.cursor),
+    limit: request.query.limit === undefined ? undefined : Number(request.query.limit),
+    status: request.query.status === undefined ? undefined : String(request.query.status),
+  });
+  if (!parsed.success) {
+    sendApiError(response, 400, 'BULK_JOB_LIST_INPUT_INVALID', 'Bulk job list input is invalid');
+    return;
+  }
+  try {
+    const paging = {
+      ...(parsed.data.cursor !== undefined ? { cursor: parsed.data.cursor } : {}),
+      ...(parsed.data.limit !== undefined ? { limit: parsed.data.limit } : {}),
+      ...(parsed.data.status !== undefined ? { status: parsed.data.status } : {}),
+    };
+    response.json(store.listBulkJobs(operationContext(user, response), paging));
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/bulk-jobs/:jobId', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({
+      job: store.getBulkJob(operationContext(user, response), request.params.jobId),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/bulk-jobs/:jobId/retry-failures', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  try {
+    response.json({
+      job: store.retryBulkFailures(operationContext(user, response), request.params.jobId),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/bulk-jobs/:jobId/cancel', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  try {
+    response.json({
+      job: store.cancelBulkJob(operationContext(user, response), request.params.jobId),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/bulk-jobs/:jobId/errors', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const parsed = bulkFailuresSchema.safeParse({
+    cursor: request.query.cursor === undefined ? undefined : String(request.query.cursor),
+    limit: request.query.limit === undefined ? undefined : Number(request.query.limit),
+  });
+  if (!parsed.success) {
+    sendApiError(
+      response,
+      400,
+      'BULK_FAILURE_INPUT_INVALID',
+      'Bulk failure paging input is invalid',
+    );
+    return;
+  }
+  try {
+    const paging = {
+      ...(parsed.data.cursor !== undefined ? { cursor: parsed.data.cursor } : {}),
+      ...(parsed.data.limit !== undefined ? { limit: parsed.data.limit } : {}),
+    };
+    response.json({
+      ...store.listBulkFailures(operationContext(user, response), request.params.jobId, paging),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
 });
 app.get('/api/v1/meta', (_request, response) =>
   response.json({ locale: 'ar-EG', direction: 'rtl', readOnlyConnector: true }),

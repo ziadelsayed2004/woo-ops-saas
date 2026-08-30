@@ -4,6 +4,37 @@
   "statuses": ["planned", "in-progress", "blocked", "failed", "completed"],
   "tasks": [
     {
+      "id": "T0003",
+      "epic": "E00",
+      "title": "Repair Agentpack Windows worktree recovery",
+      "type": "fix",
+      "phase": 0,
+      "priority": "P0",
+      "estimate": "S",
+      "parallelGroup": "agentpack",
+      "dependencies": [],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/tasks/README.md",
+        ".agentpack/workflows/worktrees.md",
+        ".agentpack/scripts/agentpack.mjs",
+        ".agentpack/scripts/worktree.mjs"
+      ],
+      "scope": [
+        "Normalize Git worktree paths before matching registered worktrees",
+        "Cover failed-task resume and unregistered-path rejection with deterministic tests"
+      ],
+      "acceptance": [
+        "A registered Windows worktree can be resumed regardless of slash style or case",
+        "An existing but unregistered path is still rejected",
+        "Task state and lock behavior remain unchanged"
+      ],
+      "validation": [
+        "node --test .agentpack/scripts/worktree.test.mjs",
+        "node .agentpack/scripts/agentpack.mjs validate"
+      ]
+    },
+    {
       "id": "T0001",
       "epic": "E00",
       "title": "Rebase strict TypeScript monorepo for SQLite and Hostinger",
