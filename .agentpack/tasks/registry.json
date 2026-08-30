@@ -686,7 +686,7 @@
       "priority": "P0",
       "estimate": "M",
       "parallelGroup": "quality",
-      "dependencies": ["T0302"],
+      "dependencies": [],
       "references": [
         "AGENTS.md",
         ".agentpack/manifest.json",
