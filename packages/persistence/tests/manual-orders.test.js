@@ -95,7 +95,7 @@ test('manual updates remain local and mark an exported/documented order stale', 
     tags: ['manual', 'packed'],
   });
   assert.equal(updated.localStatus, 'packed');
-  assert.equal(updated.exportState, 'exported');
+  assert.equal(updated.exportState, 'changed-after-export');
   assert.equal(updated.version, 2);
   assert.equal(typeof updated.staleExportAt, 'string');
   assert.equal(updated.syncPolicy, 'never');
