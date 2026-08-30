@@ -17,6 +17,19 @@ import {
   taskById
 } from "./lib.mjs";
 
+function normalizeWorktreePath(value) {
+  const resolved = path.resolve(String(value).trim());
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+export function isRegisteredWorktreePath(registeredWorktrees, expectedPath) {
+  const normalizedExpected = normalizeWorktreePath(expectedPath);
+  return registeredWorktrees
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("worktree "))
+    .some((line) => normalizeWorktreePath(line.slice("worktree ".length)) === normalizedExpected);
+}
+
 export function createTaskWorktree(taskId) {
   if (!isGitRepository()) throw new Error("Initialize and commit the repository before starting a task.");
 
@@ -50,7 +63,7 @@ export function createTaskWorktree(taskId) {
   const branchExists = run("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], { check: false });
   const mayResume = currentStatus === "failed" && branchExists.status === 0;
   const registeredWorktrees = run("git", ["worktree", "list", "--porcelain"]).stdout;
-  const registeredAtExpectedPath = registeredWorktrees.includes(`worktree ${worktreePath}\n`);
+  const registeredAtExpectedPath = isRegisteredWorktreePath(registeredWorktrees, worktreePath);
 
   if (branchExists.status === 0 && !mayResume) {
     throw new Error(`Branch already exists: ${branch}. Recover it manually instead of creating a duplicate.`);
