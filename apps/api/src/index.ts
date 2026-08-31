@@ -19,8 +19,10 @@ import {
   manualOrderCreateSchema,
   manualOrderUpdateSchema,
   exportProfileCreateSchema,
+  exportProfileUpdateSchema,
   exportProfileVersionCreateSchema,
   exportBatchCreateSchema,
+  exportPreviewSchema,
   exportMarkOrdersSchema,
   exportUnexportSchema,
   documentTemplateCreateSchema,
@@ -62,6 +64,7 @@ import type {
   ExportColumn,
   ExportFormat,
   ExportRowMode,
+  ExportProfileVersion,
   DocumentTemplateRecord,
   AnalyticsFilter,
 } from '@woo-ops/persistence';
@@ -77,7 +80,11 @@ import { AuthService, can, recordAudit } from './auth.js';
 import { verifyWebhookSignature } from '@woo-ops/connectors';
 import { generateDocument } from '@woo-ops/documents';
 import type { DocumentFormat, DocumentOrder } from '@woo-ops/documents';
+import { previewExport } from '@woo-ops/exports';
+import type { ExportProfile as EngineExportProfile } from '@woo-ops/exports';
 import { readPrivatePdf, writePrivatePdf } from './document-files.js';
+import { createExportEffect } from './export-effect.js';
+import { readPrivateExport } from './export-files.js';
 import { createApiJobRunner } from './job-runner.js';
 import { createWooSyncEffect, healthCheckWooConnection } from './woo-sync.js';
 
@@ -85,6 +92,7 @@ const port = Number(process.env.PORT ?? 3000);
 const dataDirectory = resolve(process.env.WOO_OPS_DATA_DIR ?? './data');
 const databasePath = resolve(process.env.WOO_OPS_DATABASE ?? `${dataDirectory}/woo-ops.sqlite`);
 const documentStorageRoot = resolve(dataDirectory, 'private-documents');
+const exportStorageRoot = resolve(dataDirectory, 'private-exports');
 const webDistCandidates = [
   process.env.WOO_OPS_WEB_DIST_DIR ? resolve(process.env.WOO_OPS_WEB_DIST_DIR) : undefined,
   resolve(process.cwd(), 'apps/web/dist'),
@@ -121,7 +129,10 @@ const jobRunner = createApiJobRunner(store, {
   ...(configuredConcurrency === undefined ? {} : { concurrency: configuredConcurrency }),
   ...(configuredLeaseSeconds === undefined ? {} : { leaseSeconds: configuredLeaseSeconds }),
   ...(configuredPollIntervalMs === undefined ? {} : { pollIntervalMs: configuredPollIntervalMs }),
-  effects: { sync: createWooSyncEffect(store) },
+  effects: {
+    sync: createWooSyncEffect(store),
+    export: createExportEffect(store, exportStorageRoot),
+  },
 });
 const app: Express = express();
 const attempts = new Map<string, { count: number; resetAt: number }>();
@@ -243,6 +254,17 @@ const documentTemplateForEngine = (template: DocumentTemplateRecord) => ({
   direction: template.direction,
   ...(template.body ? { body: template.body } : {}),
   ...(documentFontBytes ? { fontBytes: documentFontBytes } : {}),
+});
+
+const exportProfileForEngine = (version: ExportProfileVersion): EngineExportProfile => ({
+  id: version.id,
+  name: `Woo Ops export ${version.version}`,
+  version: version.version,
+  format: version.format,
+  rowMode: version.rowMode,
+  columns: version.columns,
+  filenameTemplate: version.filenameTemplate,
+  ...(Object.keys(version.config).length === 0 ? {} : { config: version.config }),
 });
 
 const documentFormatForAction = (
@@ -1715,6 +1737,45 @@ app.post('/api/v1/export-profiles', (request, response) => {
     sendOperationError(response, error);
   }
 });
+app.patch('/api/v1/export-profiles/:profileId', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = exportProfileUpdateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'EXPORT_PROFILE_INPUT_INVALID', 'Export profile input is invalid');
+    return;
+  }
+  try {
+    const body = parsed.data;
+    response.json({
+      profile: store.updateExportProfile(
+        operationContext(user, response),
+        request.params.profileId,
+        {
+          ...(body.name === undefined ? {} : { name: body.name }),
+          ...(body.description === undefined ? {} : { description: body.description }),
+          ...(body.active === undefined ? {} : { active: body.active }),
+        },
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/export-profiles/:profileId/versions', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({
+      items: store.listExportProfileVersions(
+        operationContext(user, response),
+        request.params.profileId,
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
 app.post('/api/v1/export-profiles/:profileId/versions', (request, response) => {
   const user = requireOperationWrite(request, response);
   if (!user) return;
@@ -1747,6 +1808,41 @@ app.post('/api/v1/export-profiles/:profileId/versions', (request, response) => {
     sendOperationError(response, error);
   }
 });
+app.post('/api/v1/export-profiles/:profileId/preview', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const parsed = exportPreviewSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'EXPORT_PREVIEW_INPUT_INVALID', 'Export preview input is invalid');
+    return;
+  }
+  try {
+    const context = operationContext(user, response);
+    const version = store.getExportProfileVersion(context, parsed.data.profileVersionId);
+    if (version.profileId !== request.params.profileId)
+      throw new Error('EXPORT_PROFILE_VERSION_NOT_FOUND');
+    const page = store.resolveSelection(context, parsed.data.selectionId, {
+      limit: parsed.data.maxOrders ?? 100,
+    });
+    const orders = page.items
+      .map((orderId) => store.getOrder(context, orderId))
+      .filter((order): order is Record<string, unknown> => order !== null);
+    const preview = previewExport(
+      { profile: exportProfileForEngine(version), orders },
+      parsed.data.maxOrders ?? 100,
+      parsed.data.maxRows ?? 500,
+    );
+    response.json({
+      preview: {
+        ...preview,
+        warnings: page.hasMore ? [...preview.warnings, 'SELECTION_TRUNCATED'] : preview.warnings,
+      },
+      selection: { hasMore: page.hasMore, totalCount: page.totalCount },
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
 app.post('/api/v1/export-batches', (request, response) => {
   const user = requireOperationWrite(request, response);
   if (!user) return;
@@ -1756,8 +1852,11 @@ app.post('/api/v1/export-batches', (request, response) => {
     return;
   }
   try {
+    const context = operationContext(user, response);
+    const batch = store.createExportBatch(context, parsed.data);
     response.status(202).json({
-      batch: store.createExportBatch(operationContext(user, response), parsed.data),
+      batch,
+      job: batch.jobId === null ? null : store.getJob(context, batch.jobId),
     });
   } catch (error) {
     sendOperationError(response, error);
@@ -1768,11 +1867,16 @@ app.get('/api/v1/export-batches', (request, response) => {
   if (!user) return;
   const rawLimit = request.query.limit === undefined ? undefined : Number(request.query.limit);
   try {
+    const context = operationContext(user, response);
+    const batches =
+      rawLimit === undefined
+        ? store.listExportBatches(context)
+        : store.listExportBatches(context, rawLimit);
     response.json({
-      items:
-        rawLimit === undefined
-          ? store.listExportBatches(operationContext(user, response))
-          : store.listExportBatches(operationContext(user, response), rawLimit),
+      items: batches.map((batch) => ({
+        ...batch,
+        job: batch.jobId === null ? null : store.getJob(context, batch.jobId),
+      })),
     });
   } catch (error) {
     sendOperationError(response, error);
@@ -1782,9 +1886,75 @@ app.get('/api/v1/export-batches/:batchId', (request, response) => {
   const user = authenticatedUser(request, response);
   if (!user) return;
   try {
+    const context = operationContext(user, response);
+    const batch = store.getExportBatch(context, request.params.batchId);
     response.json({
-      batch: store.getExportBatch(operationContext(user, response), request.params.batchId),
+      batch,
+      job: batch.jobId === null ? null : store.getJob(context, batch.jobId),
     });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post(
+  ['/api/v1/export-batches/:batchId/retry', '/api/v1/export-batches/:batchId/retry-failures'],
+  (request, response) => {
+    const user = requireOperationWrite(request, response);
+    if (!user) return;
+    try {
+      const context = operationContext(user, response);
+      const batchId = request.params.batchId;
+      if (typeof batchId !== 'string') throw new Error('EXPORT_BATCH_NOT_FOUND');
+      const batch = store.retryExportBatch(context, batchId);
+      response.status(202).json({
+        batch,
+        job: batch.jobId === null ? null : store.getJob(context, batch.jobId),
+      });
+    } catch (error) {
+      sendOperationError(response, error);
+    }
+  },
+);
+app.get('/api/v1/export-batches/:batchId/download', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    const batch = store.getExportBatch(operationContext(user, response), request.params.batchId);
+    if (batch.status !== 'completed' || !batch.filePath || !batch.checksum || !batch.filename) {
+      sendApiError(response, 409, 'EXPORT_FILE_NOT_READY', 'Export file is not ready');
+      return;
+    }
+    const bytes = readPrivateExport(exportStorageRoot, batch.filePath, batch.checksum);
+    const asciiFilename = batch.filename.replace(/[^\x20-\x7e]/gu, '_').replace(/["\\]/gu, '_');
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodeURIComponent(batch.filename)}`,
+    );
+    response.setHeader(
+      'Content-Type',
+      batch.format === 'xlsx'
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : 'text/csv; charset=utf-8',
+    );
+    response.setHeader('Content-Length', bytes.byteLength);
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader('X-Export-Checksum', batch.checksum);
+    response.send(bytes);
+  } catch (error) {
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'ENOENT') {
+      sendApiError(response, 404, 'EXPORT_FILE_NOT_FOUND', 'Export file not found');
+      return;
+    }
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/export-batches/:batchId/errors', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    const batch = store.getExportBatch(operationContext(user, response), request.params.batchId);
+    response.json({ error: batch.error, status: batch.status });
   } catch (error) {
     sendOperationError(response, error);
   }

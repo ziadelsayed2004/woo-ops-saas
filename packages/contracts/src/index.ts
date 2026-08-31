@@ -135,6 +135,14 @@ const exportColumnSchema = z
 export const exportProfileCreateSchema = z
   .object({ name: z.string().trim().min(1).max(120), description: z.string().max(500).optional() })
   .strict();
+export const exportProfileUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    description: z.string().max(500).nullable().optional(),
+    active: z.boolean().optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, 'At least one profile field is required');
 export const exportProfileVersionCreateSchema = z
   .object({
     format: exportFormatSchema,
@@ -149,6 +157,14 @@ export const exportBatchCreateSchema = z
     selectionId: z.string().min(1).max(256),
     profileVersionId: z.string().min(1).max(256),
     idempotencyKey: z.string().trim().min(1).max(200),
+  })
+  .strict();
+export const exportPreviewSchema = z
+  .object({
+    selectionId: z.string().min(1).max(256),
+    profileVersionId: z.string().min(1).max(256),
+    maxOrders: z.number().int().min(1).max(100).optional(),
+    maxRows: z.number().int().min(1).max(500).optional(),
   })
   .strict();
 export const exportUnexportSchema = z

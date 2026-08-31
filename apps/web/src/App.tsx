@@ -293,6 +293,25 @@ const copy = {
     createdManual:
       '\u062a\u0645 \u062d\u0641\u0638 \u0627\u0644\u0637\u0644\u0628 \u0627\u0644\u0645\u062d\u0644\u064a',
     documentsNav: '\u0627\u0644\u0645\u0633\u062a\u0646\u062f\u0627\u062a',
+    exportsNav: '\u0627\u0644\u062a\u0635\u062f\u064a\u0631\u0627\u062a',
+    exportsTitle: '\u062a\u0635\u062f\u064a\u0631 \u0627\u0644\u0637\u0644\u0628\u0627\u062a',
+    exportsSubtitle:
+      '\u0645\u0644\u0641\u0627\u062a \u0634\u062d\u0646 \u0622\u0645\u0646\u0629 \u0648\u0645\u0644\u0641\u0648\u0641\u0629 \u0648\u0645\u062a\u0627\u0628\u0639\u0629 \u0627\u0644\u062d\u0627\u0644\u0629 \u0645\u062d\u0644\u064a\u0627',
+    exportProfiles:
+      '\u0627\u0644\u0645\u0644\u0641\u0627\u062a \u0627\u0644\u0645\u062d\u0641\u0648\u0638\u0629',
+    exportBatches: '\u062f\u0641\u0639\u0627\u062a \u0627\u0644\u062a\u0635\u062f\u064a\u0631',
+    format: '\u0627\u0644\u0635\u064a\u063a\u0629',
+    actions: '\u0627\u0644\u0625\u062c\u0631\u0627\u0621\u0627\u062a',
+    exportSelectionId: '\u0645\u0639\u0631\u0641 \u0627\u0644\u062a\u062d\u062f\u064a\u062f',
+    exportVersion: '\u0646\u0633\u062e\u0629 \u0627\u0644\u0645\u0644\u0641',
+    exportPreview: '\u0645\u0639\u0627\u064a\u0646\u0629',
+    createExport: '\u0628\u062f\u0621 \u0627\u0644\u062a\u0635\u062f\u064a\u0631',
+    downloadExport: '\u062a\u062d\u0645\u064a\u0644',
+    retryExport: '\u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0645\u062d\u0627\u0648\u0644\u0629',
+    exportQueued:
+      '\u062c\u0627\u0631\u064d \u062a\u062c\u0647\u064a\u0632 \u0645\u0644\u0641 \u062e\u0627\u0635 \u0628\u0627\u0644\u0634\u062d\u0646',
+    exportNoProfiles:
+      '\u0644\u0627 \u062a\u0648\u062c\u062f \u0645\u0644\u0641\u0627\u062a \u062a\u0635\u062f\u064a\u0631 \u0628\u0639\u062f',
     documentsTitle:
       '\u0642\u0648\u0627\u0644\u0628 \u0627\u0644\u0645\u0633\u062a\u0646\u062f\u0627\u062a \u0648\u0627\u0644\u0637\u0628\u0627\u0639\u0629',
     documentTemplateName: '\u0627\u0633\u0645 \u0627\u0644\u0642\u0627\u0644\u0628',
@@ -494,6 +513,21 @@ const copy = {
     invalidManual: 'Check the manual order fields',
     createdManual: 'Manual order saved locally',
     documentsNav: 'Documents',
+    exportsNav: 'Exports',
+    exportsTitle: 'Order exports',
+    exportsSubtitle: 'Private, checksum-bound shipping files with durable progress tracking',
+    exportProfiles: 'Saved profiles',
+    exportBatches: 'Export batches',
+    format: 'Format',
+    actions: 'Actions',
+    exportSelectionId: 'Selection ID',
+    exportVersion: 'Profile version',
+    exportPreview: 'Preview',
+    createExport: 'Create export',
+    downloadExport: 'Download',
+    retryExport: 'Retry',
+    exportQueued: 'Preparing a private shipping file',
+    exportNoProfiles: 'No export profiles yet',
     documentsTitle: 'Document templates & printing',
     documentTemplateName: 'Template name',
     documentCompany: 'Company name',
@@ -2145,6 +2179,410 @@ function DocumentsWorkspace({ direction, t }: { direction: Direction; t: (typeof
   );
 }
 
+type ExportProfileSummary = {
+  id: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+};
+type ExportVersionSummary = {
+  id: string;
+  profileId: string;
+  version: number;
+  format: 'csv' | 'xlsx';
+  rowMode: 'order' | 'line' | 'package' | 'carrier';
+  columns: { key: string; label: string; type?: string }[];
+  filenameTemplate: string;
+};
+type ExportBatchSummary = {
+  id: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  format: 'csv' | 'xlsx';
+  rowMode: string;
+  orderCount: number;
+  rowCount: number;
+  filename: string | null;
+  error: string | null;
+  jobId: string | null;
+  job?: { progress: number; status: string } | null;
+};
+
+function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof copy)[Locale] }) {
+  const [profiles, setProfiles] = useState<ExportProfileSummary[]>([]);
+  const [versions, setVersions] = useState<ExportVersionSummary[]>([]);
+  const [batches, setBatches] = useState<ExportBatchSummary[]>([]);
+  const [profileId, setProfileId] = useState('');
+  const [versionId, setVersionId] = useState('');
+  const [selectionId, setSelectionId] = useState('');
+  const [profileName, setProfileName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [preview, setPreview] = useState<JsonRecord | null>(null);
+
+  const loadBatches = async () => {
+    const response = await fetch('/api/v1/export-batches', { credentials: 'include' });
+    if (!response.ok) throw new Error('EXPORT_BATCHES_LOAD_FAILED');
+    const body = (await response.json()) as { items?: ExportBatchSummary[] };
+    setBatches(body.items ?? []);
+  };
+
+  const loadProfiles = async () => {
+    const response = await fetch('/api/v1/export-profiles', { credentials: 'include' });
+    if (!response.ok) throw new Error('EXPORT_PROFILES_LOAD_FAILED');
+    const body = (await response.json()) as { items?: ExportProfileSummary[] };
+    const items = body.items ?? [];
+    setProfiles(items);
+    const nextProfile = items.find((item) => item.active) ?? items[0];
+    if (nextProfile) setProfileId((current) => current || nextProfile.id);
+  };
+
+  const loadVersions = async (nextProfileId: string) => {
+    if (!nextProfileId) {
+      setVersions([]);
+      setVersionId('');
+      return;
+    }
+    const response = await fetch(
+      `/api/v1/export-profiles/${encodeURIComponent(nextProfileId)}/versions`,
+      { credentials: 'include' },
+    );
+    if (!response.ok) throw new Error('EXPORT_VERSIONS_LOAD_FAILED');
+    const body = (await response.json()) as { items?: ExportVersionSummary[] };
+    const items = body.items ?? [];
+    setVersions(items);
+    setVersionId(items[0]?.id ?? '');
+  };
+
+  useEffect(() => {
+    setLoading(true);
+    void Promise.all([loadProfiles(), loadBatches()])
+      .catch(() => setMessage('EXPORT_LOAD_FAILED'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    void loadVersions(profileId).catch(() => setMessage('EXPORT_VERSIONS_LOAD_FAILED'));
+  }, [profileId]);
+
+  useEffect(() => {
+    if (!batches.some((batch) => batch.status === 'queued' || batch.status === 'running')) return;
+    const timer = window.setInterval(() => {
+      void loadBatches().catch(() => setMessage('EXPORT_BATCHES_LOAD_FAILED'));
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [batches]);
+
+  const createProfile = async () => {
+    if (!profileName.trim()) return;
+    setLoading(true);
+    try {
+      const response = await fetch('/api/v1/export-profiles', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        body: JSON.stringify({ name: profileName.trim() }),
+      });
+      if (!response.ok) throw new Error('EXPORT_PROFILE_CREATE_FAILED');
+      const body = (await response.json()) as { profile: ExportProfileSummary };
+      setProfiles((current) => [body.profile, ...current]);
+      setProfileId(body.profile.id);
+      setProfileName('');
+      setMessage('EXPORT_PROFILE_CREATED');
+    } catch {
+      setMessage('EXPORT_PROFILE_CREATE_FAILED');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createVersion = async () => {
+    if (!profileId) return;
+    setLoading(true);
+    try {
+      const response = await fetch(
+        `/api/v1/export-profiles/${encodeURIComponent(profileId)}/versions`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+          body: JSON.stringify({
+            format: 'xlsx',
+            rowMode: 'order',
+            columns: [
+              { key: 'orderNumber', label: t.orderNumber, type: 'text' },
+              { key: 'customerName', label: t.customer, type: 'text' },
+              { key: 'customerPhone', label: t.phone, type: 'text' },
+              { key: 'shippingMethodTitle', label: t.shippingMethod, type: 'text' },
+              { key: 'grandTotalMinor', label: t.total, type: 'money' },
+            ],
+            filenameTemplate: 'shipping-{date}-{format}',
+            config: { required: ['orderNumber'] },
+          }),
+        },
+      );
+      if (!response.ok) throw new Error('EXPORT_VERSION_CREATE_FAILED');
+      await loadVersions(profileId);
+      setMessage('EXPORT_VERSION_CREATED');
+    } catch {
+      setMessage('EXPORT_VERSION_CREATE_FAILED');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const previewExport = async () => {
+    if (!profileId || !versionId || !selectionId.trim()) return;
+    setLoading(true);
+    try {
+      const response = await fetch(
+        `/api/v1/export-profiles/${encodeURIComponent(profileId)}/preview`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ selectionId: selectionId.trim(), profileVersionId: versionId }),
+        },
+      );
+      if (!response.ok) throw new Error('EXPORT_PREVIEW_FAILED');
+      const body = (await response.json()) as { preview: JsonRecord };
+      setPreview(body.preview);
+      setMessage('EXPORT_PREVIEW_READY');
+    } catch {
+      setMessage('EXPORT_PREVIEW_FAILED');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createBatch = async () => {
+    if (!selectionId.trim() || !versionId) return;
+    setLoading(true);
+    try {
+      const response = await fetch('/api/v1/export-batches', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        body: JSON.stringify({
+          selectionId: selectionId.trim(),
+          profileVersionId: versionId,
+          idempotencyKey: `web-export-${Date.now()}`,
+        }),
+      });
+      if (!response.ok) throw new Error('EXPORT_CREATE_FAILED');
+      const body = (await response.json()) as { batch: ExportBatchSummary };
+      setBatches((current) => [body.batch, ...current.filter((item) => item.id !== body.batch.id)]);
+      setMessage('EXPORT_QUEUED');
+      await loadBatches();
+    } catch {
+      setMessage('EXPORT_CREATE_FAILED');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const retryBatch = async (batchId: string) => {
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/v1/export-batches/${encodeURIComponent(batchId)}/retry`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+      });
+      if (!response.ok) throw new Error('EXPORT_RETRY_FAILED');
+      await loadBatches();
+      setMessage('EXPORT_RETRY_QUEUED');
+    } catch {
+      setMessage('EXPORT_RETRY_FAILED');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const statusLabel = (status: ExportBatchSummary['status']): string => status;
+
+  return (
+    <Stack gap={3} data-testid="exports-workspace" dir={direction}>
+      <Box>
+        <Typography variant="h4" component="h1" fontWeight={800}>
+          {t.exportsTitle}
+        </Typography>
+        <Typography color="text.secondary">{t.exportsSubtitle}</Typography>
+      </Box>
+      {message && <Alert severity={message.endsWith('FAILED') ? 'error' : 'info'}>{message}</Alert>}
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Stack gap={2}>
+          <Typography variant="h6" component="h2" fontWeight={800}>
+            {t.exportProfiles}
+          </Typography>
+          <Stack direction={{ xs: 'column', md: 'row' }} gap={2} flexWrap="wrap">
+            <FormControl size="small" sx={{ minWidth: 230 }}>
+              <InputLabel id="export-profile-label">{t.exportProfiles}</InputLabel>
+              <Select
+                labelId="export-profile-label"
+                value={profileId}
+                label={t.exportProfiles}
+                onChange={(event) => setProfileId(event.target.value)}
+              >
+                {profiles.map((profile) => (
+                  <MenuItem key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField
+              size="small"
+              label={t.exportProfiles}
+              value={profileName}
+              onChange={(event) => setProfileName(event.target.value)}
+              placeholder={t.exportProfiles}
+            />
+            <Button
+              variant="outlined"
+              onClick={() => void createProfile()}
+              disabled={loading || !profileName.trim()}
+            >
+              {t.createExport}
+            </Button>
+            <Button
+              variant="text"
+              onClick={() => void createVersion()}
+              disabled={loading || !profileId}
+            >
+              {t.exportVersion}
+            </Button>
+          </Stack>
+          {profiles.length === 0 && (
+            <Typography color="text.secondary">{t.exportNoProfiles}</Typography>
+          )}
+        </Stack>
+      </Paper>
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Stack gap={2}>
+          <Typography variant="h6" component="h2" fontWeight={800}>
+            {t.createExport}
+          </Typography>
+          <Stack direction={{ xs: 'column', md: 'row' }} gap={2} flexWrap="wrap">
+            <TextField
+              size="small"
+              label={t.exportSelectionId}
+              value={selectionId}
+              onChange={(event) => setSelectionId(event.target.value)}
+            />
+            <FormControl size="small" sx={{ minWidth: 240 }}>
+              <InputLabel id="export-version-label">{t.exportVersion}</InputLabel>
+              <Select
+                labelId="export-version-label"
+                value={versionId}
+                label={t.exportVersion}
+                onChange={(event) => setVersionId(event.target.value)}
+              >
+                {versions.map((version) => (
+                  <MenuItem key={version.id} value={version.id}>
+                    v{version.version} · {version.format.toUpperCase()} · {version.rowMode}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Button
+              variant="outlined"
+              onClick={() => void previewExport()}
+              disabled={loading || !versionId || !selectionId.trim()}
+            >
+              {t.exportPreview}
+            </Button>
+            <Button
+              variant="contained"
+              onClick={() => void createBatch()}
+              disabled={loading || !versionId || !selectionId.trim()}
+            >
+              {loading ? <CircularProgress size={18} aria-label={t.loading} /> : t.createExport}
+            </Button>
+          </Stack>
+          {preview && (
+            <Paper
+              variant="outlined"
+              sx={{ p: 1.5, overflow: 'auto' }}
+              data-testid="export-preview"
+            >
+              <Typography variant="body2" component="pre" sx={{ m: 0, whiteSpace: 'pre-wrap' }}>
+                {JSON.stringify(preview, null, 2)}
+              </Typography>
+            </Paper>
+          )}
+        </Stack>
+      </Paper>
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+          <Typography variant="h6" component="h2" fontWeight={800}>
+            {t.exportBatches}
+          </Typography>
+          <Button size="small" onClick={() => void loadBatches()} disabled={loading}>
+            {t.refresh}
+          </Button>
+        </Stack>
+        <TableContainer>
+          <Table size="small" aria-label={t.exportBatches}>
+            <TableHead>
+              <TableRow>
+                <TableCell>{t.status}</TableCell>
+                <TableCell>{t.format}</TableCell>
+                <TableCell>{t.total}</TableCell>
+                <TableCell>{t.actions}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {batches.map((batch) => (
+                <TableRow key={batch.id}>
+                  <TableCell>
+                    <Chip size="small" label={statusLabel(batch.status)} />
+                  </TableCell>
+                  <TableCell>
+                    {batch.format.toUpperCase()} · {batch.rowMode}
+                  </TableCell>
+                  <TableCell>
+                    {batch.orderCount} / {batch.rowCount}
+                  </TableCell>
+                  <TableCell>
+                    <Stack direction="row" gap={1} alignItems="center">
+                      {batch.job && (
+                        <LinearProgress
+                          variant="determinate"
+                          value={Math.min(batch.job.progress, 100)}
+                          sx={{ width: 80 }}
+                          aria-label={t.loading}
+                        />
+                      )}
+                      {batch.status === 'completed' && (
+                        <Button
+                          size="small"
+                          href={`/api/v1/export-batches/${encodeURIComponent(batch.id)}/download`}
+                        >
+                          {t.downloadExport}
+                        </Button>
+                      )}
+                      {batch.status === 'failed' && (
+                        <Button size="small" onClick={() => void retryBatch(batch.id)}>
+                          {t.retryExport}
+                        </Button>
+                      )}
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        {batches.length === 0 && (
+          <Typography color="text.secondary" sx={{ py: 2 }}>
+            {t.noData}
+          </Typography>
+        )}
+      </Paper>
+    </Stack>
+  );
+}
+
 export function App({
   locale,
   direction,
@@ -2175,7 +2613,9 @@ export function App({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
-  const [view, setView] = useState<'orders' | 'manual' | 'documents' | 'analytics'>('orders');
+  const [view, setView] = useState<'orders' | 'manual' | 'documents' | 'analytics' | 'exports'>(
+    'orders',
+  );
 
   const orderFilter = useMemo(() => {
     const leaves: JsonRecord[] = [];
@@ -2439,6 +2879,9 @@ export function App({
           <Button variant="outlined" size="small" onClick={() => setView('documents')}>
             {t.documentsNav}
           </Button>
+          <Button variant="outlined" size="small" onClick={() => setView('exports')}>
+            {t.exportsNav}
+          </Button>
           <Button variant="outlined" size="small" onClick={() => setView('analytics')}>
             {t.analyticsNav}
           </Button>
@@ -2458,6 +2901,8 @@ export function App({
       <Container component="main" maxWidth="xl" sx={{ py: 4 }}>
         {view === 'documents' ? (
           <DocumentsWorkspace direction={direction} t={t} />
+        ) : view === 'exports' ? (
+          <ExportsWorkspace direction={direction} t={t} />
         ) : view === 'analytics' ? (
           <AnalyticsWorkspace locale={locale} t={t} />
         ) : view === 'manual' ? (

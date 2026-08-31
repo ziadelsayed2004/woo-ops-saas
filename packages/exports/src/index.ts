@@ -21,6 +21,7 @@ export type ExportProfile = Readonly<{
   rowMode: ExportRowMode;
   columns: readonly ExportColumn[];
   filenameTemplate: string;
+  config?: Readonly<Record<string, unknown>>;
 }>;
 
 export type ExportOrder = Readonly<Record<string, unknown>>;
@@ -48,6 +49,21 @@ export type ExportChunkResult = Readonly<{
   hasMore: boolean;
 }>;
 
+export type ExportValidationIssue = Readonly<{
+  code: 'required-field-missing';
+  key: string;
+  rowIndex: number;
+}>;
+
+export type ExportPreview = Readonly<{
+  columns: readonly ExportColumn[];
+  rows: readonly (readonly (string | number)[])[];
+  orderCount: number;
+  rowCount: number;
+  errors: readonly ExportValidationIssue[];
+  warnings: readonly string[];
+}>;
+
 export const MAX_EXPORT_COLUMNS = 100;
 export const MAX_EXPORT_ORDERS = 100_000;
 export const MAX_EXPORT_ROWS = 200_000;
@@ -59,6 +75,7 @@ const COLUMN_TYPES: readonly ExportColumnType[] = ['text', 'number', 'date', 'mo
 const FORBIDDEN_PATH_SEGMENTS = new Set(['__proto__', 'prototype', 'constructor']);
 const DANGEROUS_SPREADSHEET_START = /^[=+\-@]/;
 const FILE_NAME_PATTERN = /^[\p{L}\p{N}._{}-]+$/u;
+const TRANSFORM_VALUES = new Set(['trim', 'uppercase', 'lowercase', 'integer']);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -137,6 +154,63 @@ const normalizeFileName = (value: string): string => {
   return filename;
 };
 
+const normalizeConfigKey = (value: unknown): string => {
+  if (typeof value !== 'string') throw new Error('EXPORT_CONFIG_INVALID');
+  return assertSafePath(value);
+};
+
+const normalizeConfigFieldList = (value: unknown): string[] => {
+  if (!Array.isArray(value) || value.length > MAX_EXPORT_COLUMNS)
+    throw new Error('EXPORT_CONFIG_INVALID');
+  const keys = value.map(normalizeConfigKey);
+  if (new Set(keys).size !== keys.length) throw new Error('EXPORT_CONFIG_INVALID');
+  return keys;
+};
+
+const normalizeConfigMap = (value: unknown): Record<string, string> => {
+  if (!isRecord(value) || Object.keys(value).length > MAX_EXPORT_COLUMNS)
+    throw new Error('EXPORT_CONFIG_INVALID');
+  const result: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value)) {
+    const normalizedKey = normalizeConfigKey(key);
+    if (typeof item !== 'string' || item.length > 500) throw new Error('EXPORT_CONFIG_INVALID');
+    result[normalizedKey] = item;
+  }
+  return result;
+};
+
+const normalizeTransforms = (value: unknown): Record<string, string> => {
+  if (!isRecord(value) || Object.keys(value).length > MAX_EXPORT_COLUMNS)
+    throw new Error('EXPORT_CONFIG_INVALID');
+  const result: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value)) {
+    const normalizedKey = normalizeConfigKey(key);
+    if (typeof item !== 'string' || !TRANSFORM_VALUES.has(item))
+      throw new Error('EXPORT_CONFIG_INVALID');
+    result[normalizedKey] = item;
+  }
+  return result;
+};
+
+const normalizeConfig = (
+  value: Readonly<Record<string, unknown>> | undefined,
+): Readonly<Record<string, unknown>> | undefined => {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || Object.keys(value).length > 8) throw new Error('EXPORT_CONFIG_INVALID');
+  const allowed = new Set(['required', 'defaults', 'transforms', 'carrierRequired']);
+  if (Object.keys(value).some((key) => !allowed.has(key))) throw new Error('EXPORT_CONFIG_INVALID');
+  const result: Record<string, unknown> = {};
+  if (value.required !== undefined) result.required = normalizeConfigFieldList(value.required);
+  if (value.carrierRequired !== undefined)
+    result.carrierRequired = normalizeConfigFieldList(value.carrierRequired);
+  if (value.defaults !== undefined) result.defaults = normalizeConfigMap(value.defaults);
+  if (value.transforms !== undefined) result.transforms = normalizeTransforms(value.transforms);
+  const serialized = JSON.stringify(result);
+  if (serialized === undefined || serialized.length > 32 * 1024)
+    throw new Error('EXPORT_CONFIG_TOO_LARGE');
+  return result;
+};
+
 export const normalizeExportProfile = (input: ExportProfile): ExportProfile => {
   if (!FORMAT_VALUES.includes(input.format)) throw new Error('EXPORT_FORMAT_INVALID');
   if (!ROW_MODE_VALUES.includes(input.rowMode)) throw new Error('EXPORT_ROW_MODE_INVALID');
@@ -151,6 +225,7 @@ export const normalizeExportProfile = (input: ExportProfile): ExportProfile => {
   const columns = input.columns.map(normalizeColumn);
   if (new Set(columns.map((column) => column.key)).size !== columns.length)
     throw new Error('EXPORT_COLUMNS_DUPLICATE');
+  const config = normalizeConfig(input.config);
   return {
     ...(input.id === undefined ? {} : { id: assertText(input.id, 'EXPORT_ID_INVALID', 256) }),
     name: assertText(input.name, 'EXPORT_PROFILE_NAME_INVALID', 120),
@@ -162,6 +237,7 @@ export const normalizeExportProfile = (input: ExportProfile): ExportProfile => {
     rowMode: input.rowMode,
     columns,
     filenameTemplate: normalizeFileName(input.filenameTemplate),
+    ...(config === undefined ? {} : { config }),
   };
 };
 
@@ -211,11 +287,34 @@ export const materializeRows = (
   return rows;
 };
 
+const configuredValue = (
+  row: ExportOrder,
+  column: ExportColumn,
+  profile: ExportProfile,
+): unknown => {
+  let value = pathValue(row, column.key);
+  const config = profile.config;
+  const defaults = config && isRecord(config.defaults) ? config.defaults : undefined;
+  if ((value === undefined || value === null || value === '') && defaults)
+    value = defaults[column.key];
+  const transforms = config && isRecord(config.transforms) ? config.transforms : undefined;
+  const transform = transforms?.[column.key];
+  const stringValue = typeof value === 'string' ? value : null;
+  if (typeof transform === 'string' && stringValue !== null) {
+    if (transform === 'trim') value = stringValue.trim();
+    if (transform === 'uppercase') value = stringValue.toUpperCase();
+    if (transform === 'lowercase') value = stringValue.toLowerCase();
+    if (transform === 'integer' && /^-?\d+$/.test(stringValue)) value = stringValue;
+  }
+  return value;
+};
+
 const rowValues = (
   row: ExportOrder,
   columns: readonly ExportColumn[],
+  profile: ExportProfile,
 ): Array<string | number | Date> =>
-  columns.map((column) => cellValue(pathValue(row, column.key), column));
+  columns.map((column) => cellValue(configuredValue(row, column, profile), column));
 
 const assertRowCount = (count: number): void => {
   if (!Number.isInteger(count) || count > MAX_EXPORT_ROWS)
@@ -233,7 +332,9 @@ export const generateCsv = (rows: readonly ExportOrder[], profile: ExportProfile
   const headers = normalized.columns.map((column) =>
     csvEscape(sanitizeSpreadsheetValue(column.label)),
   );
-  const body = rows.map((row) => rowValues(row, normalized.columns).map(csvEscape).join(','));
+  const body = rows.map((row) =>
+    rowValues(row, normalized.columns, normalized).map(csvEscape).join(','),
+  );
   return new TextEncoder().encode(`\uFEFF${headers.join(',')}\r\n${body.join('\r\n')}\r\n`);
 };
 
@@ -267,7 +368,7 @@ export const generateXlsx = async (
     if (column.type === 'text' || /phone|sku/i.test(column.key)) cell.numFmt = '@';
   }
   for (const row of rows) {
-    const excelRow = sheet.addRow(rowValues(row, normalized.columns));
+    const excelRow = sheet.addRow(rowValues(row, normalized.columns, normalized));
     normalized.columns.forEach((column, index) => {
       const cell = excelRow.getCell(index + 1);
       if (column.type === 'text' || /phone|sku|id|orderNumber/i.test(column.key)) cell.numFmt = '@';
@@ -313,6 +414,7 @@ export const generateExport = async (request: ExportRequest): Promise<ExportResu
   const profile = normalizeExportProfile(request.profile);
   const maxRows = request.maxRows ?? MAX_EXPORT_ROWS;
   const rows = materializeRows(request.orders, profile, maxRows);
+  assertRequiredFields(rows, profile);
   const bytes =
     profile.format === 'csv' ? generateCsv(rows, profile) : await generateXlsx(rows, profile);
   return {
@@ -323,6 +425,59 @@ export const generateExport = async (request: ExportRequest): Promise<ExportResu
     rowCount: rows.length,
     checksum: createHash('sha256').update(bytes).digest('hex'),
     snapshotHash: snapshotHash(request),
+  };
+};
+
+const requiredKeys = (profile: ExportProfile): readonly string[] => {
+  const config = profile.config;
+  const configured = config && Array.isArray(config.required) ? config.required : [];
+  const carrier = config && Array.isArray(config.carrierRequired) ? config.carrierRequired : [];
+  return profile.rowMode === 'carrier' ? [...configured, ...carrier] : configured;
+};
+
+const assertRequiredFields = (rows: readonly ExportOrder[], profile: ExportProfile): void => {
+  const keys = requiredKeys(profile);
+  for (const [rowIndex, row] of rows.entries()) {
+    for (const key of keys) {
+      const value = configuredValue(row, { key, label: key }, profile);
+      if (value === undefined || value === null || String(value).trim() === '')
+        throw new Error('EXPORT_REQUIRED_FIELD_MISSING');
+    }
+  }
+};
+
+export const previewExport = (
+  request: ExportRequest,
+  maxOrders = 100,
+  maxRows = 500,
+): ExportPreview => {
+  if (!Number.isInteger(maxOrders) || maxOrders < 1 || maxOrders > 1_000)
+    throw new Error('EXPORT_PREVIEW_LIMIT_INVALID');
+  if (!Number.isInteger(maxRows) || maxRows < 1 || maxRows > 5_000)
+    throw new Error('EXPORT_PREVIEW_LIMIT_INVALID');
+  const profile = normalizeExportProfile(request.profile);
+  const orders = request.orders.slice(0, maxOrders);
+  const rows = materializeRows(orders, profile, maxRows);
+  const errors: ExportValidationIssue[] = [];
+  const keys = requiredKeys(profile);
+  for (const [rowIndex, row] of rows.entries()) {
+    for (const key of keys) {
+      const value = configuredValue(row, { key, label: key }, profile);
+      if (value === undefined || value === null || String(value).trim() === '')
+        errors.push({ code: 'required-field-missing', key, rowIndex });
+    }
+  }
+  return {
+    columns: profile.columns,
+    rows: rows.map((row) =>
+      rowValues(row, profile.columns, profile).map((value) =>
+        value instanceof Date ? value.toISOString() : value,
+      ),
+    ),
+    orderCount: orders.length,
+    rowCount: rows.length,
+    errors,
+    warnings: request.orders.length > maxOrders ? ['PREVIEW_TRUNCATED'] : [],
   };
 };
 
