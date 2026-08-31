@@ -29,6 +29,8 @@ import {
   documentTemplateUpdateSchema,
   documentPreviewSchema,
   documentJobCreateSchema,
+  documentJobListSchema,
+  documentIdentityPolicyUpdateSchema,
   analyticsFilterSchema,
   analyticsBreakdownSchema,
   costRuleCreateSchema,
@@ -66,6 +68,7 @@ import type {
   ExportRowMode,
   ExportProfileVersion,
   DocumentTemplateRecord,
+  DocumentBatchStatus,
   AnalyticsFilter,
 } from '@woo-ops/persistence';
 import {
@@ -85,6 +88,8 @@ import type { ExportProfile as EngineExportProfile } from '@woo-ops/exports';
 import { readPrivatePdf, writePrivatePdf } from './document-files.js';
 import { createExportEffect } from './export-effect.js';
 import { readPrivateExport } from './export-files.js';
+import { createDocumentEffect } from './document-effect.js';
+import { readPrivateDocumentArtifact } from './document-artifacts.js';
 import { createApiJobRunner } from './job-runner.js';
 import { createWooSyncEffect, healthCheckWooConnection } from './woo-sync.js';
 
@@ -132,6 +137,7 @@ const jobRunner = createApiJobRunner(store, {
   effects: {
     sync: createWooSyncEffect(store),
     export: createExportEffect(store, exportStorageRoot),
+    document: createDocumentEffect(store, documentStorageRoot, documentFontBytes),
   },
 });
 const app: Express = express();
@@ -2011,6 +2017,53 @@ app.post('/api/v1/orders/:orderId/export-state/unexport', (request, response) =>
     sendOperationError(response, error);
   }
 });
+app.get('/api/v1/document-identity-policy', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({ policy: store.getDocumentIdentityPolicy(operationContext(user, response)) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.patch('/api/v1/document-identity-policy', (request, response) => {
+  const user = requireConnectionAdmin(request, response);
+  if (!user) return;
+  const parsed = documentIdentityPolicyUpdateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(
+      response,
+      400,
+      'DOCUMENT_POLICY_INPUT_INVALID',
+      'Document identity policy is invalid',
+    );
+    return;
+  }
+  try {
+    const policyInput = {
+      ...(parsed.data.invoiceNumberingEnabled === undefined
+        ? {}
+        : { invoiceNumberingEnabled: parsed.data.invoiceNumberingEnabled }),
+      ...(parsed.data.legalInvoiceEnabled === undefined
+        ? {}
+        : { legalInvoiceEnabled: parsed.data.legalInvoiceEnabled }),
+      ...(parsed.data.approvalReference === undefined
+        ? {}
+        : { approvalReference: parsed.data.approvalReference }),
+      ...(parsed.data.invoicePrefix === undefined
+        ? {}
+        : { invoicePrefix: parsed.data.invoicePrefix }),
+      ...(parsed.data.nextInvoiceSequence === undefined
+        ? {}
+        : { nextInvoiceSequence: parsed.data.nextInvoiceSequence }),
+    };
+    response.json({
+      policy: store.updateDocumentIdentityPolicy(operationContext(user, response), policyInput),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
 app.get('/api/v1/document-templates', (request, response) => {
   const user = authenticatedUser(request, response);
   if (!user) return;
@@ -2189,8 +2242,12 @@ app.get('/api/v1/orders/:orderId/documents', (request, response) => {
   const user = authenticatedUser(request, response);
   if (!user) return;
   try {
+    const context = operationContext(user, response);
     response.json({
-      items: store.listDocumentFiles(operationContext(user, response), request.params.orderId),
+      items: [
+        ...store.listDocumentFiles(context, request.params.orderId),
+        ...store.listDocumentArtifacts(context, { orderId: request.params.orderId }),
+      ],
     });
   } catch (error) {
     sendOperationError(response, error);
@@ -2233,18 +2290,160 @@ app.post('/api/v1/document-jobs', (request, response) => {
     const context = operationContext(user, response);
     store.getDocumentTemplate(context, body.templateId);
     const format = body.format ?? documentFormatForAction(body.action);
-    response.status(202).json({
-      job: store.createBulkJob(context, {
-        selectionId: body.selectionId,
-        action: body.action as BulkAction,
-        parameters: {
-          templateId: body.templateId,
-          ...(format === undefined ? {} : { format }),
-        },
-        idempotencyKey: body.idempotencyKey,
+    const batch = store.createDocumentBatch(context, {
+      selectionId: body.selectionId,
+      action: body.action,
+      templateId: body.templateId,
+      ...(format === undefined ? {} : { format }),
+      idempotencyKey: body.idempotencyKey,
+    });
+    response
+      .status(202)
+      .json({ batch, job: batch.jobId === null ? null : store.getJob(context, batch.jobId) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/document-jobs', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const parsed = documentJobListSchema.safeParse({
+    cursor: request.query.cursor === undefined ? undefined : String(request.query.cursor),
+    limit: request.query.limit === undefined ? undefined : Number(request.query.limit),
+    status: request.query.status === undefined ? undefined : String(request.query.status),
+  });
+  if (!parsed.success) {
+    sendApiError(
+      response,
+      400,
+      'DOCUMENT_JOB_LIST_INPUT_INVALID',
+      'Document job list input is invalid',
+    );
+    return;
+  }
+  try {
+    response.json({
+      ...store.listDocumentBatches(operationContext(user, response), {
+        ...(parsed.data.cursor === undefined ? {} : { cursor: parsed.data.cursor }),
+        ...(parsed.data.limit === undefined ? {} : { limit: parsed.data.limit }),
+        ...(parsed.data.status === undefined
+          ? {}
+          : { status: parsed.data.status as DocumentBatchStatus }),
       }),
     });
   } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/document-jobs/:batchId', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    const context = operationContext(user, response);
+    const batch = store.getDocumentBatch(context, request.params.batchId);
+    const batchItems = store.listDocumentBatchItems(context, batch.id);
+    response.json({
+      batch,
+      items: batchItems.items,
+      itemsNextCursor: batchItems.nextCursor,
+      itemsHasMore: batchItems.hasMore,
+      artifacts: store.listDocumentArtifacts(context, { batchId: batch.id }),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/document-jobs/:batchId/items', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    const limit = request.query.limit === undefined ? undefined : Number(request.query.limit);
+    response.json({
+      ...store.listDocumentBatchItems(operationContext(user, response), request.params.batchId, {
+        ...(request.query.cursor === undefined ? {} : { cursor: String(request.query.cursor) }),
+        ...(limit === undefined ? {} : { limit }),
+      }),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/document-jobs/:batchId/errors', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    const context = operationContext(user, response);
+    const result = store.listDocumentBatchItems(context, request.params.batchId, { limit: 500 });
+    response.json({ ...result, items: result.items.filter((item) => item.status === 'failed') });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/document-jobs/:batchId/retry-failures', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  try {
+    const context = operationContext(user, response);
+    const batch = store.retryDocumentBatchFailures(context, request.params.batchId);
+    response
+      .status(202)
+      .json({ batch, job: batch.jobId === null ? null : store.getJob(context, batch.jobId) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/document-jobs/:batchId/cancel', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  try {
+    const context = operationContext(user, response);
+    const batch = store.getDocumentBatch(context, request.params.batchId);
+    if (batch.jobId) store.cancelJob(context, batch.jobId);
+    response.json({ batch: store.cancelDocumentBatchForWorker(context, batch.id) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/document-jobs/:batchId/artifacts', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({
+      items: store.listDocumentArtifacts(operationContext(user, response), {
+        batchId: request.params.batchId,
+      }),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/document-artifacts/:artifactId', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    const context = operationContext(user, response);
+    const artifact = store.getDocumentArtifact(context, request.params.artifactId);
+    const bytes = readPrivateDocumentArtifact(
+      documentStorageRoot,
+      artifact.relativePath,
+      artifact.checksum,
+    );
+    const safeFilename = artifact.filename.replace(/[^A-Za-z0-9._-]/gu, '_');
+    const disposition = request.query.download === '1' ? 'attachment' : 'inline';
+    response.setHeader('Content-Type', artifact.mimeType);
+    response.setHeader('Content-Length', bytes.byteLength);
+    response.setHeader('Content-Disposition', `${disposition}; filename="${safeFilename}"`);
+    response.setHeader('Content-Security-Policy', "default-src 'none'");
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('X-Document-Checksum', artifact.checksum);
+    response.send(bytes);
+  } catch (error) {
+    const code = error instanceof Error ? (error as Error & { code?: string }).code : undefined;
+    if (code === 'ENOENT') {
+      sendApiError(response, 404, 'DOCUMENT_ARTIFACT_NOT_FOUND', 'Document artifact not found');
+      return;
+    }
     sendOperationError(response, error);
   }
 });

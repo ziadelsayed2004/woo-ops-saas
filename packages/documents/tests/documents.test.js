@@ -4,8 +4,10 @@ import { PDFDocument } from 'pdf-lib';
 import test from 'node:test';
 import {
   documentPageSize,
+  createZipArchive,
   generateDocument,
   generateDocumentBatch,
+  mergeDocumentPdfs,
   renderSafeTemplate,
   validateSafeTemplate,
 } from '../dist/index.js';
@@ -92,6 +94,43 @@ test('Arabic A4 document embeds a font, QR/barcode assets, and is reproducible',
   assert.match(first.checksum, /^[a-f0-9]{64}$/);
 });
 
+test('document identity kind is allowlisted and included in deterministic snapshots', async () => {
+  const simpleTemplate = {
+    id: 'identity-template',
+    version: 1,
+    name: 'Identity template',
+    companyName: 'Woo Ops',
+    locale: 'en-US',
+    direction: 'ltr',
+  };
+  const orderDocument = await generateDocument({
+    order: { id: 'identity-1', orderNumber: 'ID-1', grandTotalMinor: '100' },
+    format: 'a5',
+    template: simpleTemplate,
+    orderId: 'identity-1',
+    documentNumber: 'ORD-1',
+  });
+  const invoiceDocument = await generateDocument({
+    order: { id: 'identity-1', orderNumber: 'ID-1', grandTotalMinor: '100' },
+    format: 'a5',
+    template: simpleTemplate,
+    orderId: 'identity-1',
+    documentNumber: 'INV-1',
+    documentKind: 'invoice',
+  });
+  assert.notEqual(orderDocument.snapshot.sourceHash, invoiceDocument.snapshot.sourceHash);
+  await assert.rejects(
+    () =>
+      generateDocument({
+        order: { id: 'identity-1', orderNumber: 'ID-1', grandTotalMinor: '100' },
+        format: 'a5',
+        template: simpleTemplate,
+        documentKind: 'credit-note',
+      }),
+    /DOCUMENT_KIND_INVALID/,
+  );
+});
+
 test('thermal and label PDFs retain physical page boxes', async (t) => {
   if (!fontBytes) {
     t.skip('No font is available in this test environment');
@@ -124,4 +163,51 @@ test('batch generation isolates invalid documents and merges successful pages', 
   const merged = await PDFDocument.load(result.mergedPdf);
   assert.equal(merged.getPageCount(), 2);
   assert.match(result.checksum, /^[a-f0-9]{64}$/);
+});
+
+test('merged PDFs and private ZIP bundles are deterministic and path safe', async () => {
+  const simpleTemplate = {
+    id: 'zip-template',
+    version: 1,
+    name: 'Zip template',
+    companyName: 'Woo Ops',
+    locale: 'en-US',
+    direction: 'ltr',
+  };
+  const first = await generateDocument({
+    order: { id: 'zip-1', orderNumber: 'ZIP-1', grandTotalMinor: '100' },
+    format: 'a5',
+    template: simpleTemplate,
+    orderId: 'zip-1',
+  });
+  const second = await generateDocument({
+    order: { id: 'zip-2', orderNumber: 'ZIP-2', grandTotalMinor: '200' },
+    format: 'a5',
+    template: simpleTemplate,
+    orderId: 'zip-2',
+  });
+  const merged = await mergeDocumentPdfs([first.bytes, second.bytes]);
+  const mergedPdf = await PDFDocument.load(merged);
+  assert.equal(mergedPdf.getPageCount(), 2);
+  const entries = [
+    { name: 'manifest.json', bytes: new TextEncoder().encode('{"version":1}\n') },
+    { name: 'order-1.pdf', bytes: first.bytes },
+    { name: 'order-2.pdf', bytes: second.bytes },
+  ];
+  const zip = createZipArchive(entries);
+  assert.equal(zip[0], 0x50);
+  assert.equal(zip[1], 0x4b);
+  assert.deepEqual(zip, createZipArchive(entries));
+  assert.throws(
+    () => createZipArchive([{ name: '../outside.pdf', bytes: first.bytes }]),
+    /DOCUMENT_ZIP_ENTRY_INVALID/,
+  );
+  assert.throws(
+    () =>
+      createZipArchive([
+        { name: 'order.pdf', bytes: first.bytes },
+        { name: 'order.pdf', bytes: second.bytes },
+      ]),
+    /DOCUMENT_ZIP_ENTRY_INVALID/,
+  );
 });

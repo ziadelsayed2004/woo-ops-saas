@@ -112,6 +112,24 @@ test('repositories scope reads, selections and jobs by the authenticated account
     () => store.getExportSnapshotPageForWorker(contextB, exportBatch.id),
     /EXPORT_BATCH_NOT_FOUND/,
   );
+  const template = store.createDocumentTemplate(contextA, {
+    name: 'Account A documents',
+    format: 'a4',
+    locale: 'en-US',
+    direction: 'ltr',
+    companyName: 'Account A',
+  });
+  const documentBatch = store.createDocumentBatch(contextA, {
+    selectionId: selection.id,
+    action: 'print-documents',
+    templateId: template.id,
+    idempotencyKey: 'account-a-documents',
+  });
+  assert.throws(
+    () => store.getDocumentBatch(contextB, documentBatch.id),
+    /DOCUMENT_BATCH_NOT_FOUND/,
+  );
+  assert.equal(store.listDocumentArtifacts(contextB, { batchId: documentBatch.id }).length, 0);
 });
 
 test('webhook inbox rejects mismatched account/connection and replay is idempotent', () => {

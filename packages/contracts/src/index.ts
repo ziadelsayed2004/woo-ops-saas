@@ -222,6 +222,23 @@ export const documentJobCreateSchema = z
     idempotencyKey: z.string().trim().min(1).max(200),
   })
   .strict();
+export const documentJobListSchema = z
+  .object({
+    cursor: z.string().max(2_000).nullable().optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+    status: z.enum(['queued', 'running', 'completed', 'partial', 'failed', 'cancelled']).optional(),
+  })
+  .strict();
+export const documentIdentityPolicyUpdateSchema = z
+  .object({
+    invoiceNumberingEnabled: z.boolean().optional(),
+    legalInvoiceEnabled: z.boolean().optional(),
+    approvalReference: z.string().trim().min(1).max(240).nullable().optional(),
+    invoicePrefix: z.string().trim().min(1).max(20).optional(),
+    nextInvoiceSequence: z.number().int().safe().min(1).max(999_999_999_999).optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, 'At least one policy field is required');
 
 const minorAmountSchema = z.string().regex(/^-?\d{1,18}$/);
 const analyticsDateKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);

@@ -73,6 +73,32 @@ type DocumentTemplate = {
   footerText: string | null;
   active: boolean;
 };
+type DocumentBatchSummary = {
+  id: string;
+  action: 'generate-invoice' | 'generate-thermal' | 'generate-label' | 'print-documents';
+  format: DocumentTemplate['format'];
+  status: 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled';
+  totalCount: number;
+  processedCount: number;
+  succeededCount: number;
+  failedCount: number;
+  attemptCount: number;
+  jobId: string | null;
+  createdAt: string;
+  completedAt: string | null;
+};
+type DocumentArtifactSummary = {
+  id: string;
+  kind: 'order-pdf' | 'merged-pdf' | 'zip' | 'manifest';
+  filename: string;
+  mimeType: string;
+  byteSize: number;
+  checksum: string;
+};
+type DocumentBatchDetails = {
+  batch: DocumentBatchSummary;
+  artifacts: DocumentArtifactSummary[];
+};
 
 const analyticsMetricKeys = [
   'grossSalesMinor',
@@ -328,6 +354,15 @@ const copy = {
     templateTokens: 'order.number, customer.name, shipping.address, order.totalMinor',
     noTemplates:
       '\u0644\u0627 \u062a\u0648\u062c\u062f \u0642\u0648\u0627\u0644\u0628 \u0628\u0639\u062f',
+    documentBatches: 'دفعات المستندات',
+    documentBatchStatus: 'الحالة',
+    documentBatchProgress: 'التقدم',
+    documentBatchFormat: 'المقاس',
+    documentArtifactDownload: 'تحميل',
+    retryDocumentBatch: 'إعادة المحاولة',
+    documentBatchDetails: 'التفاصيل',
+    noDocumentBatches: 'لا توجد دفعات مستندات بعد',
+    documentBatchesLoadFailed: 'تعذر تحميل دفعات المستندات',
     analyticsNav: '\u0627\u0644\u062a\u062d\u0644\u064a\u0644\u0627\u062a',
     analyticsTitle:
       '\u0644\u0648\u062d\u0629 \u062a\u062d\u0644\u064a\u0644 \u0627\u0644\u0645\u0628\u064a\u0639\u0627\u062a',
@@ -540,6 +575,15 @@ const copy = {
       'Only allowlisted tokens are supported. HTML, scripts, and network loads are blocked.',
     templateTokens: 'order.number, customer.name, shipping.address, order.totalMinor',
     noTemplates: 'No templates yet',
+    documentBatches: 'Document batches',
+    documentBatchStatus: 'Status',
+    documentBatchProgress: 'Progress',
+    documentBatchFormat: 'Size',
+    documentArtifactDownload: 'Download',
+    retryDocumentBatch: 'Retry failures',
+    documentBatchDetails: 'Details',
+    noDocumentBatches: 'No document batches yet',
+    documentBatchesLoadFailed: 'Could not load document batches',
     analyticsNav: 'Analytics',
     analyticsTitle: 'Sales analytics dashboard',
     analyticsSubtitle: 'Explainable revenue and contribution profit across every source',
@@ -1940,6 +1984,12 @@ function DocumentsWorkspace({ direction, t }: { direction: Direction; t: (typeof
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [batches, setBatches] = useState<DocumentBatchSummary[]>([]);
+  const [batchDetails, setBatchDetails] = useState<Record<string, DocumentBatchDetails>>({});
+  const [expandedBatchId, setExpandedBatchId] = useState('');
+  const [batchesLoading, setBatchesLoading] = useState(true);
+  const [batchActionId, setBatchActionId] = useState('');
+  const [batchError, setBatchError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -1969,6 +2019,59 @@ function DocumentsWorkspace({ direction, t }: { direction: Direction; t: (typeof
     return () => {
       active = false;
     };
+  }, []);
+
+  const loadBatches = async () => {
+    const response = await fetch('/api/v1/document-jobs?limit=20', { credentials: 'include' });
+    if (!response.ok) throw new Error('DOCUMENT_BATCHES_LOAD_FAILED');
+    const result = (await response.json()) as { items?: DocumentBatchSummary[] };
+    setBatches(result.items ?? []);
+  };
+
+  const loadBatchDetails = async (batchId: string) => {
+    setBatchActionId(batchId);
+    setBatchError('');
+    try {
+      const response = await fetch(`/api/v1/document-jobs/${encodeURIComponent(batchId)}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('DOCUMENT_BATCH_DETAILS_LOAD_FAILED');
+      const result = (await response.json()) as DocumentBatchDetails & { items?: unknown[] };
+      setBatchDetails((current) => ({ ...current, [batchId]: result }));
+      setExpandedBatchId(batchId);
+    } catch {
+      setBatchError('DOCUMENT_BATCH_DETAILS_LOAD_FAILED');
+    } finally {
+      setBatchActionId('');
+    }
+  };
+
+  const retryBatch = async (batchId: string) => {
+    setBatchActionId(batchId);
+    setBatchError('');
+    try {
+      const response = await fetch(
+        `/api/v1/document-jobs/${encodeURIComponent(batchId)}/retry-failures`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        },
+      );
+      if (!response.ok) throw new Error('DOCUMENT_BATCH_RETRY_FAILED');
+      await loadBatches();
+      await loadBatchDetails(batchId);
+    } catch {
+      setBatchError('DOCUMENT_BATCH_RETRY_FAILED');
+    } finally {
+      setBatchActionId('');
+    }
+  };
+
+  useEffect(() => {
+    void loadBatches()
+      .catch(() => setBatchError('DOCUMENT_BATCHES_LOAD_FAILED'))
+      .finally(() => setBatchesLoading(false));
   }, []);
 
   useEffect(
@@ -2175,6 +2278,94 @@ function DocumentsWorkspace({ direction, t }: { direction: Direction; t: (typeof
           </Paper>
         </Stack>
       )}
+      <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 } }} data-testid="document-batches">
+        <Stack gap={2}>
+          <Typography variant="h5" component="h2" fontWeight={800}>
+            {t.documentBatches}
+          </Typography>
+          {batchError && <Alert severity="error">{t.documentBatchesLoadFailed}</Alert>}
+          {batchesLoading ? (
+            <CircularProgress aria-label={t.loading} />
+          ) : batches.length === 0 ? (
+            <Typography color="text.secondary">{t.noDocumentBatches}</Typography>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>{t.documentBatchStatus}</TableCell>
+                    <TableCell>{t.documentBatchProgress}</TableCell>
+                    <TableCell>{t.documentBatchFormat}</TableCell>
+                    <TableCell>{t.actions}</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {batches.map((batch) => (
+                    <TableRow key={batch.id}>
+                      <TableCell>
+                        <Stack gap={0.5}>
+                          <Chip label={batch.status} size="small" />
+                          <Typography variant="caption" dir="ltr">
+                            {batch.id}
+                          </Typography>
+                        </Stack>
+                      </TableCell>
+                      <TableCell dir="ltr">
+                        {batch.processedCount}/{batch.totalCount} ({batch.succeededCount}{' '}
+                        {batch.failedCount > 0 ? `+ ${batch.failedCount}` : ''})
+                      </TableCell>
+                      <TableCell dir="ltr">{batch.format}</TableCell>
+                      <TableCell>
+                        <Stack direction="row" gap={1} flexWrap="wrap">
+                          <Button
+                            size="small"
+                            onClick={() => void loadBatchDetails(batch.id)}
+                            disabled={batchActionId === batch.id}
+                          >
+                            {t.documentBatchDetails}
+                          </Button>
+                          {(batch.status === 'partial' || batch.status === 'failed') && (
+                            <Button
+                              size="small"
+                              color="warning"
+                              onClick={() => void retryBatch(batch.id)}
+                              disabled={batchActionId === batch.id}
+                            >
+                              {t.retryDocumentBatch}
+                            </Button>
+                          )}
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+          {expandedBatchId && batchDetails[expandedBatchId] && (
+            <Box>
+              <Typography variant="subtitle1" fontWeight={700}>
+                {t.documentBatchDetails}: {expandedBatchId}
+              </Typography>
+              <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 1 }}>
+                {batchDetails[expandedBatchId].artifacts.map((artifact) => (
+                  <Button
+                    key={artifact.id}
+                    size="small"
+                    variant="outlined"
+                    component="a"
+                    href={`/api/v1/document-artifacts/${encodeURIComponent(artifact.id)}?download=1`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t.documentArtifactDownload}: {artifact.filename}
+                  </Button>
+                ))}
+              </Stack>
+            </Box>
+          )}
+        </Stack>
+      </Paper>
     </Stack>
   );
 }

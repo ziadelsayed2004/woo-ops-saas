@@ -86,6 +86,13 @@ Before save, show totals and the permanent “local only” guarantee.
 - Physical-size selector: A4, A5, 80mm roll, 100x150mm label.
 - Print preview includes page count and detects overflow.
 - Browser print instructions are concise; generated PDF remains the source of truth.
+- Batch generation is shown as a durable progress table with queued, running, completed,
+  partial, failed, and cancelled states; each row exposes processed, succeeded, and failed counts.
+- Batch details list private per-order PDFs, merged PDF, ZIP, and manifest downloads. Successful
+  documents remain available after an individual order fails, and failed items have a retry action.
+- Download controls use authenticated account-scoped routes; no artifact is rendered as a public URL.
+- Legal invoice wording and numbering remain disabled until the local policy records an explicit
+  external approval reference; the UI does not claim tax or legal compliance.
 
 ## Accessibility and RTL
 

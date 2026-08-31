@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 
-test('edits a safe document template and previews a PDF @documents', async ({ page }) => {
+test('edits a safe document template and previews a PDF @a11y @documents', async ({ page }) => {
   const template = {
     id: 'template-1',
     name: 'Invoice',
@@ -34,12 +35,17 @@ test('edits a safe document template and previews a PDF @documents', async ({ pa
       body: Buffer.from('%PDF-1.7 document-preview-fixture'),
     });
   });
+  await page.route('**/api/v1/document-jobs?limit=20', async (route) => {
+    await route.fulfill({ json: { items: [] } });
+  });
 
   await page.goto('/');
   await page.getByRole('button', { name: 'English' }).click();
   await page.getByRole('button', { name: 'Documents' }).click();
   await expect(page.getByTestId('documents-workspace')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Document templates & printing' })).toBeVisible();
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
   await expect(
     page.getByText(
       'Only allowlisted tokens are supported. HTML, scripts, and network loads are blocked.',

@@ -211,12 +211,37 @@ POST   /document-templates/:id/preview
 POST   /document-templates/:id/orders/:orderId
 
 POST   /document-jobs
+GET    /document-jobs
+GET    /document-jobs/:batchId
+GET    /document-jobs/:batchId/items
+GET    /document-jobs/:batchId/errors
+POST   /document-jobs/:batchId/retry-failures
+POST   /document-jobs/:batchId/cancel
+GET    /document-jobs/:batchId/artifacts
 GET    /orders/:orderId/documents
 GET    /document-files/:fileId
+GET    /document-artifacts/:artifactId
+GET    /document-identity-policy
+PATCH  /document-identity-policy
 
-Document file responses are private, account-scoped, authenticated, checksum-verified PDF
-streams; they are not served from the public data directory. Template bodies accept only the
-allowlisted tokens described in the UI specification and cannot load HTML, scripts, or URLs.
+`POST /document-jobs` snapshots the selected canonical orders and the immutable template version,
+then enqueues one account-scoped `document.generate` job. The worker renders each order from that
+snapshot, records a checksum-bound PDF or a bounded per-order failure, and continues so successful
+documents remain downloadable when another order fails. Batch details expose resumable item
+progress, immutable template/snapshot metadata, manifest, merged-PDF, ZIP, and per-order artifact
+records. Retry re-queues only failed items and uses a new deterministic job attempt; cancellation
+is local and never calls WooCommerce.
+
+`GET /document-artifacts/:artifactId` is the only batch artifact stream. It requires an
+authenticated account session, validates the account-scoped database record and checksum-bound
+private path, sets `Content-Security-Policy: default-src 'none'`, `Cache-Control: private, no-store`,
+and never serves from the public data directory. Template bodies accept only the allowlisted tokens
+described in the UI specification and cannot load HTML, scripts, or URLs. Artifact ZIP manifests
+and filenames are deterministic and reject traversal.
+
+Invoice numbering and legal invoice wording are disabled by default. The identity-policy endpoint
+requires an administrator and an explicit external approval reference before enabling legal invoice
+mode; the application records the policy boundary but does not assert tax/legal compliance.
 ```
 
 ## Analytics

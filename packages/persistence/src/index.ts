@@ -548,6 +548,83 @@ export type DocumentFileRecord = Readonly<{
   createdBy: string;
   createdAt: string;
 }>;
+export type DocumentArtifactKind = 'order-pdf' | 'merged-pdf' | 'zip' | 'manifest';
+export type DocumentArtifactMimeType = 'application/pdf' | 'application/zip' | 'application/json';
+export type DocumentArtifactRecord = Readonly<{
+  id: string;
+  accountId: string;
+  batchId: string;
+  orderId: string | null;
+  templateId: string;
+  templateVersion: number;
+  format: DocumentTemplateFormat;
+  kind: DocumentArtifactKind;
+  relativePath: string;
+  filename: string;
+  mimeType: DocumentArtifactMimeType;
+  byteSize: number;
+  checksum: string;
+  snapshotHash: string;
+  createdBy: string;
+  createdAt: string;
+}>;
+export type DocumentBatchStatus =
+  'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled';
+export type DocumentBatchItemStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+export type DocumentBatchItemRecord = Readonly<{
+  batchId: string;
+  position: number;
+  orderId: string;
+  snapshot: Record<string, unknown>;
+  snapshotHash: string;
+  documentNumber: string | null;
+  status: DocumentBatchItemStatus;
+  attemptCount: number;
+  artifactId: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}>;
+export type DocumentIdentityPolicy = Readonly<{
+  accountId: string;
+  invoiceNumberingEnabled: boolean;
+  legalInvoiceEnabled: boolean;
+  approvalReference: string | null;
+  invoicePrefix: string;
+  nextInvoiceSequence: number;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}>;
+export type DocumentBatchRecord = Readonly<{
+  id: string;
+  accountId: string;
+  selectionId: string;
+  templateId: string;
+  templateVersion: number;
+  template: DocumentTemplateRecord;
+  action: 'generate-invoice' | 'generate-thermal' | 'generate-label' | 'print-documents';
+  format: DocumentTemplateFormat;
+  status: DocumentBatchStatus;
+  jobId: string | null;
+  idempotencyKey: string;
+  snapshotHash: string;
+  totalCount: number;
+  processedCount: number;
+  succeededCount: number;
+  failedCount: number;
+  attemptCount: number;
+  mergedArtifactId: string | null;
+  zipArtifactId: string | null;
+  manifestArtifactId: string | null;
+  legalInvoiceEnabled: boolean;
+  invoiceNumberingEnabled: boolean;
+  error: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}>;
 export type AccountRecord = Readonly<{
   id: string;
   name: string;
@@ -1663,7 +1740,7 @@ const compileFilter = (
   };
 };
 
-export const schemaVersion = 18;
+export const schemaVersion = 19;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -2184,6 +2261,70 @@ const migrations: readonly Migration[] = [
       CREATE INDEX export_batch_snapshots_account_order ON export_batch_snapshots(account_id, batch_id, order_id);
     `,
   },
+  {
+    version: 19,
+    name: 'durable-document-batches-and-private-artifacts',
+    sql: `
+      CREATE TABLE document_identity_policies (
+        account_id TEXT PRIMARY KEY REFERENCES accounts(id),
+        invoice_numbering_enabled INTEGER NOT NULL DEFAULT 0 CHECK(invoice_numbering_enabled IN (0, 1)),
+        legal_invoice_enabled INTEGER NOT NULL DEFAULT 0 CHECK(legal_invoice_enabled IN (0, 1)),
+        approval_reference TEXT,
+        invoice_prefix TEXT NOT NULL DEFAULT 'INV',
+        next_invoice_sequence INTEGER NOT NULL DEFAULT 1 CHECK(next_invoice_sequence >= 1),
+        updated_by TEXT REFERENCES users(id),
+        updated_at TEXT
+      );
+      CREATE TABLE document_batches (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id),
+        selection_id TEXT NOT NULL, template_id TEXT NOT NULL, template_version INTEGER NOT NULL CHECK(template_version >= 1),
+        template_snapshot_json TEXT NOT NULL, action TEXT NOT NULL CHECK(action IN ('generate-invoice', 'generate-thermal', 'generate-label', 'print-documents')),
+        format TEXT NOT NULL CHECK(format IN ('a4', 'a5', 'thermal-80mm', 'label-100x150mm')),
+        status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'completed', 'partial', 'failed', 'cancelled')),
+        job_id TEXT, idempotency_key TEXT NOT NULL, snapshot_hash TEXT NOT NULL,
+        total_count INTEGER NOT NULL CHECK(total_count >= 1), processed_count INTEGER NOT NULL DEFAULT 0 CHECK(processed_count >= 0),
+        succeeded_count INTEGER NOT NULL DEFAULT 0 CHECK(succeeded_count >= 0), failed_count INTEGER NOT NULL DEFAULT 0 CHECK(failed_count >= 0),
+        attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count >= 0), merged_artifact_id TEXT, zip_artifact_id TEXT,
+        manifest_artifact_id TEXT, legal_invoice_enabled INTEGER NOT NULL DEFAULT 0 CHECK(legal_invoice_enabled IN (0, 1)),
+        invoice_numbering_enabled INTEGER NOT NULL DEFAULT 0 CHECK(invoice_numbering_enabled IN (0, 1)),
+        error TEXT, created_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT,
+        UNIQUE(account_id, id), UNIQUE(account_id, idempotency_key),
+        FOREIGN KEY(account_id, selection_id) REFERENCES selection_snapshots(account_id, id),
+        FOREIGN KEY(account_id, template_id) REFERENCES document_templates(account_id, id)
+      );
+      CREATE INDEX document_batches_account_status ON document_batches(account_id, status, updated_at, id);
+      CREATE TABLE document_batch_items (
+        account_id TEXT NOT NULL REFERENCES accounts(id), batch_id TEXT NOT NULL, position INTEGER NOT NULL CHECK(position >= 0),
+        order_id TEXT NOT NULL, snapshot_json TEXT NOT NULL, snapshot_hash TEXT NOT NULL, document_number TEXT,
+        status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
+        attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count >= 0), artifact_id TEXT, error TEXT,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT,
+        PRIMARY KEY(account_id, batch_id, position), UNIQUE(account_id, batch_id, order_id),
+        FOREIGN KEY(account_id, batch_id) REFERENCES document_batches(account_id, id),
+        FOREIGN KEY(account_id, order_id) REFERENCES orders(account_id, id)
+      );
+      CREATE INDEX document_batch_items_claim ON document_batch_items(account_id, batch_id, status, position);
+      CREATE TABLE document_artifacts (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), batch_id TEXT NOT NULL,
+        order_id TEXT, template_id TEXT NOT NULL, template_version INTEGER NOT NULL CHECK(template_version >= 1),
+        format TEXT NOT NULL CHECK(format IN ('a4', 'a5', 'thermal-80mm', 'label-100x150mm')),
+        artifact_type TEXT NOT NULL CHECK(artifact_type IN ('order-pdf', 'merged-pdf', 'zip', 'manifest')),
+        relative_path TEXT NOT NULL, filename TEXT NOT NULL,
+        mime_type TEXT NOT NULL CHECK(mime_type IN ('application/pdf', 'application/zip', 'application/json')),
+        byte_size INTEGER NOT NULL CHECK(byte_size >= 1 AND byte_size <= 100 * 1024 * 1024), checksum TEXT NOT NULL,
+        snapshot_hash TEXT NOT NULL, created_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL,
+        UNIQUE(account_id, id),
+        FOREIGN KEY(account_id, batch_id) REFERENCES document_batches(account_id, id),
+        FOREIGN KEY(account_id, order_id) REFERENCES orders(account_id, id),
+        FOREIGN KEY(account_id, template_id) REFERENCES document_templates(account_id, id)
+      );
+      CREATE UNIQUE INDEX document_artifacts_batch_kind_order
+        ON document_artifacts(account_id, batch_id, artifact_type, COALESCE(order_id, ''));
+      CREATE INDEX document_artifacts_account_batch ON document_artifacts(account_id, batch_id, created_at, id);
+      CREATE INDEX document_artifacts_account_order ON document_artifacts(account_id, order_id, created_at, id);
+      CREATE INDEX document_artifacts_account_checksum ON document_artifacts(account_id, checksum);
+    `,
+  },
 ];
 
 const MAX_SELECTION_IDS = 5_000;
@@ -2195,6 +2336,16 @@ const MAX_JOB_ATTEMPTS = 10;
 const MAX_JOB_ERROR_LENGTH = 500;
 const JOB_RETRY_BASE_MS = 2_000;
 const JOB_RETRY_MAX_MS = 5 * 60_000;
+const MAX_DOCUMENT_BATCH_COUNT = 500;
+const MAX_DOCUMENT_ARTIFACT_COUNT = MAX_DOCUMENT_BATCH_COUNT + 10;
+const MAX_DOCUMENT_SNAPSHOT_JSON = 512 * 1024;
+const MAX_DOCUMENT_ARTIFACT_BYTES = 100 * 1024 * 1024;
+const DOCUMENT_BATCH_ACTIONS: readonly DocumentBatchRecord['action'][] = [
+  'generate-invoice',
+  'generate-thermal',
+  'generate-label',
+  'print-documents',
+];
 const MAX_VIEW_COLUMNS = 100;
 const BULK_ACTIONS: readonly BulkAction[] = [
   'update-local-status',
@@ -2214,6 +2365,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const isBulkAction = (value: unknown): value is BulkAction =>
   typeof value === 'string' && BULK_ACTIONS.includes(value as BulkAction);
+const isDocumentBatchAction = (value: unknown): value is DocumentBatchRecord['action'] =>
+  typeof value === 'string' &&
+  DOCUMENT_BATCH_ACTIONS.includes(value as DocumentBatchRecord['action']);
 const isDurableJobType = (value: unknown): value is DurableJobType =>
   typeof value === 'string' && DURABLE_JOB_TYPES.includes(value as DurableJobType);
 const normalizeIdList = (value: unknown, errorCode: string): string[] => {
@@ -2427,6 +2581,90 @@ type DocumentFileRow = {
   created_by: string;
   created_at: string;
 };
+type DocumentArtifactRow = {
+  id: string;
+  account_id: string;
+  batch_id: string;
+  order_id: string | null;
+  template_id: string;
+  template_version: number;
+  format: DocumentTemplateFormat;
+  artifact_type: DocumentArtifactKind;
+  relative_path: string;
+  filename: string;
+  mime_type: DocumentArtifactMimeType;
+  byte_size: number;
+  checksum: string;
+  snapshot_hash: string;
+  created_by: string;
+  created_at: string;
+};
+type DocumentBatchRow = {
+  id: string;
+  account_id: string;
+  selection_id: string;
+  template_id: string;
+  template_version: number;
+  template_snapshot_json: string;
+  action: DocumentBatchRecord['action'];
+  format: DocumentTemplateFormat;
+  status: DocumentBatchStatus;
+  job_id: string | null;
+  idempotency_key: string;
+  snapshot_hash: string;
+  total_count: number;
+  processed_count: number;
+  succeeded_count: number;
+  failed_count: number;
+  attempt_count: number;
+  merged_artifact_id: string | null;
+  zip_artifact_id: string | null;
+  manifest_artifact_id: string | null;
+  legal_invoice_enabled: number;
+  invoice_numbering_enabled: number;
+  error: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+};
+type DocumentBatchItemRow = {
+  account_id: string;
+  batch_id: string;
+  position: number;
+  order_id: string;
+  snapshot_json: string;
+  snapshot_hash: string;
+  document_number: string | null;
+  status: DocumentBatchItemStatus;
+  attempt_count: number;
+  artifact_id: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+};
+type DocumentIdentityPolicyRow = {
+  account_id: string;
+  invoice_numbering_enabled: number;
+  legal_invoice_enabled: number;
+  approval_reference: string | null;
+  invoice_prefix: string;
+  next_invoice_sequence: number;
+  updated_by: string | null;
+  updated_at: string | null;
+};
+const documentBatchColumns = `id, account_id, selection_id, template_id, template_version,
+  template_snapshot_json, action, format, status, job_id, idempotency_key, snapshot_hash,
+  total_count, processed_count, succeeded_count, failed_count, attempt_count, merged_artifact_id,
+  zip_artifact_id, manifest_artifact_id, legal_invoice_enabled, invoice_numbering_enabled, error,
+  created_by, created_at, updated_at, completed_at`;
+const documentBatchItemColumns = `account_id, batch_id, position, order_id, snapshot_json,
+  snapshot_hash, document_number, status, attempt_count, artifact_id, error, created_at, updated_at,
+  completed_at`;
+const documentArtifactColumns = `id, account_id, batch_id, order_id, template_id, template_version,
+  format, artifact_type, relative_path, filename, mime_type, byte_size, checksum, snapshot_hash,
+  created_by, created_at`;
 type CostRuleRow = {
   id: string;
   account_id: string;
@@ -2664,6 +2902,84 @@ const documentFile = (row: DocumentFileRow): DocumentFileRecord => ({
   checksum: row.checksum,
   createdBy: row.created_by,
   createdAt: row.created_at,
+});
+const documentArtifact = (row: DocumentArtifactRow): DocumentArtifactRecord => ({
+  id: row.id,
+  accountId: row.account_id,
+  batchId: row.batch_id,
+  orderId: row.order_id,
+  templateId: row.template_id,
+  templateVersion: row.template_version,
+  format: row.format,
+  kind: row.artifact_type,
+  relativePath: row.relative_path,
+  filename: row.filename,
+  mimeType: row.mime_type,
+  byteSize: row.byte_size,
+  checksum: row.checksum,
+  snapshotHash: row.snapshot_hash,
+  createdBy: row.created_by,
+  createdAt: row.created_at,
+});
+const documentIdentityPolicy = (row: DocumentIdentityPolicyRow): DocumentIdentityPolicy => ({
+  accountId: row.account_id,
+  invoiceNumberingEnabled: row.invoice_numbering_enabled === 1,
+  legalInvoiceEnabled: row.legal_invoice_enabled === 1,
+  approvalReference: row.approval_reference,
+  invoicePrefix: row.invoice_prefix,
+  nextInvoiceSequence: row.next_invoice_sequence,
+  updatedBy: row.updated_by,
+  updatedAt: row.updated_at,
+});
+const documentBatch = (row: DocumentBatchRow): DocumentBatchRecord => ({
+  id: row.id,
+  accountId: row.account_id,
+  selectionId: row.selection_id,
+  templateId: row.template_id,
+  templateVersion: row.template_version,
+  template: parseStoredJson<DocumentTemplateRecord>(
+    row.template_snapshot_json,
+    'DOCUMENT_TEMPLATE_SNAPSHOT_INVALID',
+  ),
+  action: row.action,
+  format: row.format,
+  status: row.status,
+  jobId: row.job_id,
+  idempotencyKey: row.idempotency_key,
+  snapshotHash: row.snapshot_hash,
+  totalCount: row.total_count,
+  processedCount: row.processed_count,
+  succeededCount: row.succeeded_count,
+  failedCount: row.failed_count,
+  attemptCount: row.attempt_count,
+  mergedArtifactId: row.merged_artifact_id,
+  zipArtifactId: row.zip_artifact_id,
+  manifestArtifactId: row.manifest_artifact_id,
+  legalInvoiceEnabled: row.legal_invoice_enabled === 1,
+  invoiceNumberingEnabled: row.invoice_numbering_enabled === 1,
+  error: row.error,
+  createdBy: row.created_by,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  completedAt: row.completed_at,
+});
+const documentBatchItem = (row: DocumentBatchItemRow): DocumentBatchItemRecord => ({
+  batchId: row.batch_id,
+  position: row.position,
+  orderId: row.order_id,
+  snapshot: parseStoredJson<Record<string, unknown>>(
+    row.snapshot_json,
+    'DOCUMENT_ORDER_SNAPSHOT_INVALID',
+  ),
+  snapshotHash: row.snapshot_hash,
+  documentNumber: row.document_number,
+  status: row.status,
+  attemptCount: row.attempt_count,
+  artifactId: row.artifact_id,
+  error: row.error,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  completedAt: row.completed_at,
 });
 const costRule = (row: CostRuleRow): CostRuleRecord => ({
   id: row.id,
@@ -6161,6 +6477,976 @@ export class SqliteStore {
       )
       .all(context.accountId, orderId) as DocumentFileRow[];
     return rows.map(documentFile);
+  }
+
+  private documentBatchRow(context: AccountContext, batchId: string): DocumentBatchRow {
+    this.assertContext(context);
+    if (typeof batchId !== 'string' || batchId.length < 1 || batchId.length > 256)
+      throw new Error('DOCUMENT_BATCH_ID_INVALID');
+    const row = this.db
+      .prepare(
+        `SELECT ${documentBatchColumns} FROM document_batches WHERE account_id = ? AND id = ?`,
+      )
+      .get(context.accountId, batchId) as DocumentBatchRow | undefined;
+    if (!row) throw new Error('DOCUMENT_BATCH_NOT_FOUND');
+    return row;
+  }
+
+  private documentIdentityPolicyRow(accountId: string): DocumentIdentityPolicyRow | undefined {
+    return this.db
+      .prepare(
+        `SELECT account_id, invoice_numbering_enabled, legal_invoice_enabled, approval_reference,
+          invoice_prefix, next_invoice_sequence, updated_by, updated_at
+         FROM document_identity_policies WHERE account_id = ?`,
+      )
+      .get(accountId) as DocumentIdentityPolicyRow | undefined;
+  }
+
+  private defaultDocumentIdentityPolicy(accountId: string): DocumentIdentityPolicy {
+    return {
+      accountId,
+      invoiceNumberingEnabled: false,
+      legalInvoiceEnabled: false,
+      approvalReference: null,
+      invoicePrefix: 'INV',
+      nextInvoiceSequence: 1,
+      updatedBy: null,
+      updatedAt: null,
+    };
+  }
+
+  getDocumentIdentityPolicy(context: AccountContext): DocumentIdentityPolicy {
+    this.assertMember(context);
+    const row = this.documentIdentityPolicyRow(context.accountId);
+    return row
+      ? documentIdentityPolicy(row)
+      : this.defaultDocumentIdentityPolicy(context.accountId);
+  }
+
+  updateDocumentIdentityPolicy(
+    context: AccountContext,
+    input: Partial<{
+      invoiceNumberingEnabled: boolean;
+      legalInvoiceEnabled: boolean;
+      approvalReference: string | null;
+      invoicePrefix: string;
+      nextInvoiceSequence: number;
+    }>,
+  ): DocumentIdentityPolicy {
+    const actorId = this.requireAccountAdmin(context);
+    const current = this.documentIdentityPolicyRow(context.accountId);
+    const invoiceNumberingEnabled =
+      input.invoiceNumberingEnabled ?? (current ? current.invoice_numbering_enabled === 1 : false);
+    const legalInvoiceEnabled =
+      input.legalInvoiceEnabled ?? (current ? current.legal_invoice_enabled === 1 : false);
+    if (typeof invoiceNumberingEnabled !== 'boolean' || typeof legalInvoiceEnabled !== 'boolean')
+      throw new Error('DOCUMENT_POLICY_INVALID');
+    const invoicePrefix =
+      input.invoicePrefix === undefined
+        ? (current?.invoice_prefix ?? 'INV')
+        : input.invoicePrefix.trim().toUpperCase();
+    if (!/^[A-Z0-9][A-Z0-9_-]{0,19}$/u.test(invoicePrefix))
+      throw new Error('DOCUMENT_INVOICE_PREFIX_INVALID');
+    const nextInvoiceSequence = input.nextInvoiceSequence ?? current?.next_invoice_sequence ?? 1;
+    if (
+      !Number.isSafeInteger(nextInvoiceSequence) ||
+      nextInvoiceSequence < 1 ||
+      nextInvoiceSequence > 999_999_999_999
+    )
+      throw new Error('DOCUMENT_INVOICE_SEQUENCE_INVALID');
+    let approvalReference =
+      input.approvalReference === undefined
+        ? (current?.approval_reference ?? null)
+        : input.approvalReference === null
+          ? null
+          : input.approvalReference.trim();
+    if (
+      approvalReference !== null &&
+      (approvalReference.length < 1 || approvalReference.length > 240)
+    )
+      throw new Error('DOCUMENT_APPROVAL_REFERENCE_INVALID');
+    if (legalInvoiceEnabled && (!invoiceNumberingEnabled || approvalReference === null))
+      throw new Error('DOCUMENT_LEGAL_POLICY_APPROVAL_REQUIRED');
+    if (!legalInvoiceEnabled) approvalReference = null;
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO document_identity_policies
+          (account_id, invoice_numbering_enabled, legal_invoice_enabled, approval_reference,
+           invoice_prefix, next_invoice_sequence, updated_by, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(account_id) DO UPDATE SET invoice_numbering_enabled = excluded.invoice_numbering_enabled,
+           legal_invoice_enabled = excluded.legal_invoice_enabled, approval_reference = excluded.approval_reference,
+           invoice_prefix = excluded.invoice_prefix, next_invoice_sequence = excluded.next_invoice_sequence,
+           updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+      )
+      .run(
+        context.accountId,
+        invoiceNumberingEnabled ? 1 : 0,
+        legalInvoiceEnabled ? 1 : 0,
+        approvalReference,
+        invoicePrefix,
+        nextInvoiceSequence,
+        actorId,
+        now,
+      );
+    this.audit(
+      context,
+      'document-identity-policy.updated',
+      'document_identity_policy',
+      context.accountId,
+      {
+        invoiceNumberingEnabled,
+        legalInvoiceEnabled,
+        invoicePrefix,
+        hasApprovalReference: approvalReference !== null,
+      },
+    );
+    return documentIdentityPolicy(
+      this.documentIdentityPolicyRow(context.accountId) as DocumentIdentityPolicyRow,
+    );
+  }
+
+  createDocumentBatch(
+    context: AccountContext,
+    input: {
+      selectionId: string;
+      action: DocumentBatchRecord['action'];
+      templateId: string;
+      format?: DocumentTemplateFormat;
+      idempotencyKey: string;
+    },
+  ): DocumentBatchRecord {
+    const actorId = this.requireMutationActor(context);
+    if (!isDocumentBatchAction(input.action)) throw new Error('DOCUMENT_ACTION_NOT_ALLOWED');
+    if (
+      typeof input.idempotencyKey !== 'string' ||
+      input.idempotencyKey.length < 1 ||
+      input.idempotencyKey.length > 200 ||
+      /[\u0000-\u001f\u007f]/u.test(input.idempotencyKey)
+    )
+      throw new Error('DOCUMENT_IDEMPOTENCY_KEY_INVALID');
+    const existing = this.db
+      .prepare(
+        `SELECT ${documentBatchColumns} FROM document_batches WHERE account_id = ? AND idempotency_key = ?`,
+      )
+      .get(context.accountId, input.idempotencyKey) as DocumentBatchRow | undefined;
+    if (existing) {
+      if (
+        existing.selection_id !== input.selectionId ||
+        existing.template_id !== input.templateId ||
+        existing.action !== input.action ||
+        (input.format !== undefined && existing.format !== input.format)
+      )
+        throw new Error('DOCUMENT_IDEMPOTENCY_CONFLICT');
+      return documentBatch(existing);
+    }
+    const template = documentTemplate(this.documentTemplateRow(context, input.templateId));
+    const format =
+      input.format ??
+      (input.action === 'generate-thermal'
+        ? 'thermal-80mm'
+        : input.action === 'generate-label'
+          ? 'label-100x150mm'
+          : template.format);
+    normalizeDocumentFormat(format);
+    const selectionRow = this.selectionRow(context, input.selectionId);
+    this.assertSelectionActive(selectionRow);
+    const selection = this.selectionData(selectionRow);
+    const where = this.compileSelectionWhere(context, selection);
+    const selected = this.db
+      .prepare(`SELECT o.id FROM orders o WHERE ${where.sql} ORDER BY o.id LIMIT ?`)
+      .all(...where.params, MAX_DOCUMENT_BATCH_COUNT + 1) as Array<{ id: string }>;
+    if (selected.length === 0) throw new Error('DOCUMENT_BATCH_EMPTY');
+    if (selected.length > MAX_DOCUMENT_BATCH_COUNT) throw new Error('DOCUMENT_BATCH_SIZE_INVALID');
+    const templateSnapshotJson = serializeBoundedJson(
+      template,
+      64 * 1024,
+      'DOCUMENT_TEMPLATE_SNAPSHOT_TOO_LARGE',
+    );
+    const items = selected.map((selectedOrder, position) => {
+      const order = this.getOrder(context, selectedOrder.id);
+      if (!order) throw new Error('DOCUMENT_ORDER_SNAPSHOT_NOT_FOUND');
+      const snapshotJson = serializeBoundedJson(
+        order,
+        MAX_DOCUMENT_SNAPSHOT_JSON,
+        'DOCUMENT_ORDER_SNAPSHOT_TOO_LARGE',
+      );
+      return {
+        position,
+        orderId: selectedOrder.id,
+        snapshotJson,
+        snapshotHash: requireHash(snapshotJson),
+      };
+    });
+    const policy = this.documentIdentityPolicyRow(context.accountId);
+    const invoiceNumberingEnabled =
+      input.action === 'generate-invoice' && (policy?.invoice_numbering_enabled ?? 0) === 1;
+    const legalInvoiceEnabled =
+      input.action === 'generate-invoice' && (policy?.legal_invoice_enabled ?? 0) === 1;
+    const invoicePrefix = policy?.invoice_prefix ?? 'INV';
+    const firstSequence = policy?.next_invoice_sequence ?? 1;
+    if (invoiceNumberingEnabled && firstSequence + items.length - 1 > 999_999_999_999)
+      throw new Error('DOCUMENT_INVOICE_SEQUENCE_EXHAUSTED');
+    const snapshotHash = requireHash(
+      JSON.stringify({
+        selectionId: input.selectionId,
+        action: input.action,
+        format,
+        templateHash: requireHash(templateSnapshotJson),
+        items: items.map((item) => ({
+          position: item.position,
+          orderId: item.orderId,
+          hash: item.snapshotHash,
+        })),
+      }),
+    );
+    const batchId = randomId();
+    const jobId = randomId();
+    const now = new Date().toISOString();
+    const jobKey = `document:${batchId}`;
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO document_batches
+            (id, account_id, selection_id, template_id, template_version, template_snapshot_json,
+             action, format, status, job_id, idempotency_key, snapshot_hash, total_count,
+             created_by, created_at, updated_at, legal_invoice_enabled, invoice_numbering_enabled)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          batchId,
+          context.accountId,
+          input.selectionId,
+          input.templateId,
+          template.version,
+          templateSnapshotJson,
+          input.action,
+          format,
+          jobId,
+          input.idempotencyKey,
+          snapshotHash,
+          items.length,
+          actorId,
+          now,
+          now,
+          legalInvoiceEnabled ? 1 : 0,
+          invoiceNumberingEnabled ? 1 : 0,
+        );
+      const insertItem = this.db.prepare(
+        `INSERT INTO document_batch_items
+          (account_id, batch_id, position, order_id, snapshot_json, snapshot_hash, document_number,
+           status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)`,
+      );
+      for (const item of items) {
+        const documentNumber = invoiceNumberingEnabled
+          ? `${invoicePrefix}-${String(firstSequence + item.position).padStart(8, '0')}`
+          : null;
+        insertItem.run(
+          context.accountId,
+          batchId,
+          item.position,
+          item.orderId,
+          item.snapshotJson,
+          item.snapshotHash,
+          documentNumber,
+          now,
+          now,
+        );
+      }
+      this.db
+        .prepare(
+          `INSERT INTO jobs
+            (id, account_id, type, idempotency_key, status, attempts, created_at, updated_at,
+             payload_json, max_attempts, available_at)
+           VALUES (?, ?, 'document.generate', ?, 'queued', 0, ?, ?, ?, 5, ?)`,
+        )
+        .run(
+          jobId,
+          context.accountId,
+          jobKey,
+          now,
+          now,
+          JSON.stringify({ documentBatchId: batchId }),
+          now,
+        );
+      if (invoiceNumberingEnabled) {
+        this.db
+          .prepare(
+            `INSERT INTO document_identity_policies
+              (account_id, invoice_numbering_enabled, legal_invoice_enabled, approval_reference,
+               invoice_prefix, next_invoice_sequence, updated_by, updated_at)
+             SELECT account_id, invoice_numbering_enabled, legal_invoice_enabled, approval_reference,
+               invoice_prefix, ?, updated_by, updated_at
+             FROM document_identity_policies WHERE account_id = ?
+             ON CONFLICT(account_id) DO UPDATE SET next_invoice_sequence = excluded.next_invoice_sequence`,
+          )
+          .run(firstSequence + items.length, context.accountId);
+      }
+      this.audit(context, 'document-batch.created', 'document_batch', batchId, {
+        action: input.action,
+        format,
+        count: items.length,
+        templateVersion: template.version,
+        snapshotHash,
+      });
+      this.audit(context, 'job.queued', 'job', jobId, { type: 'document.generate', batchId });
+    })();
+    return documentBatch(this.documentBatchRow(context, batchId));
+  }
+
+  getDocumentBatch(context: AccountContext, batchId: string): DocumentBatchRecord {
+    this.assertMember(context);
+    return documentBatch(this.documentBatchRow(context, batchId));
+  }
+
+  getDocumentBatchForWorker(context: AccountContext, batchId: string): DocumentBatchRecord {
+    return documentBatch(this.documentBatchRow(context, batchId));
+  }
+
+  listDocumentBatches(
+    context: AccountContext,
+    input: { cursor?: string | null; limit?: number; status?: DocumentBatchStatus } = {},
+  ): { items: readonly DocumentBatchRecord[]; nextCursor: string | null; hasMore: boolean } {
+    this.assertMember(context);
+    const limit = input.limit ?? 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error('DOCUMENT_BATCH_LIMIT_INVALID');
+    const clauses = ['account_id = ?'];
+    const params: (string | number)[] = [context.accountId];
+    if (input.status !== undefined) {
+      if (
+        !['queued', 'running', 'completed', 'partial', 'failed', 'cancelled'].includes(input.status)
+      )
+        throw new Error('DOCUMENT_BATCH_STATUS_INVALID');
+      clauses.push('status = ?');
+      params.push(input.status);
+    }
+    if (input.cursor) {
+      const cursor = decodedCursor(input.cursor);
+      clauses.push('(updated_at < ? OR (updated_at = ? AND id < ?))');
+      params.push(cursor.sortValue, cursor.sortValue, cursor.id);
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT ${documentBatchColumns} FROM document_batches WHERE ${clauses.join(' AND ')}
+         ORDER BY updated_at DESC, id DESC LIMIT ?`,
+      )
+      .all(...params, limit + 1) as DocumentBatchRow[];
+    const hasMore = rows.length > limit;
+    const visible = rows.slice(0, limit);
+    const last = visible.at(-1);
+    return {
+      items: visible.map(documentBatch),
+      hasMore,
+      nextCursor:
+        hasMore && last ? encodedCursor({ sortValue: last.updated_at, id: last.id }) : null,
+    };
+  }
+
+  private refreshDocumentBatchForWorker(
+    context: AccountContext,
+    batchId: string,
+    now = new Date().toISOString(),
+  ): void {
+    const counts = this.db
+      .prepare(
+        `SELECT
+          COALESCE(SUM(CASE WHEN status IN ('succeeded', 'failed', 'cancelled') THEN 1 ELSE 0 END), 0) AS processed,
+          COALESCE(SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END), 0) AS succeeded,
+          COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed
+         FROM document_batch_items WHERE account_id = ? AND batch_id = ?`,
+      )
+      .get(context.accountId, batchId) as { processed: number; succeeded: number; failed: number };
+    this.db
+      .prepare(
+        `UPDATE document_batches SET processed_count = ?, succeeded_count = ?, failed_count = ?,
+          updated_at = ? WHERE account_id = ? AND id = ?`,
+      )
+      .run(
+        Number(counts.processed),
+        Number(counts.succeeded),
+        Number(counts.failed),
+        now,
+        context.accountId,
+        batchId,
+      );
+  }
+
+  startDocumentBatchForWorker(context: AccountContext, batchId: string): DocumentBatchRecord {
+    const batch = this.documentBatchRow(context, batchId);
+    if (batch.status === 'queued') {
+      this.db
+        .prepare(
+          `UPDATE document_batches SET status = 'running', attempt_count = attempt_count + 1,
+            error = NULL, updated_at = ? WHERE account_id = ? AND id = ? AND status = 'queued'`,
+        )
+        .run(new Date().toISOString(), context.accountId, batchId);
+    }
+    return documentBatch(this.documentBatchRow(context, batchId));
+  }
+
+  /** Re-queue items left running when a process lost its durable job lease. */
+  resumeDocumentBatchForWorker(context: AccountContext, batchId: string): DocumentBatchRecord {
+    this.assertContext(context);
+    const batch = this.documentBatchRow(context, batchId);
+    if (!['running', 'failed'].includes(batch.status)) return documentBatch(batch);
+    const now = new Date().toISOString();
+    const recovered = this.db
+      .prepare(
+        `UPDATE document_batch_items SET status = 'queued', error = NULL, completed_at = NULL, updated_at = ?
+         WHERE account_id = ? AND batch_id = ? AND status = 'running'`,
+      )
+      .run(now, context.accountId, batchId);
+    if (recovered.changes > 0 || batch.status === 'failed') {
+      this.db
+        .prepare(
+          `UPDATE document_batches SET status = 'running', attempt_count = attempt_count + 1,
+            error = NULL, completed_at = NULL, updated_at = ?
+           WHERE account_id = ? AND id = ? AND status IN ('running', 'failed')`,
+        )
+        .run(now, context.accountId, batchId);
+      this.audit(
+        context,
+        batch.status === 'failed'
+          ? 'document-batch.retry-resumed'
+          : 'document-batch.lease-recovered',
+        'document_batch',
+        batchId,
+        { itemCount: recovered.changes },
+      );
+    }
+    return documentBatch(this.documentBatchRow(context, batchId));
+  }
+
+  claimNextDocumentItem(context: AccountContext, batchId: string): DocumentBatchItemRecord | null {
+    this.assertContext(context);
+    const batch = this.documentBatchRow(context, batchId);
+    if (!['queued', 'running'].includes(batch.status)) return null;
+    const now = new Date().toISOString();
+    const claimed = this.db.transaction(() => {
+      const candidate = this.db
+        .prepare(
+          `SELECT ${documentBatchItemColumns} FROM document_batch_items
+           WHERE account_id = ? AND batch_id = ? AND status = 'queued' ORDER BY position LIMIT 1`,
+        )
+        .get(context.accountId, batchId) as DocumentBatchItemRow | undefined;
+      if (!candidate) return null;
+      const result = this.db
+        .prepare(
+          `UPDATE document_batch_items SET status = 'running', attempt_count = attempt_count + 1,
+            updated_at = ? WHERE account_id = ? AND batch_id = ? AND position = ? AND status = 'queued'`,
+        )
+        .run(now, context.accountId, batchId, candidate.position);
+      if (result.changes !== 1) return null;
+      this.db
+        .prepare(
+          `UPDATE document_batches SET status = 'running', updated_at = ?
+           WHERE account_id = ? AND id = ? AND status = 'queued'`,
+        )
+        .run(now, context.accountId, batchId);
+      return this.db
+        .prepare(
+          `SELECT ${documentBatchItemColumns} FROM document_batch_items WHERE account_id = ? AND batch_id = ? AND position = ?`,
+        )
+        .get(context.accountId, batchId, candidate.position) as DocumentBatchItemRow;
+    })();
+    return claimed ? documentBatchItem(claimed) : null;
+  }
+
+  listDocumentBatchItems(
+    context: AccountContext,
+    batchId: string,
+    input: { cursor?: string | null; limit?: number } = {},
+  ): { items: readonly DocumentBatchItemRecord[]; nextCursor: string | null; hasMore: boolean } {
+    this.assertMember(context);
+    this.documentBatchRow(context, batchId);
+    const limit = input.limit ?? 100;
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_DOCUMENT_BATCH_COUNT)
+      throw new Error('DOCUMENT_BATCH_ITEM_LIMIT_INVALID');
+    const params: (string | number)[] = [context.accountId, batchId];
+    // Positions are zero-based, so the first page must start before position 0.
+    let cursor = -1;
+    if (input.cursor) {
+      const decoded = decodedCursor(input.cursor);
+      cursor = Number(decoded.id);
+      if (!Number.isInteger(cursor) || cursor < 0) throw new Error('DOCUMENT_BATCH_CURSOR_INVALID');
+    }
+    params.push(cursor);
+    const rows = this.db
+      .prepare(
+        `SELECT ${documentBatchItemColumns} FROM document_batch_items
+         WHERE account_id = ? AND batch_id = ? AND position > ? ORDER BY position LIMIT ?`,
+      )
+      .all(...params, limit + 1) as DocumentBatchItemRow[];
+    const hasMore = rows.length > limit;
+    const visible = rows.slice(0, limit);
+    return {
+      items: visible.map(documentBatchItem),
+      hasMore,
+      nextCursor:
+        hasMore && visible.length > 0
+          ? encodedCursor({ sortValue: '', id: String(visible.at(-1)!.position) })
+          : null,
+    };
+  }
+
+  completeDocumentBatchItemForWorker(
+    context: AccountContext,
+    batchId: string,
+    position: number,
+    artifactId: string,
+  ): DocumentBatchItemRecord {
+    this.assertContext(context);
+    if (
+      !Number.isInteger(position) ||
+      position < 0 ||
+      typeof artifactId !== 'string' ||
+      artifactId.length < 1
+    )
+      throw new Error('DOCUMENT_BATCH_ITEM_RESULT_INVALID');
+    const now = new Date().toISOString();
+    const item = this.db
+      .prepare(
+        `SELECT ${documentBatchItemColumns} FROM document_batch_items WHERE account_id = ? AND batch_id = ? AND position = ?`,
+      )
+      .get(context.accountId, batchId, position) as DocumentBatchItemRow | undefined;
+    if (!item) throw new Error('DOCUMENT_BATCH_ITEM_NOT_FOUND');
+    if (item.status === 'succeeded') return documentBatchItem(item);
+    if (item.status !== 'running') throw new Error('DOCUMENT_BATCH_ITEM_STATE_INVALID');
+    const artifact = this.db
+      .prepare(
+        `SELECT artifact_type, order_id FROM document_artifacts
+         WHERE account_id = ? AND batch_id = ? AND id = ?`,
+      )
+      .get(context.accountId, batchId, artifactId) as
+      { artifact_type: DocumentArtifactKind; order_id: string | null } | undefined;
+    if (!artifact || artifact.artifact_type !== 'order-pdf' || artifact.order_id !== item.order_id)
+      throw new Error('DOCUMENT_ARTIFACT_ITEM_CONFLICT');
+    this.db
+      .prepare(
+        `UPDATE document_batch_items SET status = 'succeeded', artifact_id = ?, error = NULL,
+          completed_at = ?, updated_at = ? WHERE account_id = ? AND batch_id = ? AND position = ? AND status = 'running'`,
+      )
+      .run(artifactId, now, now, context.accountId, batchId, position);
+    this.refreshDocumentBatchForWorker(context, batchId, now);
+    return documentBatchItem(
+      this.db
+        .prepare(
+          `SELECT ${documentBatchItemColumns} FROM document_batch_items WHERE account_id = ? AND batch_id = ? AND position = ?`,
+        )
+        .get(context.accountId, batchId, position) as DocumentBatchItemRow,
+    );
+  }
+
+  failDocumentBatchItemForWorker(
+    context: AccountContext,
+    batchId: string,
+    position: number,
+    error: string,
+  ): DocumentBatchItemRecord {
+    this.assertContext(context);
+    if (!Number.isInteger(position) || position < 0)
+      throw new Error('DOCUMENT_BATCH_ITEM_RESULT_INVALID');
+    const message =
+      typeof error === 'string' && error.trim()
+        ? error.trim().slice(0, 500)
+        : 'DOCUMENT_GENERATION_FAILED';
+    const now = new Date().toISOString();
+    const item = this.db
+      .prepare(
+        `SELECT ${documentBatchItemColumns} FROM document_batch_items WHERE account_id = ? AND batch_id = ? AND position = ?`,
+      )
+      .get(context.accountId, batchId, position) as DocumentBatchItemRow | undefined;
+    if (!item) throw new Error('DOCUMENT_BATCH_ITEM_NOT_FOUND');
+    if (item.status === 'failed') return documentBatchItem(item);
+    if (item.status !== 'running') throw new Error('DOCUMENT_BATCH_ITEM_STATE_INVALID');
+    this.db
+      .prepare(
+        `UPDATE document_batch_items SET status = 'failed', error = ?, completed_at = ?, updated_at = ?
+         WHERE account_id = ? AND batch_id = ? AND position = ? AND status = 'running'`,
+      )
+      .run(message, now, now, context.accountId, batchId, position);
+    this.refreshDocumentBatchForWorker(context, batchId, now);
+    return documentBatchItem(
+      this.db
+        .prepare(
+          `SELECT ${documentBatchItemColumns} FROM document_batch_items WHERE account_id = ? AND batch_id = ? AND position = ?`,
+        )
+        .get(context.accountId, batchId, position) as DocumentBatchItemRow,
+    );
+  }
+
+  getDocumentBatchItemsForWorker(
+    context: AccountContext,
+    batchId: string,
+    limit = MAX_DOCUMENT_BATCH_COUNT,
+  ): DocumentBatchItemRecord[] {
+    this.assertContext(context);
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_DOCUMENT_BATCH_COUNT)
+      throw new Error('DOCUMENT_BATCH_ITEM_LIMIT_INVALID');
+    this.documentBatchRow(context, batchId);
+    return (
+      this.db
+        .prepare(
+          `SELECT ${documentBatchItemColumns} FROM document_batch_items
+           WHERE account_id = ? AND batch_id = ? ORDER BY position LIMIT ?`,
+        )
+        .all(context.accountId, batchId, limit) as DocumentBatchItemRow[]
+    ).map(documentBatchItem);
+  }
+
+  completeDocumentBatchForWorker(
+    context: AccountContext,
+    batchId: string,
+    input: {
+      mergedArtifactId?: string | null;
+      zipArtifactId?: string | null;
+      manifestArtifactId: string;
+    },
+  ): DocumentBatchRecord {
+    this.assertContext(context);
+    const batch = this.documentBatchRow(context, batchId);
+    const pending = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM document_batch_items
+         WHERE account_id = ? AND batch_id = ? AND status IN ('queued', 'running')`,
+      )
+      .get(context.accountId, batchId) as { count: number };
+    if (Number(pending.count) > 0) throw new Error('DOCUMENT_BATCH_ITEMS_PENDING');
+    const artifacts: Array<{ id: string; kind: DocumentArtifactKind }> = [];
+    for (const artifact of [
+      { id: input.mergedArtifactId, kind: 'merged-pdf' as const },
+      { id: input.zipArtifactId, kind: 'zip' as const },
+      { id: input.manifestArtifactId, kind: 'manifest' as const },
+    ]) {
+      if (typeof artifact.id === 'string') artifacts.push({ id: artifact.id, kind: artifact.kind });
+    }
+    for (const expected of artifacts) {
+      const stored = this.db
+        .prepare(
+          'SELECT artifact_type FROM document_artifacts WHERE account_id = ? AND batch_id = ? AND id = ?',
+        )
+        .get(context.accountId, batchId, expected.id) as
+        { artifact_type: DocumentArtifactKind } | undefined;
+      if (!stored) throw new Error('DOCUMENT_ARTIFACT_NOT_FOUND');
+      if (stored.artifact_type !== expected.kind) throw new Error('DOCUMENT_ARTIFACT_KIND_INVALID');
+    }
+    this.refreshDocumentBatchForWorker(context, batchId);
+    const refreshed = this.documentBatchRow(context, batchId);
+    const status: DocumentBatchStatus = refreshed.failed_count > 0 ? 'partial' : 'completed';
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `UPDATE document_batches SET status = ?, merged_artifact_id = ?, zip_artifact_id = ?,
+          manifest_artifact_id = ?, error = NULL, completed_at = ?, updated_at = ?
+         WHERE account_id = ? AND id = ? AND status IN ('queued', 'running')`,
+      )
+      .run(
+        status,
+        input.mergedArtifactId ?? null,
+        input.zipArtifactId ?? null,
+        input.manifestArtifactId,
+        now,
+        now,
+        context.accountId,
+        batchId,
+      );
+    return documentBatch(this.documentBatchRow(context, batchId));
+  }
+
+  failDocumentBatchForWorker(
+    context: AccountContext,
+    batchId: string,
+    error: string,
+  ): DocumentBatchRecord {
+    this.assertContext(context);
+    const message =
+      typeof error === 'string' && error.trim()
+        ? error.trim().slice(0, 500)
+        : 'DOCUMENT_BATCH_FAILED';
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `UPDATE document_batches SET status = 'failed', error = ?, completed_at = ?, updated_at = ?
+         WHERE account_id = ? AND id = ? AND status IN ('queued', 'running')`,
+      )
+      .run(message, now, now, context.accountId, batchId);
+    return documentBatch(this.documentBatchRow(context, batchId));
+  }
+
+  cancelDocumentBatchForWorker(context: AccountContext, batchId: string): DocumentBatchRecord {
+    this.assertContext(context);
+    const now = new Date().toISOString();
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE document_batch_items SET status = 'cancelled', completed_at = ?, updated_at = ?
+           WHERE account_id = ? AND batch_id = ? AND status IN ('queued', 'running')`,
+        )
+        .run(now, now, context.accountId, batchId);
+      this.db
+        .prepare(
+          `UPDATE document_batches SET status = 'cancelled', error = 'JOB_CANCELLED', completed_at = ?, updated_at = ?
+           WHERE account_id = ? AND id = ? AND status IN ('queued', 'running')`,
+        )
+        .run(now, now, context.accountId, batchId);
+      this.refreshDocumentBatchForWorker(context, batchId, now);
+    })();
+    return documentBatch(this.documentBatchRow(context, batchId));
+  }
+
+  retryDocumentBatchFailures(context: AccountContext, batchId: string): DocumentBatchRecord {
+    const actorId = this.requireMutationActor(context);
+    const batch = this.documentBatchRow(context, batchId);
+    if (!['partial', 'failed'].includes(batch.status))
+      throw new Error('DOCUMENT_RETRY_NOT_AVAILABLE');
+    const failed = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM document_batch_items WHERE account_id = ? AND batch_id = ? AND status = 'failed'`,
+      )
+      .get(context.accountId, batchId) as { count: number };
+    if (Number(failed.count) < 1 && batch.status !== 'failed')
+      throw new Error('DOCUMENT_RETRY_NOT_AVAILABLE');
+    const attempt = batch.attempt_count + 1;
+    const now = new Date().toISOString();
+    const jobId = randomId();
+    const jobKey = `document:${batchId}:retry:${attempt}`;
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE document_batch_items SET status = 'queued', error = NULL, completed_at = NULL, updated_at = ?
+           WHERE account_id = ? AND batch_id = ? AND status = 'failed'`,
+        )
+        .run(now, context.accountId, batchId);
+      this.db
+        .prepare(
+          `UPDATE document_batches SET status = 'queued', job_id = ?, attempt_count = ?, error = NULL,
+           completed_at = NULL, updated_at = ? WHERE account_id = ? AND id = ?`,
+        )
+        .run(jobId, attempt, now, context.accountId, batchId);
+      this.db
+        .prepare(
+          `INSERT INTO jobs
+            (id, account_id, type, idempotency_key, status, attempts, created_at, updated_at,
+             payload_json, max_attempts, available_at)
+           VALUES (?, ?, 'document.generate', ?, 'queued', 0, ?, ?, ?, 5, ?)`,
+        )
+        .run(
+          jobId,
+          context.accountId,
+          jobKey,
+          now,
+          now,
+          JSON.stringify({ documentBatchId: batchId }),
+          now,
+        );
+      this.audit(context, 'document-batch.retried', 'document_batch', batchId, {
+        attempt,
+        failedCount: Number(failed.count),
+        actorId,
+      });
+      this.audit(context, 'job.queued', 'job', jobId, { type: 'document.generate', batchId });
+    })();
+    return documentBatch(this.documentBatchRow(context, batchId));
+  }
+
+  private registerDocumentArtifactInternal(
+    context: AccountContext,
+    input: {
+      id: string;
+      batchId: string;
+      orderId?: string | null;
+      templateId: string;
+      templateVersion: number;
+      format: DocumentTemplateFormat;
+      kind: DocumentArtifactKind;
+      relativePath: string;
+      filename: string;
+      mimeType: DocumentArtifactMimeType;
+      byteSize: number;
+      checksum: string;
+      snapshotHash: string;
+    },
+    actorId: string,
+  ): DocumentArtifactRecord {
+    this.assertContext(context);
+    const batch = this.documentBatchRow(context, input.batchId);
+    if (
+      typeof input.id !== 'string' ||
+      input.id.length < 1 ||
+      input.id.length > 256 ||
+      /[\u0000-\u001f\u007f]/u.test(input.id)
+    )
+      throw new Error('DOCUMENT_ARTIFACT_ID_INVALID');
+    if (input.templateId !== batch.template_id || input.templateVersion !== batch.template_version)
+      throw new Error('DOCUMENT_TEMPLATE_VERSION_CONFLICT');
+    normalizeDocumentFormat(input.format);
+    if (!['order-pdf', 'merged-pdf', 'zip', 'manifest'].includes(input.kind))
+      throw new Error('DOCUMENT_ARTIFACT_KIND_INVALID');
+    const expectedMime: Record<DocumentArtifactKind, DocumentArtifactMimeType> = {
+      'order-pdf': 'application/pdf',
+      'merged-pdf': 'application/pdf',
+      zip: 'application/zip',
+      manifest: 'application/json',
+    };
+    if (input.mimeType !== expectedMime[input.kind])
+      throw new Error('DOCUMENT_ARTIFACT_MIME_INVALID');
+    if (input.kind === 'order-pdf' && !input.orderId)
+      throw new Error('DOCUMENT_ARTIFACT_ORDER_REQUIRED');
+    if (input.kind !== 'order-pdf' && input.orderId !== undefined && input.orderId !== null)
+      throw new Error('DOCUMENT_ARTIFACT_ORDER_INVALID');
+    if (
+      !/^[A-Za-z0-9_-]{1,80}(?:\/[A-Za-z0-9_-]{1,80})*\.(?:pdf|zip|json)$/u.test(input.relativePath)
+    )
+      throw new Error('DOCUMENT_ARTIFACT_PATH_INVALID');
+    const extension =
+      input.kind === 'merged-pdf' || input.kind === 'order-pdf'
+        ? 'pdf'
+        : input.kind === 'zip'
+          ? 'zip'
+          : 'json';
+    if (input.relativePath !== `${context.accountId}/${input.batchId}/${input.id}.${extension}`)
+      throw new Error('DOCUMENT_ARTIFACT_PATH_INVALID');
+    const filename = normalizeDocumentText(input.filename, 'DOCUMENT_ARTIFACT_NAME_INVALID', 180);
+    if (/[/\\\r\n]/u.test(filename)) throw new Error('DOCUMENT_ARTIFACT_NAME_INVALID');
+    if (
+      !Number.isInteger(input.byteSize) ||
+      input.byteSize < 1 ||
+      input.byteSize > MAX_DOCUMENT_ARTIFACT_BYTES
+    )
+      throw new Error('DOCUMENT_ARTIFACT_SIZE_INVALID');
+    if (!/^[a-f0-9]{64}$/iu.test(input.checksum) || !/^[a-f0-9]{64}$/iu.test(input.snapshotHash))
+      throw new Error('DOCUMENT_ARTIFACT_CHECKSUM_INVALID');
+    if (input.orderId) {
+      const item = this.db
+        .prepare(
+          `SELECT 1 FROM document_batch_items WHERE account_id = ? AND batch_id = ? AND order_id = ?`,
+        )
+        .get(context.accountId, input.batchId, input.orderId);
+      if (!item) throw new Error('DOCUMENT_ORDER_NOT_IN_BATCH');
+    }
+    const now = new Date().toISOString();
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO document_artifacts
+            (id, account_id, batch_id, order_id, template_id, template_version, format, artifact_type,
+             relative_path, filename, mime_type, byte_size, checksum, snapshot_hash, created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          input.id,
+          context.accountId,
+          input.batchId,
+          input.orderId ?? null,
+          input.templateId,
+          input.templateVersion,
+          input.format,
+          input.kind,
+          input.relativePath,
+          filename,
+          input.mimeType,
+          input.byteSize,
+          input.checksum.toLowerCase(),
+          input.snapshotHash.toLowerCase(),
+          actorId,
+          now,
+        );
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE')) {
+        const existing = this.db
+          .prepare(
+            `SELECT ${documentArtifactColumns} FROM document_artifacts WHERE account_id = ? AND id = ?`,
+          )
+          .get(context.accountId, input.id) as DocumentArtifactRow | undefined;
+        if (existing && existing.checksum === input.checksum.toLowerCase())
+          return documentArtifact(existing);
+      }
+      throw error;
+    }
+    this.audit(context, 'document-artifact.created', 'document_artifact', input.id, {
+      batchId: input.batchId,
+      orderId: input.orderId ?? null,
+      kind: input.kind,
+    });
+    return documentArtifact(
+      this.db
+        .prepare(
+          `SELECT ${documentArtifactColumns} FROM document_artifacts WHERE account_id = ? AND id = ?`,
+        )
+        .get(context.accountId, input.id) as DocumentArtifactRow,
+    );
+  }
+
+  registerDocumentArtifact(
+    context: AccountContext,
+    input: Parameters<SqliteStore['registerDocumentArtifactInternal']>[1],
+  ): DocumentArtifactRecord {
+    const actorId = this.requireMutationActor(context);
+    return this.registerDocumentArtifactInternal(context, input, actorId);
+  }
+
+  registerDocumentArtifactForWorker(
+    context: AccountContext,
+    input: Parameters<SqliteStore['registerDocumentArtifactInternal']>[1],
+  ): DocumentArtifactRecord {
+    const batch = this.documentBatchRow(context, input.batchId);
+    return this.registerDocumentArtifactInternal(context, input, batch.created_by);
+  }
+
+  getDocumentArtifact(context: AccountContext, artifactId: string): DocumentArtifactRecord {
+    this.assertMember(context);
+    const row = this.db
+      .prepare(
+        `SELECT ${documentArtifactColumns} FROM document_artifacts WHERE account_id = ? AND id = ?`,
+      )
+      .get(context.accountId, artifactId) as DocumentArtifactRow | undefined;
+    if (!row) throw new Error('DOCUMENT_ARTIFACT_NOT_FOUND');
+    return documentArtifact(row);
+  }
+
+  getDocumentArtifactForWorker(
+    context: AccountContext,
+    artifactId: string,
+  ): DocumentArtifactRecord {
+    this.assertContext(context);
+    const row = this.db
+      .prepare(
+        `SELECT ${documentArtifactColumns} FROM document_artifacts WHERE account_id = ? AND id = ?`,
+      )
+      .get(context.accountId, artifactId) as DocumentArtifactRow | undefined;
+    if (!row) throw new Error('DOCUMENT_ARTIFACT_NOT_FOUND');
+    return documentArtifact(row);
+  }
+
+  listDocumentArtifacts(
+    context: AccountContext,
+    input: { batchId?: string; orderId?: string; limit?: number } = {},
+  ): DocumentArtifactRecord[] {
+    this.assertMember(context);
+    const limit = input.limit ?? MAX_DOCUMENT_ARTIFACT_COUNT;
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_DOCUMENT_ARTIFACT_COUNT)
+      throw new Error('DOCUMENT_ARTIFACT_LIMIT_INVALID');
+    const clauses = ['account_id = ?'];
+    const params: (string | number)[] = [context.accountId];
+    if (input.batchId !== undefined) {
+      clauses.push('batch_id = ?');
+      params.push(input.batchId);
+    }
+    if (input.orderId !== undefined) {
+      clauses.push('order_id = ?');
+      params.push(input.orderId);
+    }
+    return (
+      this.db
+        .prepare(
+          `SELECT ${documentArtifactColumns} FROM document_artifacts WHERE ${clauses.join(' AND ')}
+           ORDER BY created_at DESC, id DESC LIMIT ?`,
+        )
+        .all(...params, limit) as DocumentArtifactRow[]
+    ).map(documentArtifact);
   }
 
   private normalizeColumns(value: unknown): string[] {
