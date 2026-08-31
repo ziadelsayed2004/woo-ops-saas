@@ -85,9 +85,42 @@ const bulkActionSchema = z.enum([
 ]);
 const orderSortSchema = z
   .object({
-    field: z.enum(['remoteCreatedAt', 'updatedAt', 'orderNumber', 'grandTotalMinor', 'id']),
+    field: z.enum([
+      'remoteCreatedAt',
+      'remoteModifiedAt',
+      'createdAt',
+      'updatedAt',
+      'orderNumber',
+      'grandTotalMinor',
+      'total',
+      'id',
+    ]),
     direction: z.enum(['asc', 'desc']),
   })
+  .strict();
+export const orderQuerySchema = z
+  .object({
+    search: z.string().max(200).optional(),
+    filter: z.unknown().optional(),
+    includeFacets: z.boolean().optional(),
+    cursor: z.string().max(2_000).nullable().optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+    sort: orderSortSchema.optional(),
+  })
+  .strict();
+export const orderLocalWorkflowSchema = z
+  .object({
+    version: z.number().int().min(1),
+    localStatus: z.string().trim().min(1).max(80).optional(),
+    assigneeId: z.string().trim().min(1).max(256).nullable().optional(),
+  })
+  .strict()
+  .refine((value) => value.localStatus !== undefined || value.assigneeId !== undefined);
+export const orderTagSchema = z
+  .object({ tag: z.string().trim().min(1).max(80), version: z.number().int().min(1) })
+  .strict();
+export const orderNoteSchema = z
+  .object({ text: z.string().trim().min(1).max(5_000), version: z.number().int().min(1) })
   .strict();
 const savedViewVisibilitySchema = z.enum(['private', 'shared']);
 const exportFormatSchema = z.enum(['csv', 'xlsx']);

@@ -139,11 +139,13 @@ const runDataset = (count) => {
   const { store, context } = fixture;
   try {
     const list = store.queryOrders(context, {
+      includeFacets: false,
       limit: 100,
       sort: { field: 'remoteCreatedAt', direction: 'desc' },
     });
     assert(list.items.length === 100, `${count}: list query returned ${list.items.length}`);
     const filtered = store.queryOrders(context, {
+      includeFacets: false,
       limit: 100,
       filter: { field: 'remoteStatus', operator: 'equals', value: 'processing' },
       sort: { field: 'remoteCreatedAt', direction: 'desc' },
@@ -152,11 +154,16 @@ const runDataset = (count) => {
       filtered.items.length === 100,
       `${count}: filtered query returned ${filtered.items.length}`,
     );
-    const searched = store.queryOrders(context, { search: 'PERF-SHIRT', limit: 100 });
+    const searched = store.queryOrders(context, {
+      search: 'PERF-SHIRT',
+      includeFacets: false,
+      limit: 100,
+    });
     assert(searched.items.length > 0, `${count}: search returned no fixture orders`);
     const selection = store.createSelection(context, {
       mode: 'query',
       query: {
+        includeFacets: false,
         filter: { field: 'remoteStatus', operator: 'equals', value: 'processing' },
         limit: 100,
         sort: { field: 'id', direction: 'asc' },
@@ -170,6 +177,7 @@ const runDataset = (count) => {
 
     const listTiming = measure(() => {
       const result = store.queryOrders(context, {
+        includeFacets: false,
         limit: 100,
         sort: { field: 'remoteCreatedAt', direction: 'desc' },
       });
@@ -177,6 +185,7 @@ const runDataset = (count) => {
     });
     const filteredTiming = measure(() => {
       const result = store.queryOrders(context, {
+        includeFacets: false,
         limit: 100,
         filter: { field: 'remoteStatus', operator: 'equals', value: 'processing' },
         sort: { field: 'remoteCreatedAt', direction: 'desc' },
@@ -184,7 +193,11 @@ const runDataset = (count) => {
       assert(result.items.length === 100, `${count}: filtered assertion failed`);
     });
     const searchTiming = measure(() => {
-      const result = store.queryOrders(context, { search: 'PERF-SHIRT', limit: 100 });
+      const result = store.queryOrders(context, {
+        search: 'PERF-SHIRT',
+        includeFacets: false,
+        limit: 100,
+      });
       assert(result.items.length > 0, `${count}: search assertion failed`);
     });
     const selectionTiming = measure(() => {
@@ -194,7 +207,7 @@ const runDataset = (count) => {
     const jobTiming = measure((index) => {
       const job = store.enqueueJob(context, {
         id: randomUUID(),
-        type: 'performance-bulk',
+        type: 'bulk.process',
         idempotencyKey: `${count}-${index}`,
         payload: { selectionId: selection.id, action: 'mark-export-ready' },
       });

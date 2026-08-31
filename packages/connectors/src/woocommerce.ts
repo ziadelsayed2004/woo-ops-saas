@@ -43,15 +43,55 @@ export type NormalizedOrder = {
   externalOrderId: string;
   orderNumber: string;
   remoteStatus: string;
+  createdVia: string | null;
+  channel: string | null;
+  posLocation: string | null;
+  externalCustomerId: string | null;
   currency: string;
   grandTotalMinor: string;
+  amounts: Readonly<{
+    merchandiseSubtotalMinor: string;
+    discountMinor: string;
+    merchandiseNetMinor: string;
+    shippingCollectedMinor: string;
+    taxMinor: string;
+    feesMinor: string;
+    refundMinor: string;
+    grandTotalMinor: string;
+    collectedMinor: string;
+  }>;
   createdAt: string | null;
   modifiedAt: string | null;
   customer: Record<string, unknown>;
   billing: Record<string, unknown>;
   shipping: Record<string, unknown>;
+  payment: Record<string, unknown>;
+  shippingMethod: Record<string, unknown>;
+  paymentMethodId: string | null;
+  paymentMethodTitle: string | null;
+  paymentStatus: string | null;
+  paidAt: string | null;
+  shippingMethodId: string | null;
+  shippingMethodTitle: string | null;
+  shippingCarrier: string | null;
+  shippingCollectedMinor: string;
+  taxLines: readonly Record<string, unknown>[];
+  feeLines: readonly Record<string, unknown>[];
+  couponLines: readonly Record<string, unknown>[];
+  shippingLines: readonly Record<string, unknown>[];
   lines: readonly Record<string, unknown>[];
   refunds: readonly Record<string, unknown>[];
+  quantityTotal: number;
+  productIds: readonly string[];
+  variationIds: readonly string[];
+  skus: readonly string[];
+  categories: readonly string[];
+  authors: readonly string[];
+  tags: readonly string[];
+  couponCodes: readonly string[];
+  metadata: readonly Record<string, unknown>[];
+  exceptionState: string | null;
+  sourceTimezone: string | null;
   sourceJson: string;
   sourceHash: string;
 };
@@ -343,62 +383,267 @@ const isoOrNull = (value: unknown): string | null => {
   return date.toISOString();
 };
 
+const textOrNull = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+
+const integerOrNull = (value: unknown): number | null =>
+  Number.isInteger(value) && Number(value) >= 0 ? Number(value) : null;
+
+const sumMinor = (items: readonly Record<string, unknown>[], key: string): string => {
+  let total = 0n;
+  for (const item of items) {
+    const value = item[key];
+    if (value === undefined || value === null || value === '') continue;
+    total += BigInt(decimalToMinorUnits(value));
+  }
+  return total.toString();
+};
+
+const uniqueTexts = (values: readonly unknown[]): string[] => [
+  ...new Set(
+    values.flatMap((value) => {
+      if (typeof value === 'string' && value.trim()) return [value.trim()];
+      if (typeof value === 'number' && Number.isFinite(value)) return [String(value)];
+      const record = asRecord(value);
+      return record && typeof record.name === 'string' && record.name.trim()
+        ? [record.name.trim()]
+        : [];
+    }),
+  ),
+];
+
+const safeTransactionReference = (value: unknown): string | null => {
+  const text = textOrNull(value);
+  return text ? `****${text.slice(-4)}` : null;
+};
+
 export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
   const record = asRecord(value);
   if (!record || !Number.isInteger(record.id) || typeof record.number !== 'string')
     throw new Error('WOO_SCHEMA_INVALID:order');
   if (typeof record.currency !== 'string' || typeof record.total !== 'string')
     throw new Error('WOO_SCHEMA_INVALID:order_amounts');
-  const lines = Array.isArray(record.line_items)
-    ? record.line_items.map((item) => {
-        const line = asRecord(item);
-        if (
-          !line ||
-          !Number.isInteger(line.id) ||
-          !Number.isInteger(line.quantity) ||
-          typeof line.total !== 'string'
-        )
-          throw new Error('WOO_SCHEMA_INVALID:line');
-        return {
-          externalLineId: String(line.id),
-          productId: Number.isInteger(line.product_id) ? line.product_id : null,
-          variationId: Number.isInteger(line.variation_id) ? line.variation_id : null,
-          sku: typeof line.sku === 'string' ? line.sku : null,
-          name: typeof line.name === 'string' ? line.name : '',
-          quantity: line.quantity,
-          subtotalMinor: decimalToMinorUnits(line.subtotal ?? '0'),
-          totalMinor: decimalToMinorUnits(line.total),
-          taxMinor: decimalToMinorUnits(line.total_tax ?? '0'),
-          source: line,
-        };
-      })
-    : [];
-  const refunds = Array.isArray(record.refunds)
-    ? record.refunds.map((item) => {
-        const refund = asRecord(item);
-        if (!refund || !Number.isInteger(refund.id) || typeof refund.total !== 'string')
-          throw new Error('WOO_SCHEMA_INVALID:refund');
-        return {
-          externalRefundId: String(refund.id),
-          amountMinor: decimalToMinorUnits(refund.total),
-          reason: refund.reason ?? null,
-          source: refund,
-        };
-      })
-    : [];
+  const rawLines = Array.isArray(record.line_items) ? record.line_items : [];
+  const lines = rawLines.map((item) => {
+    const line = asRecord(item);
+    if (
+      !line ||
+      !Number.isInteger(line.id) ||
+      !Number.isInteger(line.quantity) ||
+      typeof line.total !== 'string'
+    )
+      throw new Error('WOO_SCHEMA_INVALID:line');
+    const subtotalMinor = decimalToMinorUnits(line.subtotal ?? '0');
+    const totalMinor = decimalToMinorUnits(line.total);
+    const lineDiscount = BigInt(subtotalMinor) - BigInt(totalMinor);
+    return {
+      externalLineId: String(line.id),
+      productId: Number.isInteger(line.product_id) ? line.product_id : null,
+      variationId: Number.isInteger(line.variation_id) ? line.variation_id : null,
+      sku: typeof line.sku === 'string' ? line.sku : null,
+      name: typeof line.name === 'string' ? line.name : '',
+      quantity: line.quantity,
+      subtotalMinor,
+      discountMinor: lineDiscount > 0n ? lineDiscount.toString() : '0',
+      totalMinor,
+      taxMinor: decimalToMinorUnits(line.total_tax ?? '0'),
+      productSnapshot: {
+        name: typeof line.name === 'string' ? line.name : '',
+        sku: typeof line.sku === 'string' ? line.sku : null,
+        categories: Array.isArray(line.categories) ? line.categories : [],
+        authors: Array.isArray(line.authors) ? line.authors : [],
+        attributes: Array.isArray(line.meta_data) ? line.meta_data : [],
+      },
+      source: line,
+    };
+  });
+  const rawRefunds = Array.isArray(record.refunds) ? record.refunds : [];
+  const refunds = rawRefunds.map((item) => {
+    const refund = asRecord(item);
+    if (!refund || !Number.isInteger(refund.id) || typeof refund.total !== 'string')
+      throw new Error('WOO_SCHEMA_INVALID:refund');
+    return {
+      externalRefundId: String(refund.id),
+      amountMinor: decimalToMinorUnits(refund.total),
+      reason: refund.reason ?? null,
+      lineAllocations: Array.isArray(refund.line_items) ? refund.line_items : [],
+      source: refund,
+    };
+  });
+  const rawShippingLines = Array.isArray(record.shipping_lines) ? record.shipping_lines : [];
+  const shippingLines = rawShippingLines.map((item) => {
+    const line = asRecord(item);
+    if (!line) throw new Error('WOO_SCHEMA_INVALID:shipping_line');
+    return {
+      id: integerOrNull(line.id),
+      methodId: textOrNull(line.method_id),
+      methodTitle: textOrNull(line.method_title),
+      instanceId: textOrNull(line.instance_id),
+      totalMinor: decimalToMinorUnits(line.total ?? '0'),
+      taxMinor: decimalToMinorUnits(line.total_tax ?? '0'),
+      source: line,
+    };
+  });
+  const rawFeeLines = Array.isArray(record.fee_lines) ? record.fee_lines : [];
+  const feeLines = rawFeeLines.map((item) => {
+    const line = asRecord(item);
+    if (!line) throw new Error('WOO_SCHEMA_INVALID:fee_line');
+    return {
+      id: integerOrNull(line.id),
+      name: textOrNull(line.name),
+      taxClass: textOrNull(line.tax_class),
+      totalMinor: decimalToMinorUnits(line.total ?? '0'),
+      taxMinor: decimalToMinorUnits(line.total_tax ?? '0'),
+      source: line,
+    };
+  });
+  const rawCouponLines = Array.isArray(record.coupon_lines) ? record.coupon_lines : [];
+  const couponLines = rawCouponLines.map((item) => {
+    const line = asRecord(item);
+    if (!line) throw new Error('WOO_SCHEMA_INVALID:coupon_line');
+    return {
+      id: integerOrNull(line.id),
+      code: textOrNull(line.code),
+      discountMinor: decimalToMinorUnits(line.discount ?? '0'),
+      discountTaxMinor: decimalToMinorUnits(line.discount_tax ?? '0'),
+      source: line,
+    };
+  });
+  const rawTaxLines = Array.isArray(record.tax_lines) ? record.tax_lines : [];
+  const taxLines = rawTaxLines.map((item) => {
+    const line = asRecord(item);
+    if (!line) throw new Error('WOO_SCHEMA_INVALID:tax_line');
+    return {
+      id: integerOrNull(line.id),
+      rateId: integerOrNull(line.rate_id),
+      label: textOrNull(line.label),
+      taxTotalMinor: decimalToMinorUnits(line.tax_total ?? '0'),
+      shippingTaxTotalMinor: decimalToMinorUnits(line.shipping_tax_total ?? '0'),
+      source: line,
+    };
+  });
+  const rawMeta = Array.isArray(record.meta_data) ? record.meta_data : [];
+  const metadata = rawMeta.flatMap((item) => {
+    const meta = asRecord(item);
+    return meta && typeof meta.key === 'string' ? [{ key: meta.key, value: meta.value }] : [];
+  });
+  const merchandiseSubtotalMinor = sumMinor(lines, 'subtotalMinor');
+  const discountMinor =
+    typeof record.discount_total === 'string'
+      ? decimalToMinorUnits(record.discount_total)
+      : sumMinor(couponLines, 'discountMinor');
+  const merchandiseNetMinor = (BigInt(merchandiseSubtotalMinor) - BigInt(discountMinor)).toString();
+  const shippingCollectedMinor =
+    typeof record.shipping_total === 'string'
+      ? decimalToMinorUnits(record.shipping_total)
+      : sumMinor(shippingLines, 'totalMinor');
+  const taxMinor =
+    typeof record.total_tax === 'string'
+      ? decimalToMinorUnits(record.total_tax)
+      : (
+          BigInt(sumMinor(lines, 'taxMinor')) +
+          BigInt(sumMinor(shippingLines, 'taxMinor')) +
+          BigInt(sumMinor(feeLines, 'taxMinor'))
+        ).toString();
+  const feesMinor = sumMinor(feeLines, 'totalMinor');
+  const refundMinor = sumMinor(refunds, 'amountMinor');
+  const grandTotalMinor = decimalToMinorUnits(record.total);
+  const paymentMethodId = textOrNull(record.payment_method);
+  const paymentMethodTitle = textOrNull(record.payment_method_title);
+  const paymentStatus =
+    textOrNull(record.payment_status) ?? (record.status === 'completed' ? 'paid' : null);
+  const paidAt = isoOrNull(record.date_paid_gmt ?? record.date_paid);
+  const shippingMethodId = textOrNull(shippingLines[0]?.methodId);
+  const shippingMethodTitle = textOrNull(shippingLines[0]?.methodTitle);
+  const shippingCarrier = textOrNull(record.shipping_carrier) ?? shippingMethodTitle;
+  const products = lines.map((line) => line.productSnapshot as Record<string, unknown>);
+  const productIds = uniqueTexts(
+    lines.map((line) => (line.productId === null ? null : String(line.productId))),
+  );
+  const variationIds = uniqueTexts(
+    lines.map((line) => (line.variationId === null ? null : String(line.variationId))),
+  );
+  const skus = uniqueTexts(lines.map((line) => line.sku));
+  const categories = uniqueTexts(
+    products.flatMap((product) => (Array.isArray(product.categories) ? product.categories : [])),
+  );
+  const authors = uniqueTexts(
+    products.flatMap((product) => (Array.isArray(product.authors) ? product.authors : [])),
+  );
+  const tags = uniqueTexts(Array.isArray(record.tags) ? record.tags : []);
+  const couponCodes = uniqueTexts(couponLines.map((line) => line.code));
+  const quantityTotal = lines.reduce((total, line) => total + Number(line.quantity), 0);
+  const createdVia = textOrNull(record.created_via);
+  const posLocation =
+    textOrNull(record.pos_location) ??
+    textOrNull(metadata.find((item) => item.key === 'pos_location')?.value);
+  const channel = textOrNull(record.channel) ?? createdVia;
+  const sourceTimezone = textOrNull(record.timezone) ?? textOrNull(record.source_timezone);
+  const exceptionState = textOrNull(record.exception_state);
   const normalized = {
     externalOrderId: String(record.id),
     orderNumber: record.number,
     remoteStatus: typeof record.status === 'string' ? record.status : 'unknown',
+    createdVia,
+    channel,
+    posLocation,
+    externalCustomerId: integerOrNull(record.customer_id)?.toString() ?? null,
     currency: record.currency,
-    grandTotalMinor: decimalToMinorUnits(record.total),
+    grandTotalMinor,
+    amounts: {
+      merchandiseSubtotalMinor,
+      discountMinor,
+      merchandiseNetMinor,
+      shippingCollectedMinor,
+      taxMinor,
+      feesMinor,
+      refundMinor,
+      grandTotalMinor,
+      collectedMinor: grandTotalMinor,
+    },
     createdAt: isoOrNull(record.date_created_gmt ?? record.date_created),
     modifiedAt: isoOrNull(record.date_modified_gmt ?? record.date_modified),
     customer: asRecord(record.billing) ?? {},
     billing: asRecord(record.billing) ?? {},
     shipping: asRecord(record.shipping) ?? {},
+    payment: {
+      methodId: paymentMethodId,
+      title: paymentMethodTitle,
+      status: paymentStatus,
+      paidAt,
+      transactionReferenceMasked: safeTransactionReference(record.transaction_id),
+    },
+    shippingMethod: {
+      methodId: shippingMethodId,
+      title: shippingMethodTitle,
+      carrier: shippingCarrier,
+      collectedMinor: shippingCollectedMinor,
+    },
+    paymentMethodId,
+    paymentMethodTitle,
+    paymentStatus,
+    paidAt,
+    shippingMethodId,
+    shippingMethodTitle,
+    shippingCarrier,
+    shippingCollectedMinor,
+    taxLines,
+    feeLines,
+    couponLines,
+    shippingLines,
     lines,
     refunds,
+    quantityTotal,
+    productIds,
+    variationIds,
+    skus,
+    categories,
+    authors,
+    tags,
+    couponCodes,
+    metadata,
+    exceptionState,
+    sourceTimezone,
     sourceJson: JSON.stringify(record),
   };
   const sourceHash = createHmac('sha256', 'woo-ops-normalizer-v1')
@@ -585,6 +830,18 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
   }
   pullOrders(): AsyncIterable<unknown> {
     return this.pullRemote('orders');
+  }
+  async pullOrder(externalOrderId: string): Promise<unknown> {
+    if (!this.storeUrl || !this.credentials) throw new Error('WOO_CONNECTION_NOT_CONFIGURED');
+    if (!/^\d{1,18}$/u.test(externalOrderId)) throw new Error('WOO_ORDER_ID_INVALID');
+    const url = new URL(
+      `/wp-json/wc/v3/orders/${encodeURIComponent(externalOrderId)}`,
+      this.storeUrl,
+    );
+    const response = await this.requestPage(url);
+    if (response.status === 429) throw new Error('WOO_RATE_LIMITED');
+    if (!response.ok) throw new Error(`WOO_HTTP_${response.status}`);
+    return response.json() as Promise<unknown>;
   }
   pullProducts(): AsyncIterable<unknown> {
     return this.pullCatalog('products');

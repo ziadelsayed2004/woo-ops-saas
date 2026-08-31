@@ -77,6 +77,7 @@ account-scoped processing job. Duplicate delivery IDs are acknowledged without a
 
 ```text
 POST   /orders/query
+GET    /orders/filter-catalog
 GET    /orders/:orderId
 GET    /orders/:orderId/timeline
 POST   /orders/:orderId/resync
@@ -115,18 +116,22 @@ Imported order commerce fields have no PATCH endpoint.
     ]
   },
   "search": "01001234567",
-  "sort": [
-    { "field": "remoteCreatedAt", "direction": "desc" },
-    { "field": "id", "direction": "desc" }
-  ],
+  "sort": { "field": "remoteCreatedAt", "direction": "desc" },
   "cursor": null,
-  "limit": 50,
-  "columns": ["orderNumber", "customer", "total", "shipping", "exportState"]
+  "limit": 50
 }
 ```
 
 The server compiles only catalog-approved fields/operators. Never translate arbitrary client keys
 directly to SQL or storage queries.
+
+`GET /orders/filter-catalog` returns the server-owned field/operator catalog. The order query
+response is `{ items, nextCursor, hasMore, totalCount, facets }`; `facets` contains bounded counts
+for status, source, export state, payment/shipping, POS/channel, product, category, author, and
+SKU values calculated inside the authenticated account scope. Clients may send `includeFacets: false`
+for a fast table refresh when facet counts are not needed; the default remains enabled. Cursor
+sorting is stable and limited to approved fields. Remote commerce facts are immutable; local workflow commands use optimistic
+`version` checks and are the only order mutations exposed by this workspace.
 
 ## Saved views and selection
 

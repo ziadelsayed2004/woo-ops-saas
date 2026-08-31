@@ -116,18 +116,48 @@ export type NormalizedOrderInput = {
   externalOrderId: string;
   orderNumber: string;
   remoteStatus: string;
+  createdVia?: string | null | undefined;
+  channel?: string | null | undefined;
+  posLocation?: string | null | undefined;
+  externalCustomerId?: string | null | undefined;
   currency: string;
   grandTotalMinor: string;
+  amounts?: Record<string, unknown> | undefined;
   createdAt: string | null;
   modifiedAt: string | null;
   customer: unknown;
   billing: unknown;
   shipping: unknown;
+  payment?: Record<string, unknown> | undefined;
+  shippingMethod?: Record<string, unknown> | undefined;
+  paymentMethodId?: string | null | undefined;
+  paymentMethodTitle?: string | null | undefined;
+  paymentStatus?: string | null | undefined;
+  paidAt?: string | null | undefined;
+  shippingMethodId?: string | null | undefined;
+  shippingMethodTitle?: string | null | undefined;
+  shippingCarrier?: string | null | undefined;
+  shippingCollectedMinor?: string | undefined;
+  taxLines?: readonly unknown[] | undefined;
+  feeLines?: readonly unknown[] | undefined;
+  couponLines?: readonly unknown[] | undefined;
+  shippingLines?: readonly unknown[] | undefined;
   lines: readonly unknown[];
   refunds: readonly { externalRefundId: string; amountMinor: string; reason: unknown }[];
+  quantityTotal?: number | undefined;
+  productIds?: readonly string[] | undefined;
+  variationIds?: readonly string[] | undefined;
+  skus?: readonly string[] | undefined;
+  categories?: readonly string[] | undefined;
+  authors?: readonly string[] | undefined;
+  tags?: readonly string[] | undefined;
+  couponCodes?: readonly string[] | undefined;
+  metadata?: readonly Record<string, unknown>[] | undefined;
+  exceptionState?: string | null | undefined;
+  sourceTimezone?: string | null | undefined;
   sourceJson: string;
   sourceHash: string;
-  reconcileToken?: string;
+  reconcileToken?: string | undefined;
 };
 export type ManualOrderLineInput = {
   name: string;
@@ -221,29 +251,88 @@ export type OrderFilter =
 export type OrderFilterField =
   | 'orderNumber'
   | 'externalOrderId'
+  | 'customerName'
+  | 'customerEmail'
+  | 'customerPhone'
   | 'remoteStatus'
   | 'localStatus'
   | 'exportState'
   | 'origin'
+  | 'source'
+  | 'channel'
+  | 'createdVia'
+  | 'pos'
+  | 'posLocation'
   | 'currency'
   | 'connectionId'
+  | 'store'
+  | 'paymentMethod'
+  | 'payment.methodId'
+  | 'paymentStatus'
+  | 'payment.status'
+  | 'shippingMethod'
+  | 'shipping.methodId'
+  | 'shippingCarrier'
+  | 'shipping.carrier'
+  | 'tracking'
+  | 'shippingAmount'
+  | 'shipping.amount'
+  | 'product'
+  | 'productId'
+  | 'variation'
+  | 'variationId'
+  | 'sku'
+  | 'category'
+  | 'author'
+  | 'tag'
+  | 'coupon'
+  | 'hasRefund'
+  | 'refund'
+  | 'refundState'
+  | 'exception'
+  | 'exceptionState'
+  | 'quantity'
+  | 'subtotal'
+  | 'merchandiseSubtotal'
+  | 'discount'
+  | 'tax'
+  | 'fees'
+  | 'total'
   | 'remoteCreatedAt'
+  | 'createdAt'
+  | 'remoteModifiedAt'
+  | 'updatedAt'
   | 'grandTotalMinor';
 export type OrderQueryInput = {
   search?: string;
   filter?: OrderFilter;
+  includeFacets?: boolean;
   cursor?: string | null;
   limit?: number;
   sort?: {
-    field: 'remoteCreatedAt' | 'updatedAt' | 'orderNumber' | 'grandTotalMinor' | 'id';
+    field:
+      | 'remoteCreatedAt'
+      | 'remoteModifiedAt'
+      | 'createdAt'
+      | 'updatedAt'
+      | 'orderNumber'
+      | 'grandTotalMinor'
+      | 'total'
+      | 'id';
     direction: 'asc' | 'desc';
   };
 };
 export type OrderSort = NonNullable<OrderQueryInput['sort']>;
+export type OrderFacet = Readonly<{
+  field: OrderFilterField;
+  values: readonly { value: string; count: number }[];
+}>;
 export type OrderQueryResult = {
   items: readonly Record<string, unknown>[];
   nextCursor: string | null;
   hasMore: boolean;
+  totalCount: number;
+  facets: readonly OrderFacet[];
 };
 export type MetadataSensitivity = 'safe' | 'private' | 'unknown';
 export type MetadataType = 'text' | 'number' | 'money' | 'boolean' | 'date' | 'enum' | 'entity';
@@ -628,6 +717,536 @@ const normalizeManualOrder = (input: ManualOrderInput): NormalizedManualOrder =>
   };
 };
 
+type CanonicalOrderProjection = Readonly<{
+  remoteCreatedAt: string | null;
+  sourceTimezone: string | null;
+  createdVia: string | null;
+  channel: string | null;
+  posLocation: string | null;
+  externalCustomerId: string | null;
+  customerName: string | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  paymentMethodId: string | null;
+  paymentMethodTitle: string | null;
+  paymentStatus: string | null;
+  paidAt: string | null;
+  shippingMethodId: string | null;
+  shippingMethodTitle: string | null;
+  shippingCarrier: string | null;
+  shippingCollectedMinor: string;
+  merchandiseSubtotalMinor: string;
+  discountMinor: string;
+  merchandiseNetMinor: string;
+  taxMinor: string;
+  feesMinor: string;
+  refundMinor: string;
+  quantityTotal: number;
+  refundState: 'none' | 'partial' | 'full' | 'unknown';
+  exceptionState: string;
+  productIdsJson: string;
+  variationIdsJson: string;
+  skusJson: string;
+  categoriesJson: string;
+  authorsJson: string;
+  remoteTagsJson: string;
+  couponCodesJson: string;
+  searchText: string;
+}>;
+
+const projectionText = (value: unknown, maxLength = 256): string | null => {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const text = String(value).trim();
+  return text.length > 0 && text.length <= maxLength ? text : null;
+};
+
+const projectionRecord = (value: unknown): Record<string, unknown> =>
+  isRecord(value) ? value : {};
+
+const projectionMinor = (value: unknown, fallback = '0'): string => {
+  const candidate =
+    typeof value === 'string' ? value : typeof value === 'number' ? String(value) : fallback;
+  if (!/^-?\d{1,18}$/u.test(candidate)) return fallback;
+  return BigInt(candidate).toString();
+};
+
+const projectionTextList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value.flatMap((item) => {
+        const record = projectionRecord(item);
+        const candidate = projectionText(record.name ?? record.code ?? item, 256);
+        return candidate ? [candidate] : [];
+      }),
+    ),
+  ].slice(0, 500);
+};
+
+const projectionFirstText = (...values: unknown[]): string | null => {
+  for (const value of values) {
+    const text = projectionText(value);
+    if (text) return text;
+  }
+  return null;
+};
+
+const canonicalProjection = (input: NormalizedOrderInput): CanonicalOrderProjection => {
+  const customer = projectionRecord(input.customer);
+  const billing = projectionRecord(input.billing);
+  const shipping = projectionRecord(input.shipping);
+  const payment = projectionRecord(input.payment);
+  const shippingMethod = projectionRecord(input.shippingMethod);
+  const amounts = projectionRecord(input.amounts);
+  const lines = input.lines.filter(isRecord);
+  const refunds = input.refunds.filter((refund) => isRecord(refund));
+  const fullName = (...records: Record<string, unknown>[]): string | null => {
+    for (const record of records) {
+      const direct = projectionFirstText(record.name, record.display_name);
+      if (direct) return direct;
+      const name = [record.first_name, record.last_name]
+        .map((part) => projectionText(part))
+        .filter((part): part is string => Boolean(part))
+        .join(' ');
+      if (name) return name;
+    }
+    return null;
+  };
+  const customerName = fullName(customer, billing);
+  const customerEmail =
+    projectionFirstText(
+      customer.email,
+      billing.email,
+      customer.emailAddress,
+      billing.emailAddress,
+    )?.toLowerCase() ?? null;
+  const customerPhone = projectionFirstText(
+    customer.phone,
+    billing.phone,
+    customer.phoneNumber,
+    billing.phoneNumber,
+  );
+  const paymentMethodId = projectionFirstText(
+    input.paymentMethodId,
+    payment.methodId,
+    payment.id,
+    payment.method,
+  );
+  const paymentMethodTitle = projectionFirstText(
+    input.paymentMethodTitle,
+    payment.title,
+    payment.methodTitle,
+    payment.name,
+  );
+  const paymentStatus = projectionFirstText(input.paymentStatus, payment.status);
+  const shippingMethodId = projectionFirstText(
+    input.shippingMethodId,
+    shippingMethod.methodId,
+    shippingMethod.id,
+  );
+  const shippingMethodTitle = projectionFirstText(
+    input.shippingMethodTitle,
+    shippingMethod.title,
+    shippingMethod.methodTitle,
+    shippingMethod.name,
+  );
+  const shippingCarrier = projectionFirstText(
+    input.shippingCarrier,
+    shippingMethod.carrier,
+    shippingMethod.provider,
+  );
+  const lineProductIds = lines.flatMap((line) => {
+    const value = projectionFirstText(line.productId, line.product_id);
+    return value ? [value] : [];
+  });
+  const lineVariationIds = lines.flatMap((line) => {
+    const value = projectionFirstText(line.variationId, line.variation_id);
+    return value ? [value] : [];
+  });
+  const lineSkus = lines.flatMap((line) => {
+    const value = projectionFirstText(line.sku);
+    return value ? [value] : [];
+  });
+  const lineProducts = lines.flatMap((line) => {
+    const snapshot = projectionRecord(line.productSnapshot);
+    return [line, snapshot];
+  });
+  const lineCategories = lineProducts.flatMap((line) =>
+    projectionTextList(line.categories ?? line.category),
+  );
+  const lineAuthors = lineProducts.flatMap((line) =>
+    projectionTextList(line.authors ?? line.author),
+  );
+  const productIds = projectionTextList(input.productIds ?? lineProductIds);
+  const variationIds = projectionTextList(input.variationIds ?? lineVariationIds);
+  const skus = projectionTextList(input.skus ?? lineSkus);
+  const categories = projectionTextList(input.categories ?? lineCategories);
+  const authors = projectionTextList(input.authors ?? lineAuthors);
+  const remoteTags = projectionTextList(input.tags);
+  const couponCodes = projectionTextList(
+    input.couponCodes ?? (Array.isArray(input.couponLines) ? input.couponLines : []),
+  );
+  const metadataSearch = (input.metadata ?? []).flatMap((entry) => {
+    const key = projectionText(entry.key, 120);
+    const value = projectionText(entry.value, 256);
+    return key && value && !privateMetadataKey.test(key) ? [key, value] : [];
+  });
+  const quantityTotal =
+    Number.isInteger(input.quantityTotal) && Number(input.quantityTotal) >= 0
+      ? Number(input.quantityTotal)
+      : lines.reduce((total, line) => {
+          const quantity = line.quantity;
+          return (
+            total + (Number.isInteger(quantity) && Number(quantity) >= 0 ? Number(quantity) : 0)
+          );
+        }, 0);
+  const merchandiseSubtotalMinor = projectionMinor(
+    amounts.merchandiseSubtotalMinor ?? amounts.subtotalMinor,
+    lines
+      .reduce(
+        (total, line) => total + BigInt(projectionMinor(line.subtotalMinor ?? line.subtotal)),
+        0n,
+      )
+      .toString(),
+  );
+  const discountMinor = projectionMinor(amounts.discountMinor, '0');
+  const merchandiseNetMinor = projectionMinor(
+    amounts.merchandiseNetMinor,
+    (BigInt(merchandiseSubtotalMinor) - BigInt(discountMinor)).toString(),
+  );
+  const shippingCollectedMinor = projectionMinor(
+    amounts.shippingCollectedMinor ?? input.shippingCollectedMinor,
+  );
+  const taxMinor = projectionMinor(amounts.taxMinor, '0');
+  const feesMinor = projectionMinor(amounts.feesMinor, '0');
+  const grandTotalMinor = projectionMinor(amounts.grandTotalMinor ?? input.grandTotalMinor);
+  let refundMinor = 0n;
+  let refundInvalid = false;
+  for (const refund of refunds) {
+    const value = refund.amountMinor;
+    if (typeof value !== 'string' || !/^-?\d{1,18}$/u.test(value)) {
+      refundInvalid = true;
+      continue;
+    }
+    refundMinor += BigInt(value) < 0n ? -BigInt(value) : BigInt(value);
+  }
+  const declaredRefundMinor = projectionMinor(amounts.refundMinor);
+  if (refundMinor === 0n && declaredRefundMinor !== '0') {
+    const declared = BigInt(declaredRefundMinor);
+    refundMinor = declared < 0n ? -declared : declared;
+  }
+  const refundState: CanonicalOrderProjection['refundState'] = refundInvalid
+    ? 'unknown'
+    : refunds.length === 0 && declaredRefundMinor === '0'
+      ? 'none'
+      : refundMinor >= BigInt(grandTotalMinor) && BigInt(grandTotalMinor) > 0n
+        ? 'full'
+        : 'partial';
+  const exceptionState = projectionFirstText(input.exceptionState) ?? 'none';
+  const strings = [
+    input.orderNumber,
+    input.externalOrderId,
+    input.remoteStatus,
+    input.currency,
+    input.createdVia,
+    input.channel,
+    input.posLocation,
+    input.externalCustomerId,
+    customerName,
+    customerEmail,
+    customerPhone,
+    paymentMethodId,
+    paymentMethodTitle,
+    paymentStatus,
+    shippingMethodId,
+    shippingMethodTitle,
+    shippingCarrier,
+    shipping.tracking,
+    shipping.trackingNumber,
+    shippingMethod.tracking,
+    shippingMethod.trackingNumber,
+    ...lines.flatMap((line) => [line.name, line.productName, line.sku]),
+    ...productIds,
+    ...variationIds,
+    ...skus,
+    ...categories,
+    ...authors,
+    ...remoteTags,
+    ...couponCodes,
+    ...metadataSearch,
+  ]
+    .map((value) => projectionText(value))
+    .filter((value): value is string => Boolean(value));
+  return {
+    remoteCreatedAt: input.createdAt,
+    sourceTimezone: projectionFirstText(input.sourceTimezone),
+    createdVia: projectionFirstText(input.createdVia),
+    channel: projectionFirstText(input.channel),
+    posLocation: projectionFirstText(input.posLocation),
+    externalCustomerId: projectionFirstText(input.externalCustomerId),
+    customerName,
+    customerEmail,
+    customerPhone,
+    paymentMethodId,
+    paymentMethodTitle,
+    paymentStatus,
+    paidAt: projectionFirstText(input.paidAt, payment.paidAt),
+    shippingMethodId,
+    shippingMethodTitle,
+    shippingCarrier,
+    shippingCollectedMinor,
+    merchandiseSubtotalMinor,
+    discountMinor,
+    merchandiseNetMinor,
+    taxMinor,
+    feesMinor,
+    refundMinor: refundMinor.toString(),
+    quantityTotal,
+    refundState,
+    exceptionState,
+    productIdsJson: JSON.stringify(productIds),
+    variationIdsJson: JSON.stringify(variationIds),
+    skusJson: JSON.stringify(skus),
+    categoriesJson: JSON.stringify(categories),
+    authorsJson: JSON.stringify(authors),
+    remoteTagsJson: JSON.stringify(remoteTags),
+    couponCodesJson: JSON.stringify(couponCodes),
+    searchText: strings.join(' ').toLocaleLowerCase().slice(0, 16_000),
+  };
+};
+
+const canonicalProjectionColumns = [
+  'remote_created_at',
+  'source_timezone',
+  'created_via',
+  'channel',
+  'pos_location',
+  'external_customer_id',
+  'customer_name',
+  'customer_email',
+  'customer_phone',
+  'payment_method_id',
+  'payment_method_title',
+  'payment_status',
+  'paid_at',
+  'shipping_method_id',
+  'shipping_method_title',
+  'shipping_carrier',
+  'shipping_collected_minor',
+  'merchandise_subtotal_minor',
+  'discount_minor',
+  'merchandise_net_minor',
+  'tax_minor',
+  'fees_minor',
+  'refund_minor',
+  'quantity_total',
+  'refund_state',
+  'exception_state',
+  'product_ids_json',
+  'variation_ids_json',
+  'skus_json',
+  'categories_json',
+  'authors_json',
+  'remote_tags_json',
+  'coupon_codes_json',
+  'search_text',
+] as const;
+
+const canonicalProjectionValues = (
+  projection: CanonicalOrderProjection,
+): (string | number | null)[] => [
+  projection.remoteCreatedAt,
+  projection.sourceTimezone,
+  projection.createdVia,
+  projection.channel,
+  projection.posLocation,
+  projection.externalCustomerId,
+  projection.customerName,
+  projection.customerEmail,
+  projection.customerPhone,
+  projection.paymentMethodId,
+  projection.paymentMethodTitle,
+  projection.paymentStatus,
+  projection.paidAt,
+  projection.shippingMethodId,
+  projection.shippingMethodTitle,
+  projection.shippingCarrier,
+  projection.shippingCollectedMinor,
+  projection.merchandiseSubtotalMinor,
+  projection.discountMinor,
+  projection.merchandiseNetMinor,
+  projection.taxMinor,
+  projection.feesMinor,
+  projection.refundMinor,
+  projection.quantityTotal,
+  projection.refundState,
+  projection.exceptionState,
+  projection.productIdsJson,
+  projection.variationIdsJson,
+  projection.skusJson,
+  projection.categoriesJson,
+  projection.authorsJson,
+  projection.remoteTagsJson,
+  projection.couponCodesJson,
+  projection.searchText,
+];
+
+const publicOrderValue = (value: unknown, depth = 0): unknown => {
+  if (depth > 8) return null;
+  if (Array.isArray(value))
+    return value.flatMap((item) => {
+      if (
+        isRecord(item) &&
+        typeof item.key === 'string' &&
+        (privateMetadataKey.test(item.key) || item.key.startsWith('_'))
+      )
+        return [];
+      return [publicOrderValue(item, depth + 1)];
+    });
+  if (!isRecord(value)) return value;
+  const privateKeys = new Set([
+    'source',
+    'sourceJson',
+    'remotePayloadJson',
+    'transaction_id',
+    'transactionId',
+    'authorization',
+    'secret',
+    'token',
+  ]);
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !privateKeys.has(key) && !privateMetadataKey.test(key))
+      .map(([key, item]) => [key, publicOrderValue(item, depth + 1)]),
+  );
+};
+
+const parseJsonRecord = (value: unknown): Record<string, unknown> => {
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const parseJsonArray = (value: unknown): unknown[] => {
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+const publicOrderRecord = (value: unknown): Record<string, unknown> =>
+  isRecord(value) ? value : {};
+
+const orderOutput = (
+  row: Record<string, unknown>,
+  normalized: Record<string, unknown>,
+  tags: readonly unknown[],
+  notes: readonly unknown[] = [],
+  refunds: readonly Record<string, unknown>[] = [],
+): Record<string, unknown> => {
+  const amounts = isRecord(normalized.amounts) ? normalized.amounts : {};
+  const payment = isRecord(normalized.payment) ? normalized.payment : {};
+  const shippingMethod = isRecord(normalized.shippingMethod) ? normalized.shippingMethod : {};
+  const safeNormalized = publicOrderRecord(publicOrderValue(normalized));
+  const safePayment = publicOrderRecord(publicOrderValue(payment));
+  const safeShippingMethod = publicOrderRecord(publicOrderValue(shippingMethod));
+  const safeAmounts = publicOrderRecord(publicOrderValue(amounts));
+  const exportState =
+    row.stale_export_at && row.export_state === 'exported'
+      ? 'changed-after-export'
+      : row.export_state;
+  const remoteTags = parseJsonArray(row.remote_tags_json ?? '[]');
+  return {
+    ...safeNormalized,
+    id: row.id,
+    orderNumber: row.order_number,
+    externalOrderId: row.external_order_id,
+    origin: row.origin,
+    source: row.origin,
+    connectionId: row.connection_id,
+    remoteStatus: row.remote_status,
+    localStatus: row.local_status,
+    exportState,
+    currency: row.currency,
+    grandTotalMinor: row.grand_total_minor,
+    remoteCreatedAt: row.remote_created_at ?? row.remote_modified_at,
+    remoteModifiedAt: row.remote_modified_at,
+    createdAt: normalized.createdAt ?? row.created_at,
+    updatedAt: row.updated_at,
+    createdVia: row.created_via,
+    channel: row.channel,
+    posLocation: row.pos_location,
+    externalCustomerId: row.external_customer_id,
+    customerName: row.customer_name,
+    customerEmail: row.customer_email,
+    customerPhone: row.customer_phone,
+    payment: {
+      ...safePayment,
+      methodId: row.payment_method_id ?? payment.methodId ?? null,
+      title: row.payment_method_title ?? payment.title ?? null,
+      status: row.payment_status ?? payment.status ?? null,
+      paidAt: row.paid_at ?? payment.paidAt ?? null,
+    },
+    paymentMethodId: row.payment_method_id,
+    paymentMethodTitle: row.payment_method_title,
+    paymentStatus: row.payment_status,
+    paidAt: row.paid_at,
+    shippingMethod: {
+      ...safeShippingMethod,
+      methodId: row.shipping_method_id ?? shippingMethod.methodId ?? null,
+      title: row.shipping_method_title ?? shippingMethod.title ?? null,
+      carrier: row.shipping_carrier ?? shippingMethod.carrier ?? null,
+      collectedMinor: row.shipping_collected_minor ?? '0',
+    },
+    shippingMethodId: row.shipping_method_id,
+    shippingMethodTitle: row.shipping_method_title,
+    shippingCarrier: row.shipping_carrier,
+    amounts: {
+      ...safeAmounts,
+      merchandiseSubtotalMinor:
+        row.merchandise_subtotal_minor ?? amounts.merchandiseSubtotalMinor ?? '0',
+      discountMinor: row.discount_minor ?? amounts.discountMinor ?? '0',
+      merchandiseNetMinor: row.merchandise_net_minor ?? amounts.merchandiseNetMinor ?? '0',
+      shippingCollectedMinor: row.shipping_collected_minor ?? amounts.shippingCollectedMinor ?? '0',
+      taxMinor: row.tax_minor ?? amounts.taxMinor ?? '0',
+      feesMinor: row.fees_minor ?? amounts.feesMinor ?? '0',
+      refundMinor: row.refund_minor ?? amounts.refundMinor ?? '0',
+      grandTotalMinor: row.grand_total_minor,
+      collectedMinor: amounts.collectedMinor ?? row.grand_total_minor,
+    },
+    shippingCollectedMinor: row.shipping_collected_minor ?? '0',
+    taxLines: publicOrderValue(normalized.taxLines ?? []),
+    feeLines: publicOrderValue(normalized.feeLines ?? []),
+    couponLines: publicOrderValue(normalized.couponLines ?? []),
+    shippingLines: publicOrderValue(normalized.shippingLines ?? []),
+    productIds: parseJsonArray(row.product_ids_json ?? '[]'),
+    variationIds: parseJsonArray(row.variation_ids_json ?? '[]'),
+    skus: parseJsonArray(row.skus_json ?? '[]'),
+    categories: parseJsonArray(row.categories_json ?? '[]'),
+    authors: parseJsonArray(row.authors_json ?? '[]'),
+    remoteTags: remoteTags.length > 0 ? remoteTags : publicOrderValue(normalized.tags ?? []),
+    couponCodes: parseJsonArray(row.coupon_codes_json ?? '[]'),
+    quantityTotal: row.quantity_total ?? normalized.quantityTotal ?? 0,
+    refundState: row.refund_state ?? 'none',
+    exceptionState: row.exception_state ?? normalized.exceptionState ?? 'none',
+    remoteDeletedAt: row.remote_deleted_at,
+    staleExportAt: row.stale_export_at,
+    assigneeId: row.assignee_id,
+    tags,
+    notesHistory: notes,
+    version: row.version,
+    refunds:
+      refunds.length > 0 ? publicOrderValue(refunds) : publicOrderValue(normalized.refunds ?? []),
+    sourceSnapshotAvailable: Boolean(row.remote_payload_json),
+  };
+};
+
 const requireHash = (value: string): string => createHash('sha256').update(value).digest('hex');
 const randomId = (): string => randomUUID();
 const privateMetadataKey =
@@ -688,62 +1307,197 @@ const coerceMappedValue = (value: unknown, type: MetadataType): string | null =>
   return null;
 };
 
-const filterColumns: Record<OrderFilterField, string> = {
-  orderNumber: 'o.order_number',
-  externalOrderId: 'o.external_order_id',
-  remoteStatus: 'o.remote_status',
-  localStatus: 'o.local_status',
-  exportState:
+type FilterKind = 'text' | 'number' | 'date' | 'enum' | 'boolean' | 'collection';
+type FilterDefinition = Readonly<{
+  expression: string;
+  kind: FilterKind;
+  operators: readonly string[];
+  collectionColumn?: string;
+}>;
+
+const textOperators = [
+  'equals',
+  'not-equals',
+  'contains',
+  'starts-with',
+  'is-empty',
+  'is-not-empty',
+  'in',
+] as const;
+const enumOperators = [
+  'equals',
+  'not-equals',
+  'is-any-of',
+  'is-none-of',
+  'is-empty',
+  'is-not-empty',
+] as const;
+const numberOperators = [
+  'equals',
+  'not-equals',
+  'greater-than',
+  'greater-or-equal',
+  'less-than',
+  'less-or-equal',
+  'between',
+  'is-empty',
+  'is-not-empty',
+] as const;
+const collectionOperators = [
+  'contains-any',
+  'contains-all',
+  'contains-none',
+  'is-empty',
+  'is-not-empty',
+] as const;
+
+const textDefinition = (expression: string): FilterDefinition => ({
+  expression,
+  kind: 'text',
+  operators: textOperators,
+});
+const enumDefinition = (expression: string): FilterDefinition => ({
+  expression,
+  kind: 'enum',
+  operators: enumOperators,
+});
+const numberDefinition = (expression: string): FilterDefinition => ({
+  expression,
+  kind: 'number',
+  operators: numberOperators,
+});
+const dateDefinition = (expression: string): FilterDefinition => ({
+  expression,
+  kind: 'date',
+  operators: numberOperators,
+});
+const collectionDefinition = (column: string): FilterDefinition => ({
+  expression: column,
+  kind: 'collection',
+  operators: collectionOperators,
+  collectionColumn: column,
+});
+
+const filterDefinitions: Record<OrderFilterField, FilterDefinition> = {
+  orderNumber: textDefinition('o.order_number'),
+  externalOrderId: textDefinition('o.external_order_id'),
+  customerName: textDefinition('o.customer_name'),
+  customerEmail: textDefinition('o.customer_email'),
+  customerPhone: textDefinition('o.customer_phone'),
+  remoteStatus: enumDefinition('o.remote_status'),
+  localStatus: enumDefinition('o.local_status'),
+  exportState: enumDefinition(
     "CASE WHEN o.stale_export_at IS NOT NULL AND o.export_state = 'exported' THEN 'changed-after-export' ELSE o.export_state END",
-  origin: 'o.origin',
-  currency: 'o.currency',
-  connectionId: 'o.connection_id',
-  remoteCreatedAt: 'o.remote_modified_at',
-  grandTotalMinor: 'o.grand_total_minor',
+  ),
+  origin: enumDefinition('o.origin'),
+  source: enumDefinition('o.origin'),
+  channel: textDefinition('o.channel'),
+  createdVia: textDefinition('o.created_via'),
+  pos: textDefinition('o.pos_location'),
+  posLocation: textDefinition('o.pos_location'),
+  currency: enumDefinition('o.currency'),
+  connectionId: textDefinition('o.connection_id'),
+  store: textDefinition('o.connection_id'),
+  paymentMethod: textDefinition('o.payment_method_id'),
+  'payment.methodId': textDefinition('o.payment_method_id'),
+  paymentStatus: enumDefinition('o.payment_status'),
+  'payment.status': enumDefinition('o.payment_status'),
+  shippingMethod: textDefinition('o.shipping_method_id'),
+  'shipping.methodId': textDefinition('o.shipping_method_id'),
+  shippingCarrier: textDefinition('o.shipping_carrier'),
+  'shipping.carrier': textDefinition('o.shipping_carrier'),
+  tracking: textDefinition('o.search_text'),
+  shippingAmount: numberDefinition('o.shipping_collected_minor'),
+  'shipping.amount': numberDefinition('o.shipping_collected_minor'),
+  product: textDefinition('o.search_text'),
+  productId: collectionDefinition('o.product_ids_json'),
+  variation: collectionDefinition('o.variation_ids_json'),
+  variationId: collectionDefinition('o.variation_ids_json'),
+  sku: collectionDefinition('o.skus_json'),
+  category: collectionDefinition('o.categories_json'),
+  author: collectionDefinition('o.authors_json'),
+  tag: collectionDefinition('o.tags_json'),
+  coupon: collectionDefinition('o.coupon_codes_json'),
+  hasRefund: {
+    expression: "CASE WHEN o.refund_state IN ('partial', 'full') THEN 1 ELSE 0 END",
+    kind: 'boolean',
+    operators: ['is-true', 'is-false'],
+  },
+  refund: enumDefinition('o.refund_state'),
+  refundState: enumDefinition('o.refund_state'),
+  exception: textDefinition('o.exception_state'),
+  exceptionState: textDefinition('o.exception_state'),
+  quantity: numberDefinition('o.quantity_total'),
+  subtotal: numberDefinition('o.merchandise_subtotal_minor'),
+  merchandiseSubtotal: numberDefinition('o.merchandise_subtotal_minor'),
+  discount: numberDefinition('o.discount_minor'),
+  tax: numberDefinition('o.tax_minor'),
+  fees: numberDefinition('o.fees_minor'),
+  total: numberDefinition('o.grand_total_minor'),
+  remoteCreatedAt: dateDefinition('COALESCE(o.remote_created_at, o.remote_modified_at)'),
+  createdAt: dateDefinition('o.created_at'),
+  remoteModifiedAt: dateDefinition('o.remote_modified_at'),
+  updatedAt: dateDefinition('o.updated_at'),
+  grandTotalMinor: numberDefinition('o.grand_total_minor'),
 };
-const allowedOperators: Record<OrderFilterField, readonly string[]> = {
-  orderNumber: [
-    'equals',
-    'not-equals',
-    'contains',
-    'starts-with',
-    'is-empty',
-    'is-not-empty',
-    'in',
-  ],
-  externalOrderId: [
-    'equals',
-    'not-equals',
-    'contains',
-    'starts-with',
-    'is-empty',
-    'is-not-empty',
-    'in',
-  ],
-  remoteStatus: ['equals', 'not-equals', 'is-any-of', 'is-empty', 'is-not-empty'],
-  localStatus: ['equals', 'not-equals', 'is-any-of', 'is-empty', 'is-not-empty'],
-  exportState: ['equals', 'not-equals', 'is-any-of', 'is-empty', 'is-not-empty'],
-  origin: ['equals', 'is-any-of'],
-  currency: ['equals', 'is-any-of'],
-  connectionId: ['equals', 'is-any-of'],
-  remoteCreatedAt: [
-    'equals',
-    'greater-than',
-    'greater-or-equal',
-    'less-than',
-    'less-or-equal',
-    'between',
-    'is-empty',
-    'is-not-empty',
-  ],
-  grandTotalMinor: [
-    'equals',
-    'greater-than',
-    'greater-or-equal',
-    'less-than',
-    'less-or-equal',
-    'between',
-  ],
+
+export const ORDER_FILTER_CATALOG: readonly Readonly<{
+  field: OrderFilterField;
+  kind: FilterKind;
+  operators: readonly string[];
+}>[] = Object.entries(filterDefinitions).map(([field, definition]) => ({
+  field: field as OrderFilterField,
+  kind: definition.kind,
+  operators: definition.operators,
+}));
+
+const orderFacetDefinitions: readonly Readonly<{
+  field: OrderFilterField;
+  expression: string;
+  collectionColumn?: string;
+}>[] = [
+  { field: 'origin', expression: 'o.origin' },
+  { field: 'remoteStatus', expression: 'o.remote_status' },
+  { field: 'localStatus', expression: 'o.local_status' },
+  { field: 'exportState', expression: filterDefinitions.exportState.expression },
+  { field: 'currency', expression: 'o.currency' },
+  { field: 'channel', expression: 'o.channel' },
+  { field: 'posLocation', expression: 'o.pos_location' },
+  { field: 'paymentMethod', expression: 'o.payment_method_id' },
+  { field: 'paymentStatus', expression: 'o.payment_status' },
+  { field: 'shippingMethod', expression: 'o.shipping_method_id' },
+  { field: 'shippingCarrier', expression: 'o.shipping_carrier' },
+  { field: 'refundState', expression: 'o.refund_state' },
+  { field: 'category', expression: 'o.categories_json', collectionColumn: 'o.categories_json' },
+  { field: 'author', expression: 'o.authors_json', collectionColumn: 'o.authors_json' },
+  { field: 'sku', expression: 'o.skus_json', collectionColumn: 'o.skus_json' },
+  { field: 'productId', expression: 'o.product_ids_json', collectionColumn: 'o.product_ids_json' },
+  { field: 'tag', expression: 'o.tags_json', collectionColumn: 'o.tags_json' },
+];
+
+const escapeLike = (value: string): string =>
+  value.replace(/[\\%_]/gu, (character) => `\\${character}`);
+const filterTextValue = (value: unknown): string => {
+  if (typeof value !== 'string' && typeof value !== 'number')
+    throw new Error('ORDER_FILTER_VALUE_INVALID');
+  const result = String(value);
+  if (result.length > 256) throw new Error('ORDER_FILTER_VALUE_INVALID');
+  return result;
+};
+const filterNumberValue = (value: unknown): string => {
+  const result = filterTextValue(value);
+  if (!/^-?\d{1,18}$/u.test(result)) throw new Error('ORDER_FILTER_VALUE_INVALID');
+  return result;
+};
+const filterDateValue = (value: unknown): string => {
+  const result = filterTextValue(value);
+  if (!Number.isFinite(Date.parse(result))) throw new Error('ORDER_FILTER_VALUE_INVALID');
+  return new Date(result).toISOString();
+};
+const valuesFor = (value: unknown, code = 'ORDER_FILTER_VALUE_INVALID'): unknown[] => {
+  const values = Array.isArray(value) ? value : [value];
+  if (values.length < 1 || values.length > 100) throw new Error(code);
+  return values;
 };
 const encodedCursor = (value: unknown): string =>
   Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
@@ -767,51 +1521,114 @@ const compileFilter = (
   if (depth > 10) throw new Error('ORDER_FILTER_TOO_DEEP');
   if (!filter || typeof filter !== 'object') throw new Error('ORDER_FILTER_INVALID');
   if ('op' in filter) {
-    if (filter.children.length === 0) throw new Error('ORDER_FILTER_EMPTY_GROUP');
+    if ((filter.op !== 'and' && filter.op !== 'or') || !Array.isArray(filter.children))
+      throw new Error('ORDER_FILTER_INVALID');
+    if (filter.children.length === 0 || filter.children.length > 50)
+      throw new Error('ORDER_FILTER_EMPTY_GROUP');
     const children = filter.children.map((child) => compileFilter(child, depth + 1));
     return {
       sql: `(${children.map((child) => child.sql).join(` ${filter.op.toUpperCase()} `)})`,
       params: children.flatMap((child) => child.params),
     };
   }
-  if (
-    !Object.hasOwn(filterColumns, filter.field) ||
-    !allowedOperators[filter.field].includes(filter.operator)
-  ) {
+  const definition = filterDefinitions[filter.field];
+  if (!definition || !definition.operators.includes(filter.operator)) {
     throw new Error('ORDER_FILTER_NOT_ALLOWED');
   }
-  const column = filterColumns[filter.field];
   const operator = filter.operator;
-  if (operator === 'is-empty') return { sql: `(${column} IS NULL OR ${column} = '')`, params: [] };
+  const column = definition.expression;
+  const collectionColumn = definition.collectionColumn;
+  if (operator === 'is-empty') {
+    if (collectionColumn)
+      return {
+        sql: `(NOT EXISTS (SELECT 1 FROM json_each(COALESCE(${collectionColumn}, '[]'))))`,
+        params: [],
+      };
+    return { sql: `(${column} IS NULL OR ${column} = '')`, params: [] };
+  }
   if (operator === 'is-not-empty')
-    return { sql: `(${column} IS NOT NULL AND ${column} <> '')`, params: [] };
-  const values = Array.isArray(filter.value) ? filter.value : [filter.value];
-  if (operator === 'in' || operator === 'is-any-of') {
+    return collectionColumn
+      ? {
+          sql: `(EXISTS (SELECT 1 FROM json_each(COALESCE(${collectionColumn}, '[]'))))`,
+          params: [],
+        }
+      : { sql: `(${column} IS NOT NULL AND ${column} <> '')`, params: [] };
+  if (definition.kind === 'boolean') {
+    if (operator !== 'is-true' && operator !== 'is-false')
+      throw new Error('ORDER_FILTER_NOT_ALLOWED');
+    return { sql: `${column} = ${operator === 'is-true' ? '1' : '0'}`, params: [] };
+  }
+  if (collectionColumn) {
+    const values = valuesFor(filter.value).map(filterTextValue);
+    const match = (value: string): string =>
+      `LOWER(CAST(item.value AS TEXT)) LIKE LOWER(?) ESCAPE '\\'`;
     if (
-      values.length === 0 ||
-      values.some((value) => typeof value !== 'string' && typeof value !== 'number')
-    )
-      throw new Error('ORDER_FILTER_VALUE_INVALID');
+      operator === 'contains-any' ||
+      operator === 'contains-all' ||
+      operator === 'contains-none'
+    ) {
+      const subqueries = values.map((value) => ({
+        sql: `EXISTS (SELECT 1 FROM json_each(COALESCE(${collectionColumn}, '[]')) AS item WHERE ${match(value)})`,
+        value: `%${escapeLike(value)}%`,
+      }));
+      if (operator === 'contains-all')
+        return {
+          sql: `(${subqueries.map((item) => item.sql).join(' AND ')})`,
+          params: subqueries.map((item) => item.value),
+        };
+      if (operator === 'contains-none')
+        return {
+          sql: `(${subqueries.map((item) => `NOT ${item.sql}`).join(' AND ')})`,
+          params: subqueries.map((item) => item.value),
+        };
+      return {
+        sql: `(${subqueries.map((item) => item.sql).join(' OR ')})`,
+        params: subqueries.map((item) => item.value),
+      };
+    }
+    throw new Error('ORDER_FILTER_NOT_ALLOWED');
+  }
+  const values = valuesFor(filter.value);
+  const normalize = (value: unknown): string =>
+    definition.kind === 'number'
+      ? filterNumberValue(value)
+      : definition.kind === 'date'
+        ? filterDateValue(value)
+        : filterTextValue(value);
+  const comparisonExpression =
+    definition.kind === 'number'
+      ? `CAST(${column} AS INTEGER)`
+      : definition.kind === 'text' || definition.kind === 'enum'
+        ? `LOWER(COALESCE(${column}, ''))`
+        : column;
+  const comparisonValue = (value: string): string =>
+    definition.kind === 'text' || definition.kind === 'enum' ? value.toLowerCase() : value;
+  if (operator === 'in' || operator === 'is-any-of' || operator === 'is-none-of') {
+    const normalized = values.map(normalize);
+    const sql = `${comparisonExpression} ${operator === 'is-none-of' ? 'NOT ' : ''}IN (${normalized.map(() => '?').join(',')})`;
     return {
-      sql: `${column} IN (${values.map(() => '?').join(',')})`,
-      params: values as (string | number)[],
+      sql,
+      params: normalized.map((value) =>
+        definition.kind === 'number' ? value : comparisonValue(value),
+      ),
     };
   }
   if (operator === 'between') {
-    if (
-      values.length !== 2 ||
-      values.some((value) => typeof value !== 'string' && typeof value !== 'number')
-    )
-      throw new Error('ORDER_FILTER_VALUE_INVALID');
-    return { sql: `${column} BETWEEN ? AND ?`, params: values as (string | number)[] };
-  }
-  if (typeof filter.value !== 'string' && typeof filter.value !== 'number')
-    throw new Error('ORDER_FILTER_VALUE_INVALID');
-  if (operator === 'contains' || operator === 'starts-with') {
-    const value = String(filter.value);
+    if (values.length !== 2) throw new Error('ORDER_FILTER_VALUE_INVALID');
+    const normalized = values.map(normalize);
     return {
-      sql: `${column} LIKE ?`,
-      params: [operator === 'contains' ? `%${value}%` : `${value}%`],
+      sql: `${comparisonExpression} BETWEEN ? AND ?`,
+      params: normalized.map((value) =>
+        definition.kind === 'number' ? value : comparisonValue(value),
+      ),
+    };
+  }
+  if (operator === 'contains' || operator === 'starts-with') {
+    if (definition.kind !== 'text') throw new Error('ORDER_FILTER_NOT_ALLOWED');
+    const value = filterTextValue(filter.value);
+    return {
+      sql: `LOWER(COALESCE(${column}, '')) LIKE LOWER(?) ESCAPE '\\'`,
+      params: [operator === 'contains' ? `%${escapeLike(value)}%` : `${escapeLike(value)}%`],
     };
   }
   const operators: Record<string, string> = {
@@ -824,10 +1641,14 @@ const compileFilter = (
   };
   const sqlOperator = operators[operator];
   if (!sqlOperator) throw new Error('ORDER_FILTER_NOT_ALLOWED');
-  return { sql: `${column} ${sqlOperator} ?`, params: [filter.value] };
+  const value = normalize(filter.value);
+  return {
+    sql: `${comparisonExpression} ${sqlOperator} ?`,
+    params: [definition.kind === 'number' ? value : comparisonValue(value)],
+  };
 };
 
-export const schemaVersion = 16;
+export const schemaVersion = 17;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -1257,6 +2078,69 @@ const migrations: readonly Migration[] = [
         ON connection_sync_runs(account_id, connection_id, status, updated_at, id);
     `,
   },
+  {
+    version: 17,
+    name: 'canonical-order-facets-and-timeline',
+    sql: `
+      ALTER TABLE orders ADD COLUMN remote_created_at TEXT;
+      ALTER TABLE orders ADD COLUMN source_timezone TEXT;
+      ALTER TABLE orders ADD COLUMN created_via TEXT;
+      ALTER TABLE orders ADD COLUMN channel TEXT;
+      ALTER TABLE orders ADD COLUMN pos_location TEXT;
+      ALTER TABLE orders ADD COLUMN external_customer_id TEXT;
+      ALTER TABLE orders ADD COLUMN customer_name TEXT;
+      ALTER TABLE orders ADD COLUMN customer_email TEXT;
+      ALTER TABLE orders ADD COLUMN customer_phone TEXT;
+      ALTER TABLE orders ADD COLUMN payment_method_id TEXT;
+      ALTER TABLE orders ADD COLUMN payment_method_title TEXT;
+      ALTER TABLE orders ADD COLUMN payment_status TEXT;
+      ALTER TABLE orders ADD COLUMN paid_at TEXT;
+      ALTER TABLE orders ADD COLUMN shipping_method_id TEXT;
+      ALTER TABLE orders ADD COLUMN shipping_method_title TEXT;
+      ALTER TABLE orders ADD COLUMN shipping_carrier TEXT;
+      ALTER TABLE orders ADD COLUMN shipping_collected_minor TEXT NOT NULL DEFAULT '0';
+      ALTER TABLE orders ADD COLUMN merchandise_subtotal_minor TEXT NOT NULL DEFAULT '0';
+      ALTER TABLE orders ADD COLUMN discount_minor TEXT NOT NULL DEFAULT '0';
+      ALTER TABLE orders ADD COLUMN merchandise_net_minor TEXT NOT NULL DEFAULT '0';
+      ALTER TABLE orders ADD COLUMN tax_minor TEXT NOT NULL DEFAULT '0';
+      ALTER TABLE orders ADD COLUMN fees_minor TEXT NOT NULL DEFAULT '0';
+      ALTER TABLE orders ADD COLUMN refund_minor TEXT NOT NULL DEFAULT '0';
+      ALTER TABLE orders ADD COLUMN quantity_total INTEGER NOT NULL DEFAULT 0 CHECK(quantity_total >= 0);
+      ALTER TABLE orders ADD COLUMN refund_state TEXT NOT NULL DEFAULT 'none'
+        CHECK(refund_state IN ('none', 'partial', 'full', 'unknown'));
+      ALTER TABLE orders ADD COLUMN exception_state TEXT NOT NULL DEFAULT 'none';
+      ALTER TABLE orders ADD COLUMN product_ids_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE orders ADD COLUMN variation_ids_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE orders ADD COLUMN skus_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE orders ADD COLUMN categories_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE orders ADD COLUMN authors_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE orders ADD COLUMN remote_tags_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE orders ADD COLUMN coupon_codes_json TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE orders ADD COLUMN search_text TEXT NOT NULL DEFAULT '';
+      CREATE INDEX orders_account_remote_created ON orders(account_id, remote_created_at, id);
+      CREATE INDEX orders_account_channel_pos ON orders(account_id, channel, pos_location, remote_created_at, id);
+      CREATE INDEX orders_account_payment ON orders(account_id, payment_method_id, payment_status, remote_created_at, id);
+      CREATE INDEX orders_account_shipping ON orders(account_id, shipping_method_id, shipping_carrier, remote_created_at, id);
+      CREATE INDEX orders_account_amounts ON orders(account_id, currency, grand_total_minor, shipping_collected_minor, tax_minor);
+      CREATE INDEX orders_account_quantity ON orders(account_id, quantity_total, remote_created_at, id);
+      CREATE INDEX orders_account_refund_exception ON orders(account_id, refund_state, exception_state, remote_created_at, id);
+      CREATE INDEX orders_account_customer_email_phone ON orders(account_id, customer_email, customer_phone, id);
+      CREATE INDEX orders_account_search_text ON orders(account_id, search_text, id);
+      CREATE TABLE order_timeline_events (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), order_id TEXT NOT NULL,
+        event_type TEXT NOT NULL, source TEXT NOT NULL CHECK(source IN ('remote', 'local', 'system')),
+        event_key TEXT NOT NULL, summary_json TEXT NOT NULL, actor_id TEXT, created_at TEXT NOT NULL,
+        UNIQUE(account_id, order_id, event_key),
+        FOREIGN KEY(account_id, order_id) REFERENCES orders(account_id, id)
+      );
+      CREATE INDEX order_timeline_account_order ON order_timeline_events(account_id, order_id, created_at DESC, id DESC);
+      UPDATE orders SET
+        remote_created_at = COALESCE(remote_created_at, remote_modified_at),
+        search_text = LOWER(COALESCE(order_number, '') || ' ' || COALESCE(external_order_id, '') || ' ' ||
+          COALESCE(remote_status, '') || ' ' || COALESCE(local_status, '') || ' ' || COALESCE(currency, '') ||
+          COALESCE(connection_id, ''));
+    `,
+  },
 ];
 
 const MAX_SELECTION_IDS = 5_000;
@@ -1316,14 +2200,25 @@ const normalizeOrderQuery = (value: unknown, errorCode: string): OrderQueryInput
     }
     query.filter = filter;
   }
+  if (value.includeFacets !== undefined) {
+    if (typeof value.includeFacets !== 'boolean') throw new Error(errorCode);
+    query.includeFacets = value.includeFacets;
+  }
   if (value.sort !== undefined) {
     if (!isRecord(value.sort)) throw new Error(errorCode);
     const field = value.sort.field;
     const direction = value.sort.direction;
     if (
-      !['remoteCreatedAt', 'updatedAt', 'orderNumber', 'grandTotalMinor', 'id'].includes(
-        String(field),
-      ) ||
+      ![
+        'remoteCreatedAt',
+        'remoteModifiedAt',
+        'createdAt',
+        'updatedAt',
+        'orderNumber',
+        'grandTotalMinor',
+        'total',
+        'id',
+      ].includes(String(field)) ||
       !['asc', 'desc'].includes(String(direction))
     )
       throw new Error(errorCode);
@@ -2133,7 +3028,7 @@ export class SqliteStore {
     this.db.exec(
       'CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)',
     );
-    this.applyMigrations();
+    if (this.applyMigrations()) this.backfillCanonicalOrderProjections();
   }
 
   private assertContext(context: AccountContext): void {
@@ -3154,11 +4049,11 @@ export class SqliteStore {
       params.push(selection.watermark);
       const query = selection.query as OrderQueryInput;
       if (query.search !== undefined) {
-        const search = `%${query.search}%`;
+        const search = `%${escapeLike(query.search.toLowerCase())}%`;
         clauses.push(
-          `(o.order_number LIKE ? OR o.external_order_id LIKE ? OR o.remote_status LIKE ? OR o.local_status LIKE ? OR o.currency LIKE ? OR o.normalized_json LIKE ?)`,
+          `(o.search_text LIKE ? ESCAPE '\\' OR LOWER(COALESCE(o.normalized_json, '')) LIKE ? ESCAPE '\\')`,
         );
-        params.push(search, search, search, search, search, search);
+        params.push(search, search);
       }
       if (query.filter) {
         const compiled = compileFilter(query.filter);
@@ -5544,9 +6439,44 @@ export class SqliteStore {
       default:
         throw new Error('BULK_ACTION_HANDLER_NOT_CONFIGURED');
     }
+    if (changed) {
+      this.appendOrderTimeline(context, orderId, {
+        eventType: `bulk.${job.action}`,
+        source: 'local',
+        eventKey: `local:bulk:${jobId}:${orderId}`,
+        summary: { action: job.action },
+        createdAt: now,
+      });
+    }
     this.audit(context, 'bulk-item.applied', 'bulk_job_item', `${jobId}:${orderId}`, {
       action: job.action,
       changed,
+    });
+  }
+
+  private orderFacets(where: string, params: readonly (string | number)[]): readonly OrderFacet[] {
+    return orderFacetDefinitions.map((definition) => {
+      const rows = definition.collectionColumn
+        ? (this.db
+            .prepare(
+              `SELECT CAST(item.value AS TEXT) AS value, COUNT(DISTINCT o.id) AS count
+               FROM orders o JOIN json_each(COALESCE(${definition.collectionColumn}, '[]')) AS item
+               WHERE ${where} AND item.value IS NOT NULL AND CAST(item.value AS TEXT) <> ''
+               GROUP BY item.value ORDER BY count DESC, value ASC LIMIT 100`,
+            )
+            .all(...params) as Array<{ value: string; count: number }>)
+        : (this.db
+            .prepare(
+              `SELECT CAST(${definition.expression} AS TEXT) AS value, COUNT(*) AS count
+               FROM orders o WHERE ${where} AND ${definition.expression} IS NOT NULL
+                 AND CAST(${definition.expression} AS TEXT) <> ''
+               GROUP BY ${definition.expression} ORDER BY count DESC, value ASC LIMIT 100`,
+            )
+            .all(...params) as Array<{ value: string; count: number }>);
+      return {
+        field: definition.field,
+        values: rows.map((row) => ({ value: row.value, count: Number(row.count) })),
+      };
     });
   }
 
@@ -5657,15 +6587,19 @@ export class SqliteStore {
   }
 
   queryOrders(context: AccountContext, input: OrderQueryInput = {}): OrderQueryResult {
+    this.assertContext(context);
     const limit = input.limit ?? 50;
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
       throw new Error('ORDER_LIMIT_INVALID');
     const sort = input.sort ?? { field: 'remoteCreatedAt' as const, direction: 'desc' as const };
     const sortColumns = {
-      remoteCreatedAt: 'o.remote_modified_at',
+      remoteCreatedAt: 'COALESCE(o.remote_created_at, o.remote_modified_at)',
+      remoteModifiedAt: 'o.remote_modified_at',
+      createdAt: 'o.created_at',
       updatedAt: 'o.updated_at',
       orderNumber: 'o.order_number',
       grandTotalMinor: 'o.grand_total_minor',
+      total: 'o.grand_total_minor',
       id: 'o.id',
     } as const;
     const sortColumn = sortColumns[sort.field];
@@ -5676,17 +6610,19 @@ export class SqliteStore {
     if (input.search !== undefined) {
       if (typeof input.search !== 'string' || input.search.length > 200)
         throw new Error('ORDER_SEARCH_INVALID');
+      const search = `%${escapeLike(input.search.toLowerCase())}%`;
       clauses.push(
-        `(o.order_number LIKE ? OR o.external_order_id LIKE ? OR o.remote_status LIKE ? OR o.local_status LIKE ? OR o.currency LIKE ? OR o.normalized_json LIKE ?)`,
+        `(o.search_text LIKE ? ESCAPE '\\' OR LOWER(COALESCE(o.normalized_json, '')) LIKE ? ESCAPE '\\')`,
       );
-      const search = `%${input.search}%`;
-      params.push(search, search, search, search, search, search);
+      params.push(search, search);
     }
     if (input.filter) {
       const compiled = compileFilter(input.filter);
       clauses.push(compiled.sql);
       params.push(...compiled.params);
     }
+    const facetClauses = [...clauses];
+    const facetParams = [...params];
     if (input.cursor) {
       const cursor = decodedCursor(input.cursor);
       const comparison = sort.direction === 'desc' ? '<' : '>';
@@ -5697,52 +6633,23 @@ export class SqliteStore {
     }
     const rows = this.db
       .prepare(
-        `SELECT o.id, o.order_number, o.external_order_id, o.origin, o.connection_id, o.remote_status, o.local_status, o.export_state, o.stale_export_at, o.currency, o.grand_total_minor, o.remote_modified_at, o.updated_at, o.normalized_json, o.assignee_id, o.tags_json, o.notes_json, o.version, COALESCE(${sortColumn}, '') AS sort_value FROM orders o WHERE ${clauses.join(' AND ')} ORDER BY COALESCE(${sortColumn}, '') ${sort.direction}, o.id ${sort.direction} LIMIT ?`,
+        `SELECT o.*, COALESCE(${sortColumn}, '') AS sort_value FROM orders o WHERE ${clauses.join(' AND ')} ORDER BY COALESCE(${sortColumn}, '') ${sort.direction}, o.id ${sort.direction} LIMIT ?`,
       )
       .all(...params, limit + 1) as Array<Record<string, unknown>>;
     const hasMore = rows.length > limit;
     const visible = rows.slice(0, limit);
     const items = visible.map((row) => {
-      let normalized: Record<string, unknown> = {};
-      if (typeof row.normalized_json === 'string') {
-        try {
-          normalized = JSON.parse(row.normalized_json) as Record<string, unknown>;
-        } catch {
-          normalized = {};
-        }
-      }
-      let tags: unknown[] = [];
-      if (typeof row.tags_json === 'string') {
-        try {
-          const parsed = JSON.parse(row.tags_json) as unknown;
-          if (Array.isArray(parsed)) tags = parsed;
-        } catch {
-          tags = [];
-        }
-      }
-      return {
-        ...normalized,
-        id: row.id,
-        orderNumber: row.order_number,
-        externalOrderId: row.external_order_id,
-        origin: row.origin,
-        connectionId: row.connection_id,
-        remoteStatus: row.remote_status,
-        localStatus: row.local_status,
-        exportState:
-          row.stale_export_at && row.export_state === 'exported'
-            ? 'changed-after-export'
-            : row.export_state,
-        currency: row.currency,
-        grandTotalMinor: row.grand_total_minor,
-        remoteCreatedAt: row.remote_modified_at,
-        updatedAt: row.updated_at,
-        assigneeId: row.assignee_id,
-        tags,
-        version: row.version,
-      };
+      const normalized = parseJsonRecord(row.normalized_json);
+      return orderOutput(row, normalized, parseJsonArray(row.tags_json));
     });
     const last = visible.at(-1);
+    const countRow = this.db
+      .prepare(`SELECT COUNT(*) AS count FROM orders o WHERE ${facetClauses.join(' AND ')}`)
+      .get(...facetParams) as { count: number };
+    const facets =
+      input.includeFacets === false
+        ? []
+        : this.orderFacets(facetClauses.join(' AND '), facetParams);
     return {
       items,
       hasMore,
@@ -5750,30 +6657,23 @@ export class SqliteStore {
         hasMore && last
           ? encodedCursor({ sortValue: String(last.sort_value ?? ''), id: String(last.id) })
           : null,
+      totalCount: Number(countRow.count),
+      facets,
     };
   }
 
   getOrder(context: AccountContext, orderId: string): Record<string, unknown> | null {
+    this.assertContext(context);
     if (!orderId || orderId.length > 200) return null;
     const row = this.db
       .prepare(
-        `SELECT o.id, o.order_number, o.external_order_id, o.origin, o.connection_id,
-          o.remote_status, o.local_status, o.export_state, o.currency, o.grand_total_minor,
-          o.remote_modified_at, o.remote_deleted_at, o.stale_export_at, o.updated_at,
-          o.assignee_id, o.tags_json, o.notes_json, o.version, o.normalized_json
+        `SELECT o.*
          FROM orders o WHERE o.account_id = ? AND o.id = ?`,
       )
       .get(context.accountId, orderId) as Record<string, unknown> | undefined;
     if (!row) return null;
 
-    let normalized: Record<string, unknown> = {};
-    if (typeof row.normalized_json === 'string') {
-      try {
-        normalized = JSON.parse(row.normalized_json) as Record<string, unknown>;
-      } catch {
-        normalized = {};
-      }
-    }
+    const normalized = parseJsonRecord(row.normalized_json);
     const refunds = this.db
       .prepare(
         `SELECT external_refund_id AS externalRefundId, amount_minor AS amountMinor,
@@ -5793,39 +6693,332 @@ export class SqliteStore {
       notes = [];
     }
 
-    return {
-      ...normalized,
+    return orderOutput(row, normalized, tags, notes, refunds);
+  }
+
+  listOrderTimeline(
+    context: AccountContext,
+    orderId: string,
+    input: { cursor?: string | null; limit?: number } = {},
+  ): { items: readonly Record<string, unknown>[]; nextCursor: string | null; hasMore: boolean } {
+    this.assertContext(context);
+    const limit = input.limit ?? 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error('ORDER_TIMELINE_LIMIT_INVALID');
+    if (!this.getOrder(context, orderId)) throw new Error('ORDER_NOT_FOUND');
+    const clauses = ['account_id = ?', 'order_id = ?'];
+    const params: (string | number)[] = [context.accountId, orderId];
+    if (input.cursor) {
+      const cursor = decodedCursor(input.cursor);
+      clauses.push('(created_at < ? OR (created_at = ? AND id < ?))');
+      params.push(cursor.sortValue, cursor.sortValue, cursor.id);
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT id, event_type, source, event_key, summary_json, actor_id, created_at
+         FROM order_timeline_events WHERE ${clauses.join(' AND ')}
+         ORDER BY created_at DESC, id DESC LIMIT ?`,
+      )
+      .all(...params, limit + 1) as Array<Record<string, unknown>>;
+    const hasMore = rows.length > limit;
+    const visible = rows.slice(0, limit).map((row) => ({
       id: row.id,
-      orderNumber: row.order_number,
-      externalOrderId: row.external_order_id,
-      origin: row.origin,
-      connectionId: row.connection_id,
-      remoteStatus: row.remote_status,
-      localStatus: row.local_status,
-      exportState:
-        row.stale_export_at && row.export_state === 'exported'
-          ? 'changed-after-export'
-          : row.export_state,
-      currency: row.currency,
-      grandTotalMinor: row.grand_total_minor,
-      remoteCreatedAt: row.remote_modified_at,
-      remoteDeletedAt: row.remote_deleted_at,
-      staleExportAt: row.stale_export_at,
-      updatedAt: row.updated_at,
-      assigneeId: row.assignee_id,
-      tags,
-      notesHistory: notes,
-      version: row.version,
-      refunds: refunds.length > 0 ? refunds : normalized.refunds,
+      eventType: row.event_type,
+      source: row.source,
+      eventKey: row.event_key,
+      summary: parseJsonRecord(row.summary_json),
+      actorId: row.actor_id,
+      createdAt: row.created_at,
+    }));
+    const last = visible.at(-1);
+    return {
+      items: visible,
+      hasMore,
+      nextCursor:
+        hasMore && last
+          ? encodedCursor({ sortValue: String(last.createdAt), id: String(last.id) })
+          : null,
     };
   }
 
-  private applyMigrations(): void {
+  private appendOrderTimeline(
+    context: AccountContext,
+    orderId: string,
+    input: {
+      eventType: string;
+      source: 'remote' | 'local' | 'system';
+      eventKey: string;
+      summary: Record<string, unknown>;
+      createdAt?: string;
+    },
+  ): void {
+    if (!input.eventType || input.eventType.length > 120)
+      throw new Error('ORDER_TIMELINE_EVENT_INVALID');
+    if (!input.eventKey || input.eventKey.length > 256)
+      throw new Error('ORDER_TIMELINE_EVENT_INVALID');
+    const summaryJson = serializeBoundedJson(
+      input.summary,
+      8 * 1024,
+      'ORDER_TIMELINE_SUMMARY_TOO_LARGE',
+    );
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO order_timeline_events
+          (id, account_id, order_id, event_type, source, event_key, summary_json, actor_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        randomId(),
+        context.accountId,
+        orderId,
+        input.eventType,
+        input.source,
+        input.eventKey,
+        summaryJson,
+        context.actorId ?? null,
+        input.createdAt ?? new Date().toISOString(),
+      );
+  }
+
+  private orderVersionRow(
+    context: AccountContext,
+    orderId: string,
+  ): {
+    origin: 'woo' | 'manual';
+    connection_id: string | null;
+    external_order_id: string | null;
+    source_hash: string | null;
+    local_status: string;
+    assignee_id: string | null;
+    export_state: string;
+    stale_export_at: string | null;
+    version: number;
+  } {
+    const row = this.db
+      .prepare(
+        `SELECT origin, connection_id, external_order_id, source_hash, local_status, assignee_id,
+          export_state, stale_export_at, version FROM orders WHERE account_id = ? AND id = ?`,
+      )
+      .get(context.accountId, orderId) as
+      | {
+          origin: 'woo' | 'manual';
+          connection_id: string | null;
+          external_order_id: string | null;
+          source_hash: string | null;
+          local_status: string;
+          assignee_id: string | null;
+          export_state: string;
+          stale_export_at: string | null;
+          version: number;
+        }
+      | undefined;
+    if (!row) throw new Error('ORDER_NOT_FOUND');
+    return row;
+  }
+
+  updateOrderLocalWorkflow(
+    context: AccountContext,
+    orderId: string,
+    input: {
+      version: number;
+      localStatus?: string | undefined;
+      assigneeId?: string | null | undefined;
+    },
+  ): Record<string, unknown> {
+    const actorId = this.requireMutationActor(context);
+    if (!Number.isInteger(input.version) || input.version < 1)
+      throw new Error('ORDER_VERSION_INVALID');
+    if (input.localStatus === undefined && input.assigneeId === undefined)
+      throw new Error('ORDER_WORKFLOW_EMPTY');
+    const current = this.orderVersionRow(context, orderId);
+    if (current.version !== input.version) throw new Error('ORDER_VERSION_CONFLICT');
+    const localStatus =
+      input.localStatus === undefined
+        ? current.local_status
+        : manualText(input.localStatus, 'ORDER_LOCAL_STATUS_INVALID', 80);
+    const assigneeId = input.assigneeId === undefined ? current.assignee_id : input.assigneeId;
+    if (assigneeId !== null && typeof assigneeId !== 'string')
+      throw new Error('ORDER_ASSIGNEE_INVALID');
+    if (assigneeId) this.assertManualAssignee(context, assigneeId);
+    const changed = localStatus !== current.local_status || assigneeId !== current.assignee_id;
+    if (!changed) return this.getOrder(context, orderId) as Record<string, unknown>;
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE orders SET local_status = ?, assignee_id = ?,
+          stale_export_at = CASE WHEN export_state = 'exported' THEN COALESCE(stale_export_at, ?) ELSE stale_export_at END,
+          version = version + 1, updated_at = ?
+         WHERE account_id = ? AND id = ? AND version = ?`,
+      )
+      .run(localStatus, assigneeId, now, now, context.accountId, orderId, input.version);
+    if (result.changes !== 1) throw new Error('ORDER_VERSION_CONFLICT');
+    this.appendOrderTimeline(context, orderId, {
+      eventType: 'workflow.updated',
+      source: 'local',
+      eventKey: `local:workflow:${input.version + 1}`,
+      summary: {
+        localStatus,
+        assigneeChanged: assigneeId !== current.assignee_id,
+      },
+      createdAt: now,
+    });
+    this.audit(context, 'order.workflow-updated', 'order', orderId, {
+      actorId,
+      localStatus,
+      assigneeChanged: assigneeId !== current.assignee_id,
+    });
+    return this.getOrder(context, orderId) as Record<string, unknown>;
+  }
+
+  addOrderTag(
+    context: AccountContext,
+    orderId: string,
+    input: { tag: string; version: number },
+  ): Record<string, unknown> {
+    const actorId = this.requireMutationActor(context);
+    const tag = manualText(input.tag, 'ORDER_TAG_INVALID', 80);
+    if (!Number.isInteger(input.version) || input.version < 1)
+      throw new Error('ORDER_VERSION_INVALID');
+    const current = this.orderVersionRow(context, orderId);
+    if (current.version !== input.version) throw new Error('ORDER_VERSION_CONFLICT');
+    const row = this.db
+      .prepare('SELECT tags_json FROM orders WHERE account_id = ? AND id = ?')
+      .get(context.accountId, orderId) as { tags_json: string };
+    const tags = parseJsonArray(row.tags_json).filter(
+      (value): value is string => typeof value === 'string',
+    );
+    if (tags.includes(tag)) return this.getOrder(context, orderId) as Record<string, unknown>;
+    if (tags.length >= 50) throw new Error('ORDER_TAGS_LIMIT');
+    const next = [...tags, tag];
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE orders SET tags_json = ?, stale_export_at = CASE WHEN export_state = 'exported' THEN COALESCE(stale_export_at, ?) ELSE stale_export_at END,
+          version = version + 1, updated_at = ? WHERE account_id = ? AND id = ? AND version = ?`,
+      )
+      .run(JSON.stringify(next), now, now, context.accountId, orderId, input.version);
+    if (result.changes !== 1) throw new Error('ORDER_VERSION_CONFLICT');
+    this.appendOrderTimeline(context, orderId, {
+      eventType: 'tag.added',
+      source: 'local',
+      eventKey: `local:tag:add:${input.version + 1}`,
+      summary: { tag },
+      createdAt: now,
+    });
+    this.audit(context, 'order.tag-added', 'order', orderId, { actorId });
+    return this.getOrder(context, orderId) as Record<string, unknown>;
+  }
+
+  removeOrderTag(
+    context: AccountContext,
+    orderId: string,
+    input: { tag: string; version: number },
+  ): Record<string, unknown> {
+    const actorId = this.requireMutationActor(context);
+    const tag = manualText(input.tag, 'ORDER_TAG_INVALID', 80);
+    if (!Number.isInteger(input.version) || input.version < 1)
+      throw new Error('ORDER_VERSION_INVALID');
+    const current = this.orderVersionRow(context, orderId);
+    if (current.version !== input.version) throw new Error('ORDER_VERSION_CONFLICT');
+    const row = this.db
+      .prepare('SELECT tags_json FROM orders WHERE account_id = ? AND id = ?')
+      .get(context.accountId, orderId) as { tags_json: string };
+    const tags = parseJsonArray(row.tags_json).filter(
+      (value): value is string => typeof value === 'string',
+    );
+    if (!tags.includes(tag)) return this.getOrder(context, orderId) as Record<string, unknown>;
+    const next = tags.filter((value) => value !== tag);
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE orders SET tags_json = ?, stale_export_at = CASE WHEN export_state = 'exported' THEN COALESCE(stale_export_at, ?) ELSE stale_export_at END,
+          version = version + 1, updated_at = ? WHERE account_id = ? AND id = ? AND version = ?`,
+      )
+      .run(JSON.stringify(next), now, now, context.accountId, orderId, input.version);
+    if (result.changes !== 1) throw new Error('ORDER_VERSION_CONFLICT');
+    this.appendOrderTimeline(context, orderId, {
+      eventType: 'tag.removed',
+      source: 'local',
+      eventKey: `local:tag:remove:${input.version + 1}`,
+      summary: { tag },
+      createdAt: now,
+    });
+    this.audit(context, 'order.tag-removed', 'order', orderId, { actorId });
+    return this.getOrder(context, orderId) as Record<string, unknown>;
+  }
+
+  addOrderNote(
+    context: AccountContext,
+    orderId: string,
+    input: { text: string; version: number },
+  ): Record<string, unknown> {
+    const actorId = this.requireMutationActor(context);
+    const text = manualText(input.text, 'ORDER_NOTE_INVALID', 5_000);
+    if (!Number.isInteger(input.version) || input.version < 1)
+      throw new Error('ORDER_VERSION_INVALID');
+    const current = this.orderVersionRow(context, orderId);
+    if (current.version !== input.version) throw new Error('ORDER_VERSION_CONFLICT');
+    const row = this.db
+      .prepare('SELECT notes_json FROM orders WHERE account_id = ? AND id = ?')
+      .get(context.accountId, orderId) as { notes_json: string };
+    const notes = parseJsonArray(row.notes_json);
+    if (notes.length >= 500) throw new Error('ORDER_NOTES_LIMIT');
+    const now = new Date().toISOString();
+    notes.push({ id: randomId(), text, createdAt: now, createdBy: actorId });
+    const result = this.db
+      .prepare(
+        `UPDATE orders SET notes_json = ?, stale_export_at = CASE WHEN export_state = 'exported' THEN COALESCE(stale_export_at, ?) ELSE stale_export_at END,
+          version = version + 1, updated_at = ? WHERE account_id = ? AND id = ? AND version = ?`,
+      )
+      .run(JSON.stringify(notes), now, now, context.accountId, orderId, input.version);
+    if (result.changes !== 1) throw new Error('ORDER_VERSION_CONFLICT');
+    this.appendOrderTimeline(context, orderId, {
+      eventType: 'note.added',
+      source: 'local',
+      eventKey: `local:note:${input.version + 1}`,
+      summary: { length: text.length },
+      createdAt: now,
+    });
+    this.audit(context, 'order.note-added', 'order', orderId, { actorId, length: text.length });
+    return this.getOrder(context, orderId) as Record<string, unknown>;
+  }
+
+  enqueueOrderResync(context: AccountContext, orderId: string): { orderId: string; jobId: string } {
+    const actorId = this.requireMutationActor(context);
+    const row = this.orderVersionRow(context, orderId);
+    if (row.origin !== 'woo' || !row.connection_id || !row.external_order_id)
+      throw new Error('ORDER_RESYNC_NOT_AVAILABLE');
+    const idempotencyKey = `order-resync:${row.connection_id}:${row.external_order_id}:${row.source_hash ?? 'none'}`;
+    const job = this.enqueueJob(context, {
+      id: randomId(),
+      type: 'sync.incremental',
+      idempotencyKey,
+      payload: {
+        connectionId: row.connection_id,
+        orderId,
+        externalOrderId: row.external_order_id,
+      },
+      maxAttempts: 5,
+    });
+    const now = new Date().toISOString();
+    this.appendOrderTimeline(context, orderId, {
+      eventType: 'resync.requested',
+      source: 'local',
+      eventKey: `local:resync:${job.id}`,
+      summary: { jobId: job.id },
+      createdAt: now,
+    });
+    this.audit(context, 'order.resync-requested', 'order', orderId, { actorId, jobId: job.id });
+    return { orderId, jobId: job.id };
+  }
+
+  private applyMigrations(): boolean {
     const applied = new Set(
       (this.db.prepare('SELECT version FROM schema_migrations').all() as { version: number }[]).map(
         (row) => row.version,
       ),
     );
+    let appliedAny = false;
     this.db.transaction(() => {
       for (const migration of migrations) {
         if (applied.has(migration.version)) continue;
@@ -5833,6 +7026,106 @@ export class SqliteStore {
         this.db
           .prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
           .run(migration.version, migration.name, new Date().toISOString());
+        appliedAny = true;
+      }
+    })();
+    return appliedAny;
+  }
+
+  private backfillCanonicalOrderProjections(): void {
+    const rows = this.db
+      .prepare(
+        "SELECT id, account_id, order_number, external_order_id, remote_status, currency, grand_total_minor, remote_modified_at, remote_payload_json, normalized_json, source_hash, created_at FROM orders WHERE search_text = '' OR remote_created_at IS NULL",
+      )
+      .all() as Array<Record<string, unknown>>;
+    if (rows.length === 0) return;
+    const update = this.db.prepare(
+      `UPDATE orders SET ${canonicalProjectionColumns.map((column) => `${column} = ?`).join(', ')}
+       WHERE account_id = ? AND id = ?`,
+    );
+    this.db.transaction(() => {
+      for (const row of rows) {
+        let normalized: Record<string, unknown> = {};
+        if (typeof row.normalized_json === 'string') {
+          try {
+            const parsed = JSON.parse(row.normalized_json) as unknown;
+            if (isRecord(parsed)) normalized = parsed;
+          } catch {
+            normalized = {};
+          }
+        }
+        const refunds = Array.isArray(normalized.refunds)
+          ? normalized.refunds.filter(isRecord).map((refund) => ({
+              externalRefundId: String(refund.externalRefundId ?? refund.id ?? ''),
+              amountMinor: String(refund.amountMinor ?? '0'),
+              reason: refund.reason ?? null,
+            }))
+          : [];
+        const input: NormalizedOrderInput = {
+          externalOrderId: String(normalized.externalOrderId ?? row.external_order_id ?? ''),
+          orderNumber: String(normalized.orderNumber ?? row.order_number ?? ''),
+          remoteStatus: String(normalized.remoteStatus ?? row.remote_status ?? ''),
+          createdVia: projectionText(normalized.createdVia),
+          channel: projectionText(normalized.channel),
+          posLocation: projectionText(normalized.posLocation),
+          externalCustomerId: projectionText(normalized.externalCustomerId),
+          currency: String(normalized.currency ?? row.currency ?? 'XXX'),
+          grandTotalMinor: String(normalized.grandTotalMinor ?? row.grand_total_minor ?? '0'),
+          amounts: isRecord(normalized.amounts) ? normalized.amounts : undefined,
+          createdAt: projectionText(normalized.createdAt) ?? projectionText(row.created_at),
+          modifiedAt:
+            projectionText(normalized.modifiedAt) ?? projectionText(row.remote_modified_at),
+          customer: normalized.customer ?? {},
+          billing: normalized.billing ?? {},
+          shipping: normalized.shipping ?? {},
+          payment: isRecord(normalized.payment) ? normalized.payment : undefined,
+          shippingMethod: isRecord(normalized.shippingMethod)
+            ? normalized.shippingMethod
+            : undefined,
+          paymentMethodId: projectionText(normalized.paymentMethodId),
+          paymentMethodTitle: projectionText(normalized.paymentMethodTitle),
+          paymentStatus: projectionText(normalized.paymentStatus),
+          paidAt: projectionText(normalized.paidAt),
+          shippingMethodId: projectionText(normalized.shippingMethodId),
+          shippingMethodTitle: projectionText(normalized.shippingMethodTitle),
+          shippingCarrier: projectionText(normalized.shippingCarrier),
+          shippingCollectedMinor: projectionText(normalized.shippingCollectedMinor) ?? undefined,
+          lines: Array.isArray(normalized.lines) ? normalized.lines : [],
+          refunds,
+          quantityTotal: Number.isInteger(normalized.quantityTotal)
+            ? Number(normalized.quantityTotal)
+            : undefined,
+          productIds: Array.isArray(normalized.productIds)
+            ? normalized.productIds.filter((item): item is string => typeof item === 'string')
+            : undefined,
+          variationIds: Array.isArray(normalized.variationIds)
+            ? normalized.variationIds.filter((item): item is string => typeof item === 'string')
+            : undefined,
+          skus: Array.isArray(normalized.skus)
+            ? normalized.skus.filter((item): item is string => typeof item === 'string')
+            : undefined,
+          categories: Array.isArray(normalized.categories)
+            ? normalized.categories.filter((item): item is string => typeof item === 'string')
+            : undefined,
+          authors: Array.isArray(normalized.authors)
+            ? normalized.authors.filter((item): item is string => typeof item === 'string')
+            : undefined,
+          tags: Array.isArray(normalized.tags)
+            ? normalized.tags.filter((item): item is string => typeof item === 'string')
+            : undefined,
+          couponCodes: Array.isArray(normalized.couponCodes)
+            ? normalized.couponCodes.filter((item): item is string => typeof item === 'string')
+            : undefined,
+          exceptionState: projectionText(normalized.exceptionState),
+          sourceTimezone: projectionText(normalized.sourceTimezone),
+          sourceJson: String(row.remote_payload_json ?? '{}'),
+          sourceHash: String(row.source_hash ?? ''),
+        };
+        update.run(
+          ...canonicalProjectionValues(canonicalProjection(input)),
+          row.account_id,
+          row.id,
+        );
       }
     })();
   }
@@ -6196,6 +7489,19 @@ export class SqliteStore {
       throw new Error('MANUAL_ORDER_ASSIGNEE_INVALID');
   }
 
+  private updateCanonicalProjection(
+    accountId: string,
+    orderId: string,
+    projection: CanonicalOrderProjection,
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE orders SET ${canonicalProjectionColumns.map((column) => `${column} = ?`).join(', ')}
+         WHERE account_id = ? AND id = ?`,
+      )
+      .run(...canonicalProjectionValues(projection), accountId, orderId);
+  }
+
   createManualOrder(context: AccountContext, input: ManualOrderInput): Record<string, unknown> {
     const actorId = this.requireMutationActor(context);
     const normalized = normalizeManualOrder(input);
@@ -6246,8 +7552,42 @@ export class SqliteStore {
           now,
           now,
         );
+      this.updateCanonicalProjection(
+        context.accountId,
+        id,
+        canonicalProjection({
+          externalOrderId: '',
+          orderNumber,
+          remoteStatus: '',
+          currency: normalized.currency,
+          grandTotalMinor: normalized.amounts.grandTotalMinor ?? '0',
+          amounts: normalized.amounts,
+          createdAt: null,
+          modifiedAt: now,
+          customer: normalized.customer,
+          billing: normalized.billing,
+          shipping: normalized.shipping,
+          payment: normalized.payment,
+          shippingMethod: normalized.shippingMethod,
+          lines: normalized.lines,
+          refunds: [],
+          quantityTotal: normalized.lines.reduce(
+            (total, line) => total + (typeof line.quantity === 'number' ? line.quantity : 0),
+            0,
+          ),
+          tags: normalized.tags,
+          sourceJson: payloadJson,
+          sourceHash: requireHash(payloadJson),
+        }),
+      );
       return { id, orderNumber };
     })();
+    this.appendOrderTimeline(context, result.id, {
+      eventType: 'order.created',
+      source: 'local',
+      eventKey: `local:created:${result.id}`,
+      summary: { origin: 'manual', orderNumber: result.orderNumber },
+    });
     this.audit(context, 'manual-order.created', 'order', result.id, {
       orderNumber: result.orderNumber,
       lineCount: normalized.lines.length,
@@ -6266,11 +7606,12 @@ export class SqliteStore {
       throw new Error('MANUAL_ORDER_VERSION_INVALID');
     const row = this.db
       .prepare(
-        'SELECT origin, export_state, normalized_json, local_status, assignee_id, tags_json, notes_json, version FROM orders WHERE account_id = ? AND id = ?',
+        'SELECT origin, order_number, export_state, normalized_json, local_status, assignee_id, tags_json, notes_json, version FROM orders WHERE account_id = ? AND id = ?',
       )
       .get(context.accountId, orderId) as
       | {
           origin: string;
+          order_number: string;
           export_state: string;
           normalized_json: string | null;
           local_status: string;
@@ -6358,6 +7699,40 @@ export class SqliteStore {
         input.version,
       );
     if (updated.changes !== 1) throw new Error('MANUAL_ORDER_VERSION_CONFLICT');
+    this.updateCanonicalProjection(
+      context.accountId,
+      orderId,
+      canonicalProjection({
+        externalOrderId: '',
+        orderNumber: row.order_number,
+        remoteStatus: '',
+        currency: normalized.currency,
+        grandTotalMinor: normalized.amounts.grandTotalMinor ?? '0',
+        amounts: normalized.amounts,
+        createdAt: null,
+        modifiedAt: now,
+        customer: normalized.customer,
+        billing: normalized.billing,
+        shipping: normalized.shipping,
+        payment: normalized.payment,
+        shippingMethod: normalized.shippingMethod,
+        lines: normalized.lines,
+        refunds: [],
+        quantityTotal: normalized.lines.reduce(
+          (total, line) => total + (typeof line.quantity === 'number' ? line.quantity : 0),
+          0,
+        ),
+        tags: normalized.tags,
+        sourceJson: payloadJson,
+        sourceHash: requireHash(payloadJson),
+      }),
+    );
+    this.appendOrderTimeline(context, orderId, {
+      eventType: 'order.updated',
+      source: 'local',
+      eventKey: `local:updated:${input.version + 1}`,
+      summary: { origin: 'manual', lineCount: normalized.lines.length },
+    });
     this.audit(context, 'manual-order.updated', 'order', orderId, {
       version: input.version + 1,
       stale: isStale,
@@ -6380,13 +7755,22 @@ export class SqliteStore {
       throw new Error('SYNC_RECONCILE_TOKEN_INVALID');
     const now = new Date().toISOString();
     const id = `${context.accountId}:${connectionId}:order:${input.externalOrderId}`;
+    const projection = canonicalProjection(input);
+    const normalizedJson = JSON.stringify(input);
+    if (typeof normalizedJson !== 'string' || normalizedJson.length > 512 * 1024)
+      throw new Error('SYNC_ORDER_TOO_LARGE');
+    const projectionInsertColumns = canonicalProjectionColumns.join(', ');
+    const projectionInsertValues = canonicalProjectionColumns.map(() => '?').join(', ');
+    const projectionUpdate = canonicalProjectionColumns
+      .map((column) => `${column} = excluded.${column}`)
+      .join(', ');
     return this.db.transaction(() => {
       const existing = this.db
         .prepare(
-          'SELECT source_hash, export_state FROM orders WHERE account_id = ? AND connection_id = ? AND external_order_id = ?',
+          'SELECT id, source_hash, export_state FROM orders WHERE account_id = ? AND connection_id = ? AND external_order_id = ?',
         )
         .get(context.accountId, connectionId, input.externalOrderId) as
-        { source_hash: string | null; export_state: string } | undefined;
+        { id: string; source_hash: string | null; export_state: string } | undefined;
       const stale = Boolean(
         existing?.source_hash &&
         existing.source_hash !== input.sourceHash &&
@@ -6394,9 +7778,9 @@ export class SqliteStore {
       );
       this.db
         .prepare(
-          `INSERT INTO orders (id, account_id, connection_id, origin, order_number, external_order_id, remote_status, currency, grand_total_minor, source_hash, remote_modified_at, remote_payload_json, normalized_json, stale_export_at, reconcile_token, created_at, updated_at)
-           VALUES (?, ?, ?, 'woo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(account_id, connection_id, external_order_id) DO UPDATE SET order_number = excluded.order_number, remote_status = excluded.remote_status, currency = excluded.currency, grand_total_minor = excluded.grand_total_minor, source_hash = excluded.source_hash, remote_modified_at = excluded.remote_modified_at, remote_payload_json = excluded.remote_payload_json, normalized_json = excluded.normalized_json, remote_deleted_at = NULL, reconcile_token = COALESCE(excluded.reconcile_token, orders.reconcile_token), stale_export_at = CASE WHEN excluded.stale_export_at IS NOT NULL THEN excluded.stale_export_at ELSE orders.stale_export_at END, updated_at = excluded.updated_at`,
+          `INSERT INTO orders (id, account_id, connection_id, origin, order_number, external_order_id, remote_status, currency, grand_total_minor, source_hash, remote_modified_at, remote_payload_json, normalized_json, stale_export_at, reconcile_token, created_at, updated_at, ${projectionInsertColumns})
+           VALUES (?, ?, ?, 'woo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${projectionInsertValues})
+           ON CONFLICT(account_id, connection_id, external_order_id) DO UPDATE SET order_number = excluded.order_number, remote_status = excluded.remote_status, currency = excluded.currency, grand_total_minor = excluded.grand_total_minor, source_hash = excluded.source_hash, remote_modified_at = excluded.remote_modified_at, remote_payload_json = excluded.remote_payload_json, normalized_json = excluded.normalized_json, remote_deleted_at = NULL, reconcile_token = COALESCE(excluded.reconcile_token, orders.reconcile_token), stale_export_at = CASE WHEN excluded.stale_export_at IS NOT NULL THEN excluded.stale_export_at ELSE orders.stale_export_at END, updated_at = excluded.updated_at, ${projectionUpdate}`,
         )
         .run(
           id,
@@ -6410,11 +7794,12 @@ export class SqliteStore {
           input.sourceHash,
           input.modifiedAt,
           input.sourceJson,
-          JSON.stringify(input),
+          normalizedJson,
           stale ? now : null,
           input.reconcileToken ?? null,
           now,
           now,
+          ...canonicalProjectionValues(projection),
         );
       for (const refund of input.refunds) {
         this.db
@@ -6432,6 +7817,17 @@ export class SqliteStore {
             now,
           );
       }
+      this.appendOrderTimeline(context, id, {
+        eventType: existing ? 'order.updated' : 'order.created',
+        source: 'remote',
+        eventKey: `remote:${input.sourceHash}`,
+        summary: {
+          remoteStatus: input.remoteStatus,
+          modifiedAt: input.modifiedAt,
+          sourceHash: input.sourceHash,
+        },
+        createdAt: input.modifiedAt ?? now,
+      });
       return id;
     })();
   }
@@ -6448,6 +7844,22 @@ export class SqliteStore {
         'UPDATE orders SET remote_deleted_at = ?, updated_at = ? WHERE account_id = ? AND connection_id = ? AND external_order_id = ? AND remote_deleted_at IS NULL',
       )
       .run(now, now, context.accountId, connectionId, externalOrderId);
+    if (result.changes === 1) {
+      const orderId = this.db
+        .prepare(
+          'SELECT id FROM orders WHERE account_id = ? AND connection_id = ? AND external_order_id = ?',
+        )
+        .get(context.accountId, connectionId, externalOrderId) as { id: string } | undefined;
+      if (orderId) {
+        this.appendOrderTimeline(context, orderId.id, {
+          eventType: 'order.deleted',
+          source: 'remote',
+          eventKey: `remote:deleted:${now}`,
+          summary: { externalOrderId },
+          createdAt: now,
+        });
+      }
+    }
     return result.changes === 1;
   }
 
