@@ -1017,6 +1017,31 @@
         "The final report states code-complete status, validation matrix, risks, external inputs, backup/restore status and exact commit/worktree state"
       ],
       "validation": ["pnpm install --frozen-lockfile", "pnpm agent:doctor", "pnpm agent:validate", "pnpm format:check", "pnpm lint", "pnpm typecheck", "pnpm test:unit", "pnpm test:integration", "pnpm test:contract", "pnpm test:security", "pnpm test:tenant-isolation", "pnpm test:e2e:critical", "pnpm test:e2e", "pnpm test:a11y", "pnpm test:visual", "pnpm test:golden", "pnpm test:performance", "pnpm test:hostinger", "pnpm security:scan", "pnpm security:audit", "pnpm build", "git diff --check"]
+    },
+    {
+      "id": "T0815",
+      "epic": "E08",
+      "title": "Migrate repository tooling from pnpm to npm and clean generated artifacts",
+      "type": "chore",
+      "phase": 8,
+      "priority": "P0",
+      "estimate": "XL",
+      "parallelGroup": "tooling-migration",
+      "dependencies": ["T0814"],
+      "references": ["AGENTS.md", ".agentpack/manifest.json", ".agentpack/tasks/README.md", ".agentpack/architecture/DEPLOYMENT.md", ".agentpack/architecture/TESTING.md", ".agentpack/architecture/SECURITY.md", ".agentpack/scripts/agentpack.mjs", ".github/workflows/ci.yml", ".gitignore", "package.json", "tools/run-tests.mjs", "tools/run-ui-tests.mjs", "tools/run-critical-e2e.mjs", "playwright.config.ts"],
+      "scope": [
+        "Replace pnpm workspace metadata, lockfile, workspace dependency protocol, scripts and CI with npm workspaces, package-lock and portable npm commands",
+        "Add a deterministic npm workspace runner that preserves dependency-first builds, optional workspace selection and test-name filters without relying on pnpm recursive or filter flags",
+        "Update Agentpack doctor, release/deployment/testing/security documentation and task validation commands to the npm workflow, then remove only obsolete generated artifacts and pnpm metadata"
+      ],
+      "acceptance": [
+        "A clean checkout installs with npm ci from package-lock.json, links all 13 workspaces, and contains no required pnpm workspace/lock configuration or workspace:* dependency",
+        "npm run build, lint, typecheck, unit, integration, contract, security, tenant-isolation, chaos, golden, E2E, accessibility, visual, performance and Hostinger commands pass through the npm runner",
+        "Workspace dependency order is deterministic, package and test filters remain meaningful, Playwright and critical E2E run on Windows and Linux, and CI uses npm cache/install/exec only",
+        "Agentpack validation/doctor and active deployment/testing/security/task documentation describe npm accurately; no source, product invariant, account boundary or read-only connector behavior is changed",
+        "Tracked repository state contains no pnpm lock/workspace files or generated dist/artifact/test-result files, while user-owned unrelated worktrees remain untouched"
+      ],
+      "validation": ["npm ci", "npm run agent:doctor", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:chaos", "npm run test:golden", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run test:performance", "npm run test:hostinger", "npm run security:scan", "npm run security:audit", "npm run build", "git diff --check"]
     }
   ]
 }
