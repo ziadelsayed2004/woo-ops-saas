@@ -21,12 +21,12 @@
     "test:tenant-isolation": "tsx --test tests/tenant-isolation.integration.test.js"
   },
   "dependencies": {
-    "@woo-ops/application": "workspace:*",
-    "@woo-ops/contracts": "workspace:*",
-    "@woo-ops/connectors": "workspace:*",
-    "@woo-ops/documents": "workspace:*",
-    "@woo-ops/exports": "workspace:*",
-    "@woo-ops/persistence": "workspace:*",
+    "@woo-ops/application": "0.1.0",
+    "@woo-ops/contracts": "0.1.0",
+    "@woo-ops/connectors": "0.1.0",
+    "@woo-ops/documents": "0.1.0",
+    "@woo-ops/exports": "0.1.0",
+    "@woo-ops/persistence": "0.1.0",
     "better-sqlite3": "^12.4.1",
     "express": "^5.1.0",
     "zod": "^4.1.5"

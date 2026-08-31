@@ -90,24 +90,28 @@ export memory, PDF concurrency, analytics rebuild, and index size.
 Once task T0001/T0002 establishes the workspace, the canonical root commands are:
 
 ```bash
-pnpm format:check
-pnpm lint
-pnpm typecheck
-pnpm test:unit
-pnpm test:integration
-pnpm test:contract
-pnpm test:e2e:critical
-pnpm test:tenant-isolation
-pnpm build
+npm run format:check
+npm run lint
+npm run typecheck
+npm run test:unit
+npm run test:integration
+npm run test:contract
+npm run test:e2e:critical
+npm run test:tenant-isolation
+npm run build
 ```
+
+The root workspace scripts use the repository tools in `tools/` to execute packages in deterministic
+dependency-first order. Use `npm run test:unit -- --filter persistence` (or another workspace/test
+alias) for a focused run; do not rely on npm's generic workspace ordering for these quality gates.
 
 The release-readiness gate also runs the repeated critical journey, SQLite capacity checks, and a
 production-style Hostinger start/health/backup smoke test:
 
 ```bash
-pnpm test:e2e:critical
-pnpm test:performance
-pnpm test:hostinger
+npm run test:e2e:critical
+npm run test:performance
+npm run test:hostinger
 ```
 
 `test:e2e:critical` builds the monorepo, runs the API E2E suite, and repeats the complete fixture
@@ -119,11 +123,11 @@ served web shell, then validates backup listing and restore dry-run behavior.
 The security certification gate is:
 
 ```bash
-pnpm test:security
-pnpm test:tenant-isolation
-pnpm test:contract --filter woocommerce
-pnpm security:scan
-pnpm security:audit
+npm run test:security
+npm run test:tenant-isolation
+npm run test:contract -- --filter woocommerce
+npm run security:scan
+npm run security:audit
 ```
 
 The tenant-isolation runner exercises account-scoped repositories, selections, jobs, webhook

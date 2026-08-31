@@ -6,36 +6,36 @@ Audited branch: `ops/t0814-certify-production-readiness-and-close-release-evide`
 commit and merge state are recorded in `.agentpack/results/T0814.md`.
 
 This matrix distinguishes fresh local evidence from external launch approval. Every command below
-was run from a clean T0814 worktree after `pnpm install --frozen-lockfile`; a command is a release
+was run from a clean T0814 worktree after `npm ci`; a command is a release
 pass only when its process exit code was zero.
 
 ## Fresh local gates
 
 | Area | Command / evidence | Result | Release interpretation |
 | --- | --- | --- | --- |
-| Agentpack doctor | `pnpm agent:doctor` | PASS: Node 24.19.0, Git, pnpm 10.15.0, main and 36-task pack detected | Runtime and worktree prerequisites are available |
-| Agentpack graph | `pnpm agent:validate` | PASS: 36 tasks, required files valid | No invalid definitions or dependency graph error |
-| Frozen install | `pnpm install --frozen-lockfile` | PASS: 13 workspaces, lockfile unchanged | Reproducible dependency installation |
-| Format | `pnpm format:check` | PASS | Configured source, test, tooling, README and CI files are formatted |
-| Lint/type boundaries | `pnpm lint` and `pnpm typecheck` | PASS | `lint` now builds workspace dependencies first; strict no-emit typecheck also passes |
-| Build | `pnpm build` / `pnpm -r build` | PASS | API, web and packages build; Vite reports only the existing chunk-size advisory |
-| Unit | `pnpm test:unit` | PASS | All 12 active workspace test runners completed with zero failures |
-| Integration | `pnpm test:integration` | PASS: persistence 46, API 23 | SQLite migrations, repositories, jobs, files and HTTP boundaries pass |
-| Connector contract | `pnpm test:contract` and `pnpm test:contract --filter woocommerce` | PASS | Read-only Woo pagination, normalization, security, products and catalog contracts pass |
-| Security | `pnpm test:security` | PASS: connector 4, persistence 46, API 5 | SSRF, credentials, files, sessions, jobs and template controls pass |
-| Account isolation | `pnpm test:tenant-isolation` | PASS: persistence 2, API 1 | Cross-account repository and API negative paths pass |
-| Chaos/recovery | `pnpm test:chaos` | PASS | Lease/retry/idempotency/replay and account-scoped recovery tests pass |
-| Golden artifacts | `pnpm test:golden` | PASS: exports 6, documents 7 | XLSX/CSV safety, PDF dimensions, Arabic font, QR/barcode, ZIP and deterministic output pass |
-| Critical E2E | `pnpm test:e2e:critical` | PASS: API regression 9 plus deterministic critical journey repeated 2 times | Registration, Woo fixtures, filtering, export, manual order, documents, analytics and restore journey pass |
-| Browser E2E | `pnpm test:e2e` | PASS: 14 UI and 9 API tests | Authenticated operator workspaces and critical UI flows pass |
-| Accessibility | `pnpm test:a11y` | PASS: 5 | Admin, analytics, orders, exports and documents have no automated Axe violations |
-| Visual | `pnpm test:visual` | PASS: 2 | Arabic orders and analytics baselines pass; platform-specific snapshots are reviewed on Windows |
-| Performance | `pnpm test:performance` | PASS | At 100k orders: list 181.93ms, filtered 342.84ms, search 486.42ms, selection 150.50ms, job round-trip 1.26ms p95; all budgets pass |
-| Hostinger smoke | `pnpm test:hostinger` | PASS | Production entrypoint served web, `/health` returned schema 20/connected, backup listed, restore dry-run validated |
+| Agentpack doctor | `npm run agent:doctor` | PASS: Node 24.19.0, Git, npm run 10.15.0, main and 36-task pack detected | Runtime and worktree prerequisites are available |
+| Agentpack graph | `npm run agent:validate` | PASS: 36 tasks, required files valid | No invalid definitions or dependency graph error |
+| Frozen install | `npm ci` | PASS: 13 workspaces, lockfile unchanged | Reproducible dependency installation |
+| Format | `npm run format:check` | PASS | Configured source, test, tooling, README and CI files are formatted |
+| Lint/type boundaries | `npm run lint` and `npm run typecheck` | PASS | `lint` now builds workspace dependencies first; strict no-emit typecheck also passes |
+| Build | `npm run build` / `npm run -r build` | PASS | API, web and packages build; Vite reports only the existing chunk-size advisory |
+| Unit | `npm run test:unit` | PASS | All 12 active workspace test runners completed with zero failures |
+| Integration | `npm run test:integration` | PASS: persistence 46, API 23 | SQLite migrations, repositories, jobs, files and HTTP boundaries pass |
+| Connector contract | `npm run test:contract` and `npm run test:contract -- --filter woocommerce` | PASS | Read-only Woo pagination, normalization, security, products and catalog contracts pass |
+| Security | `npm run test:security` | PASS: connector 4, persistence 46, API 5 | SSRF, credentials, files, sessions, jobs and template controls pass |
+| Account isolation | `npm run test:tenant-isolation` | PASS: persistence 2, API 1 | Cross-account repository and API negative paths pass |
+| Chaos/recovery | `npm run test:chaos` | PASS | Lease/retry/idempotency/replay and account-scoped recovery tests pass |
+| Golden artifacts | `npm run test:golden` | PASS: exports 6, documents 7 | XLSX/CSV safety, PDF dimensions, Arabic font, QR/barcode, ZIP and deterministic output pass |
+| Critical E2E | `npm run test:e2e:critical` | PASS: API regression 9 plus deterministic critical journey repeated 2 times | Registration, Woo fixtures, filtering, export, manual order, documents, analytics and restore journey pass |
+| Browser E2E | `npm run test:e2e` | PASS: 14 UI and 9 API tests | Authenticated operator workspaces and critical UI flows pass |
+| Accessibility | `npm run test:a11y` | PASS: 5 | Admin, analytics, orders, exports and documents have no automated Axe violations |
+| Visual | `npm run test:visual` | PASS: 2 | Arabic orders and analytics baselines pass; platform-specific snapshots are reviewed on Windows |
+| Performance | `npm run test:performance` | PASS | At 100k orders: list 181.93ms, filtered 342.84ms, search 486.42ms, selection 150.50ms, job round-trip 1.26ms p95; all budgets pass |
+| Hostinger smoke | `npm run test:hostinger` | PASS | Production entrypoint served web, `/health` returned schema 20/connected, backup listed, restore dry-run validated |
 | Backup/restore apply | `node apps/api/dist/db-cli.js` with temporary `WOO_OPS_DATA_DIR` for `migrate`, `backup`, `restore`, and `restore --apply` | PASS | Backup manifest, checksum validation, dry-run and validated replacement completed on an isolated temporary directory |
-| Secret scan | `pnpm security:scan` | PASS: 206 tracked text files | No detected credentials or secret material |
-| Dependency audit | `pnpm security:audit` | PASS: no known high vulnerabilities | Production dependency audit is clean |
-| Migration repeat | `pnpm db:migrate` twice on a fresh temporary data directory | PASS | Fresh creation and idempotent repeat both applied successfully |
+| Secret scan | `npm run security:scan` | PASS: 206 tracked text files | No detected credentials or secret material |
+| Dependency audit | `npm run security:audit` | PASS: no known high vulnerabilities | Production dependency audit is clean |
+| Migration repeat | `npm run db:migrate` twice on a fresh temporary data directory | PASS | Fresh creation and idempotent repeat both applied successfully |
 | Diff hygiene | `git diff --check` | PASS | No whitespace errors |
 
 ## Release implementation reconciliation

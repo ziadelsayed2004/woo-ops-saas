@@ -60,10 +60,10 @@
         "Connector boundaries expose no remote mutation methods"
       ],
       "validation": [
-        "pnpm install --frozen-lockfile",
-        "pnpm format:check",
-        "pnpm typecheck",
-        "pnpm build",
+        "npm ci",
+        "npm run format:check",
+        "npm run typecheck",
+        "npm run build",
         "node .agentpack/scripts/agentpack.mjs validate"
       ]
     },
@@ -88,7 +88,7 @@
         "Hostinger smoke command is documented",
         "Private data files are not served"
       ],
-      "validation": ["pnpm lint", "pnpm typecheck", "pnpm build"]
+      "validation": ["npm run lint", "npm run typecheck", "npm run build"]
     },
     {
       "id": "T0101",
@@ -115,7 +115,7 @@
         "SQLite constraints and indexes are tested",
         "Repository calls cannot use client account authority"
       ],
-      "validation": ["pnpm test:unit --filter persistence", "pnpm test:integration --filter sqlite"]
+      "validation": ["npm run test:unit -- --filter persistence", "npm run test:integration -- --filter sqlite"]
     },
     {
       "id": "T0102",
@@ -143,9 +143,9 @@
         "Privilege/password changes revoke sessions"
       ],
       "validation": [
-        "pnpm test:unit --filter auth",
-        "pnpm test:integration --filter sessions",
-        "pnpm test:security --filter auth"
+        "npm run test:unit -- --filter auth",
+        "npm run test:integration -- --filter sessions",
+        "npm run test:security -- --filter auth"
       ]
     },
     {
@@ -170,9 +170,9 @@
         "Account switching/authority cannot come from request body"
       ],
       "validation": [
-        "pnpm test:unit --filter permissions",
-        "pnpm test:integration --filter audit",
-        "pnpm test:security --filter privilege"
+        "npm run test:unit -- --filter permissions",
+        "npm run test:integration -- --filter audit",
+        "npm run test:security -- --filter privilege"
       ]
     },
     {
@@ -200,9 +200,9 @@
         "Callback replay, mismatch and SSRF tests pass"
       ],
       "validation": [
-        "pnpm test:unit --filter connectors",
-        "pnpm test:contract --filter woo-auth",
-        "pnpm test:security --filter callbacks"
+        "npm run test:unit -- --filter connectors",
+        "npm run test:contract -- --filter woo-auth",
+        "npm run test:security -- --filter callbacks"
       ]
     },
     {
@@ -230,9 +230,9 @@
         "Job payloads are small and schema validated"
       ],
       "validation": [
-        "pnpm test:unit --filter jobs",
-        "pnpm test:integration --filter job-runner",
-        "pnpm test:chaos --filter restart"
+        "npm run test:unit -- --filter jobs",
+        "npm run test:integration -- --filter job-runner",
+        "npm run test:chaos -- --filter restart"
       ]
     },
     {
@@ -260,8 +260,8 @@
         "Rate and schema failures are observable"
       ],
       "validation": [
-        "pnpm test:contract --filter woo-products",
-        "pnpm test:integration --filter catalog-sync"
+        "npm run test:contract -- --filter woo-products",
+        "npm run test:integration -- --filter catalog-sync"
       ]
     },
     {
@@ -290,9 +290,9 @@
         "Remote updates preserve local fields and mark stale exports"
       ],
       "validation": [
-        "pnpm test:contract --filter woocommerce-orders",
-        "pnpm test:integration --filter order-sync",
-        "pnpm test:chaos --filter webhook-replay"
+        "npm run test:contract -- --filter woocommerce-orders",
+        "npm run test:integration -- --filter order-sync",
+        "npm run test:chaos -- --filter webhook-replay"
       ]
     },
     {
@@ -317,9 +317,9 @@
         "Search covers canonical and mapped fields"
       ],
       "validation": [
-        "pnpm test:unit --filter order-query",
-        "pnpm test:integration --filter order-repository",
-        "pnpm test:security --filter query-input"
+        "npm run test:unit -- --filter order-query",
+        "npm run test:integration -- --filter order-repository",
+        "npm run test:security -- --filter query-input"
       ]
     },
     {
@@ -344,9 +344,9 @@
         "Order detail exposes all supported canonical sections"
       ],
       "validation": [
-        "pnpm test:e2e --filter orders",
-        "pnpm test:a11y --filter orders",
-        "pnpm test:visual --filter orders"
+        "npm run test:e2e -- --filter orders",
+        "npm run test:a11y -- --filter orders",
+        "npm run test:visual -- --filter orders"
       ]
     },
     {
@@ -371,8 +371,8 @@
         "Backfill is resumable, auditable and tenant/account scoped"
       ],
       "validation": [
-        "pnpm test:integration --filter field-mapping",
-        "pnpm test:security --filter raw-data"
+        "npm run test:integration -- --filter field-mapping",
+        "npm run test:security -- --filter raw-data"
       ]
     },
     {
@@ -397,9 +397,9 @@
         "Edit after export/document creates stale marker"
       ],
       "validation": [
-        "pnpm test:unit --filter manual-orders",
-        "pnpm test:integration --filter manual-orders",
-        "pnpm test:e2e --filter manual-orders"
+        "npm run test:unit -- --filter manual-orders",
+        "npm run test:integration -- --filter manual-orders",
+        "npm run test:e2e -- --filter manual-orders"
       ]
     },
     {
@@ -424,9 +424,9 @@
         "Partial failures are retryable per order"
       ],
       "validation": [
-        "pnpm test:unit --filter selection",
-        "pnpm test:integration --filter bulk",
-        "pnpm test:e2e --filter bulk"
+        "npm run test:unit -- --filter selection",
+        "npm run test:integration -- --filter bulk",
+        "npm run test:e2e -- --filter bulk"
       ]
     },
     {
@@ -451,9 +451,9 @@
         "Large exports are bounded and resumable"
       ],
       "validation": [
-        "pnpm test:unit --filter export-engine",
-        "pnpm test:integration --filter exports",
-        "pnpm test:golden --filter spreadsheets"
+        "npm run test:unit -- --filter export-engine",
+        "npm run test:integration -- --filter exports",
+        "npm run test:golden -- --filter spreadsheets"
       ]
     },
     {
@@ -478,8 +478,8 @@
         "Remote changes visibly mark stale exports"
       ],
       "validation": [
-        "pnpm test:unit --filter export-state",
-        "pnpm test:integration --filter export-history"
+        "npm run test:unit -- --filter export-state",
+        "npm run test:integration -- --filter export-history"
       ]
     },
     {
@@ -508,9 +508,9 @@
         "PDF and thermal output passes visual/dimension/RTL tests"
       ],
       "validation": [
-        "pnpm test:unit --filter documents",
-        "pnpm test:visual --filter documents",
-        "pnpm test:golden --filter thermal"
+        "npm run test:unit -- --filter documents",
+        "npm run test:visual -- --filter documents",
+        "npm run test:golden -- --filter thermal"
       ]
     },
     {
@@ -534,7 +534,7 @@
         "Downloads require authenticated authorization",
         "Templates cannot execute scripts or fetch arbitrary URLs"
       ],
-      "validation": ["pnpm test:e2e --filter documents", "pnpm test:security --filter templates"]
+      "validation": ["npm run test:e2e -- --filter documents", "npm run test:security -- --filter templates"]
     },
     {
       "id": "T0701",
@@ -558,8 +558,8 @@
         "Rebuild from canonical orders is deterministic"
       ],
       "validation": [
-        "pnpm test:unit --filter analytics",
-        "pnpm test:integration --filter analytics-facts"
+        "npm run test:unit -- --filter analytics",
+        "npm run test:integration -- --filter analytics-facts"
       ]
     },
     {
@@ -584,9 +584,9 @@
         "RTL, accessibility and empty states pass"
       ],
       "validation": [
-        "pnpm test:e2e --filter analytics",
-        "pnpm test:a11y --filter analytics",
-        "pnpm test:visual --filter dashboard"
+        "npm run test:e2e -- --filter analytics",
+        "npm run test:a11y -- --filter analytics",
+        "npm run test:visual -- --filter dashboard"
       ]
     },
     {
@@ -614,8 +614,8 @@
         "Recovery tests preserve sequences and document/export history"
       ],
       "validation": [
-        "pnpm test:integration --filter backup",
-        "pnpm test:integration --filter restore"
+        "npm run test:integration -- --filter backup",
+        "npm run test:integration -- --filter restore"
       ]
     },
     {
@@ -640,9 +640,9 @@
         "Security suite is release-gating"
       ],
       "validation": [
-        "pnpm test:security",
-        "pnpm test:tenant-isolation",
-        "pnpm test:contract --filter woocommerce"
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run test:contract -- --filter woocommerce"
       ]
     },
     {
@@ -671,9 +671,9 @@
         "Hostinger build/start/health/backup smoke passes"
       ],
       "validation": [
-        "pnpm test:e2e:critical",
-        "pnpm test:performance",
-        "pnpm build",
+        "npm run test:e2e:critical",
+        "npm run test:performance",
+        "npm run build",
         "node .agentpack/scripts/agentpack.mjs validate"
       ]
     },
@@ -707,14 +707,14 @@
         "Document the bounded quality and architecture validation evidence"
       ],
       "acceptance": [
-        "pnpm format:check passes for all configured repository paths",
+        "npm run format:check passes for all configured repository paths",
         "Architecture documentation consistently describes SQLite, local files and in-process jobs",
         "No product source behavior or security invariant is weakened"
       ],
       "validation": [
-        "pnpm format:check",
-        "pnpm typecheck",
-        "pnpm build",
+        "npm run format:check",
+        "npm run typecheck",
+        "npm run build",
         "node .agentpack/scripts/agentpack.mjs validate",
         "git diff --check"
       ]
@@ -743,8 +743,8 @@
         "The refreshed artifact reflects intentional navigation controls and no application source changes are required"
       ],
       "validation": [
-        "pnpm test:visual",
-        "pnpm test:a11y",
+        "npm run test:visual",
+        "npm run test:a11y",
         "node .agentpack/scripts/agentpack.mjs validate",
         "git diff --check"
       ]
@@ -765,11 +765,11 @@
         ".agentpack/tasks/README.md"
       ],
       "scope": [
-        "Make the Agentpack doctor invoke the installed pnpm.cmd executable on Windows",
+        "Make the Agentpack doctor invoke the installed npm.cmd executable on Windows",
         "Preserve the existing doctor checks and failure semantics on non-Windows platforms"
       ],
       "acceptance": [
-        "Agentpack doctor reports pnpm available on Windows when pnpm.cmd is installed",
+        "Agentpack doctor reports npm available on Windows when npm.cmd is installed",
         "Agentpack validation and the complete task board remain valid without changing task state semantics"
       ],
       "validation": [
@@ -822,7 +822,7 @@
       "validation": [
         "node .agentpack/scripts/agentpack.mjs validate",
         "node .agentpack/scripts/agentpack.mjs task board",
-        "pnpm format:check",
+        "npm run format:check",
         "git diff --check"
       ]
     },
@@ -848,7 +848,7 @@
         "Mutating requests have CSRF/origin protection, production-safe headers and bounded validated bodies; health/readiness does not claim unavailable dependencies are connected",
         "Migration and security evidence records indexes, retention, audit behavior, negative tests and exact validation results"
       ],
-      "validation": ["pnpm test:unit --filter auth", "pnpm test:integration --filter administration", "pnpm test:security", "pnpm test:tenant-isolation", "pnpm typecheck", "pnpm lint", "pnpm format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+      "validation": ["npm run test:unit -- --filter auth", "npm run test:integration -- --filter administration", "npm run test:security", "npm run test:tenant-isolation", "npm run typecheck", "npm run lint", "npm run format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
     },
     {
       "id": "T0807",
@@ -872,7 +872,7 @@
         "Viewer/admin/operator permissions and account predicates apply to operations reads, replay, cancel and worker execution; poison jobs retain bounded redacted errors and become inspectable dead letters",
         "Worker, retry, shutdown and failure-path tests include exact counts, timings, audit events and migration/index impact"
       ],
-      "validation": ["pnpm test:unit --filter jobs", "pnpm test:integration --filter job-runner", "pnpm test:chaos --filter restart", "pnpm test:security --filter jobs", "pnpm test:tenant-isolation", "pnpm typecheck", "pnpm lint", "pnpm format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+      "validation": ["npm run test:unit -- --filter jobs", "npm run test:integration -- --filter job-runner", "npm run test:chaos -- --filter restart", "npm run test:security -- --filter jobs", "npm run test:tenant-isolation", "npm run typecheck", "npm run lint", "npm run format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
     },
     {
       "id": "T0808",
@@ -896,7 +896,7 @@
         "Webhook processing validates HMAC/raw checksum/topic/connection ownership before one idempotent normalized effect; invalid/schema-drift/rate/auth/network failures are observable and bounded",
         "Connection data and credentials are account-isolated, credential-safe in logs/responses/jobs, and migration/index plus exact connector certification evidence is recorded"
       ],
-      "validation": ["pnpm test:unit --filter connectors", "pnpm test:contract --filter woocommerce", "pnpm test:integration --filter sync", "pnpm test:chaos --filter webhook-replay", "pnpm test:security", "pnpm test:tenant-isolation", "pnpm typecheck", "pnpm lint", "pnpm format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+      "validation": ["npm run test:unit -- --filter connectors", "npm run test:contract -- --filter woocommerce", "npm run test:integration -- --filter sync", "npm run test:chaos -- --filter webhook-replay", "npm run test:security", "npm run test:tenant-isolation", "npm run typecheck", "npm run lint", "npm run format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
     },
     {
       "id": "T0809",
@@ -920,7 +920,7 @@
         "Operators can update only local workflow through audited optimistic commands, while resync is read-only; saved views and selections survive page changes and exclude post-watermark arrivals",
         "UI includes auth/loading/empty/error/partial/retry/accessibility states and tests prove no manual or local operation invokes a Woo mutation"
       ],
-      "validation": ["pnpm test:unit --filter order-query", "pnpm test:integration --filter order-repository", "pnpm test:security --filter query-input", "pnpm test:tenant-isolation", "pnpm test:e2e --filter orders", "pnpm test:a11y --filter orders", "pnpm test:visual --filter orders", "pnpm test:performance", "pnpm typecheck", "pnpm lint", "pnpm format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+      "validation": ["npm run test:unit -- --filter order-query", "npm run test:integration -- --filter order-repository", "npm run test:security -- --filter query-input", "npm run test:tenant-isolation", "npm run test:e2e -- --filter orders", "npm run test:a11y -- --filter orders", "npm run test:visual -- --filter orders", "npm run test:performance", "npm run typecheck", "npm run lint", "npm run format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
     },
     {
       "id": "T0810",
@@ -944,7 +944,7 @@
         "Exported/changed-after-export state is derived only from successful local batches, re-export preserves history and unexport remains permissioned/audited without any remote write",
         "XLSX/CSV semantic golden, injection, Arabic, account-isolation, retry and browser progress evidence plus migration/index/retention notes are current"
       ],
-      "validation": ["pnpm test:unit --filter export-engine", "pnpm test:integration --filter exports", "pnpm test:golden --filter spreadsheets", "pnpm test:security --filter exports", "pnpm test:tenant-isolation", "pnpm test:e2e --filter exports", "pnpm typecheck", "pnpm lint", "pnpm format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+      "validation": ["npm run test:unit -- --filter export-engine", "npm run test:integration -- --filter exports", "npm run test:golden -- --filter spreadsheets", "npm run test:security -- --filter exports", "npm run test:tenant-isolation", "npm run test:e2e -- --filter exports", "npm run typecheck", "npm run lint", "npm run format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
     },
     {
       "id": "T0811",
@@ -968,7 +968,7 @@
         "Document files are authorized through authenticated account-scoped routes with checksum/path validation; templates cannot execute code or fetch network resources",
         "No legal invoice claim is enabled without configured policy; the task records the exact external approval still required"
       ],
-      "validation": ["pnpm test:unit --filter documents", "pnpm test:golden --filter thermal", "pnpm test:visual --filter documents", "pnpm test:integration --filter document-jobs", "pnpm test:security --filter documents", "pnpm test:tenant-isolation", "pnpm test:e2e --filter documents", "pnpm test:a11y --filter documents", "pnpm typecheck", "pnpm lint", "pnpm format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+      "validation": ["npm run test:unit -- --filter documents", "npm run test:golden -- --filter thermal", "npm run test:visual -- --filter documents", "npm run test:integration -- --filter document-jobs", "npm run test:security -- --filter documents", "npm run test:tenant-isolation", "npm run test:e2e -- --filter documents", "npm run test:a11y -- --filter documents", "npm run typecheck", "npm run lint", "npm run format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
     },
     {
       "id": "T0813",
@@ -992,7 +992,7 @@
         "Administration and operations views respect roles, account scope, PII redaction and local-only connector direction; Arabic is default and direction preference persists safely",
         "E2E, accessibility, visual, security, tenant and job-recovery evidence covers the critical operator journey and documents any external legal/live credentials"
       ],
-      "validation": ["pnpm test:unit --filter analytics", "pnpm test:integration --filter analytics-facts", "pnpm test:e2e --filter admin", "pnpm test:a11y", "pnpm test:visual", "pnpm test:security", "pnpm test:tenant-isolation", "pnpm typecheck", "pnpm lint", "pnpm format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+      "validation": ["npm run test:unit -- --filter analytics", "npm run test:integration -- --filter analytics-facts", "npm run test:e2e -- --filter admin", "npm run test:a11y", "npm run test:visual", "npm run test:security", "npm run test:tenant-isolation", "npm run typecheck", "npm run lint", "npm run format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
     },
     {
       "id": "T0814",
@@ -1016,7 +1016,7 @@
         "Only genuine external launch inputs remain explicitly pending: live Woo authorization/store, Hostinger/DNS/TLS credentials, carrier/legal/tax policy and owner product decisions",
         "The final report states code-complete status, validation matrix, risks, external inputs, backup/restore status and exact commit/worktree state"
       ],
-      "validation": ["pnpm install --frozen-lockfile", "pnpm agent:doctor", "pnpm agent:validate", "pnpm format:check", "pnpm lint", "pnpm typecheck", "pnpm test:unit", "pnpm test:integration", "pnpm test:contract", "pnpm test:security", "pnpm test:tenant-isolation", "pnpm test:e2e:critical", "pnpm test:e2e", "pnpm test:a11y", "pnpm test:visual", "pnpm test:golden", "pnpm test:performance", "pnpm test:hostinger", "pnpm security:scan", "pnpm security:audit", "pnpm build", "git diff --check"]
+      "validation": ["npm ci", "npm run agent:doctor", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run test:golden", "npm run test:performance", "npm run test:hostinger", "npm run security:scan", "npm run security:audit", "npm run build", "git diff --check"]
     },
     {
       "id": "T0815",

@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { SqliteStore } from '../packages/persistence/dist/index.js';
 
 const require = createRequire(import.meta.url);
-const Database = require('../packages/persistence/node_modules/better-sqlite3');
+const Database = require('better-sqlite3');
 
 const DATASETS = [10_000, 100_000];
 const ITERATIONS = 25;

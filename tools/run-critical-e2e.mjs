@@ -1,11 +1,11 @@
 import { spawnSync } from 'node:child_process';
+import { npmArgs, npmCommand } from './npm-command.mjs';
 
-const packageManager = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-const spawnOptions = { stdio: 'inherit', shell: process.platform === 'win32' };
+const spawnOptions = { stdio: 'inherit', shell: false };
 
-const run = (command, args, shell = command === packageManager) => {
+const run = (command, args) => {
   console.log(`\n[critical-e2e] ${command} ${args.join(' ')}`);
-  const result = spawnSync(command, args, { ...spawnOptions, shell });
+  const result = spawnSync(command, args, spawnOptions);
   if (result.error) {
     console.error(`[critical-e2e] ${result.error.message}`);
     return result.status ?? 1;
@@ -13,10 +13,13 @@ const run = (command, args, shell = command === packageManager) => {
   return result.status ?? 1;
 };
 
-const buildStatus = run(packageManager, ['-r', 'build']);
+const buildStatus = run(npmCommand, npmArgs(['run', 'build']));
 if (buildStatus !== 0) process.exit(buildStatus);
 
-const apiRegressionStatus = run(packageManager, ['--filter', '@woo-ops/api', 'test:e2e']);
+const apiRegressionStatus = run(
+  npmCommand,
+  npmArgs(['run', 'test:e2e', '--workspace=@woo-ops/api']),
+);
 if (apiRegressionStatus !== 0) process.exit(apiRegressionStatus);
 
 const repeats = Number(process.env.CRITICAL_E2E_REPEATS ?? 2);

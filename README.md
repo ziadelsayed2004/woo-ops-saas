@@ -13,9 +13,9 @@ of WooCommerce data for search, filtering, exports, invoices, labels, printing a
 ## Development
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm db:migrate
-pnpm dev
+npm ci
+npm run db:migrate
+npm run dev
 ```
 
 The API listens on `http://localhost:3000`; health is available at `/health`.
@@ -25,24 +25,24 @@ The API listens on `http://localhost:3000`; health is available at `/health`.
 Create a Node.js application and set its start command to `node apps/api/dist/index.js` from the
 repository root (or `node dist/index.js` when the application root is `apps/api`). Set
 `WOO_OPS_DATA_DIR` to a writable directory outside the public web root, configure production secrets
-from `.env.example`, run `pnpm db:migrate`, and expose `/health` as the health check. The API serves
+from `.env.example`, run `npm run db:migrate`, and expose `/health` as the health check. The API serves
 the built Vite application from `apps/web/dist`; set `WOO_OPS_WEB_DIST_DIR` when Hostinger uses a
 different working directory. Optional Cron can invoke bounded maintenance for jobs and backups.
 Backups include the SQLite snapshot and private generated files, with checksum manifests and dry-run
 restore:
 
 ```text
-pnpm db:maintenance
-pnpm db:restore -- backup-<id>
-pnpm db:restore -- backup-<id> --apply
+npm run db:maintenance
+npm run db:restore -- backup-<id>
+npm run db:restore -- backup-<id> --apply
 ```
 
-Before release, run the complete local gate matrix: `pnpm agent:doctor`, `pnpm agent:validate`,
-`pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`, `pnpm test:integration`,
-`pnpm test:contract`, `pnpm test:security`, `pnpm test:tenant-isolation`, `pnpm test:chaos`, `pnpm test:golden`,
-`pnpm test:e2e:critical`, `pnpm test:e2e`, `pnpm test:a11y`, `pnpm test:visual`,
-`pnpm test:performance`, `pnpm test:hostinger`, `pnpm security:scan`, `pnpm security:audit`,
-`pnpm build`, and `git diff --check`. The CI workflow runs the non-platform-specific quality,
+Before release, run the complete local gate matrix: `npm run agent:doctor`, `npm run agent:validate`,
+`npm run format:check`, `npm run lint`, `npm run typecheck`, `npm run test:unit`, `npm run test:integration`,
+`npm run test:contract`, `npm run test:security`, `npm run test:tenant-isolation`, `npm run test:chaos`, `npm run test:golden`,
+`npm run test:e2e:critical`, `npm run test:e2e`, `npm run test:a11y`, `npm run test:visual`,
+`npm run test:performance`, `npm run test:hostinger`, `npm run security:scan`, `npm run security:audit`,
+`npm run build`, and `git diff --check`. The CI workflow runs the non-platform-specific quality,
 security, artifact, critical-E2E and operations gates, plus Linux browser E2E/accessibility and a
 Windows visual-baseline job. Live Woo authorization, Hostinger/DNS/TLS configuration, and legal/tax
 policy remain owner-provided launch inputs.

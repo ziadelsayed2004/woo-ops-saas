@@ -75,12 +75,12 @@ function doctor() {
   checks.push({ name: "Git available", ok: gitVersion.status === 0, detail: gitVersion.stdout.trim() || gitVersion.stderr.trim() });
   checks.push({ name: "Git repository", ok: isGitRepository(), detail: isGitRepository() ? repositoryRoot : "run git init -b main and commit" });
 
-  const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-  const pnpm = run(pnpmCommand, ["--version"], {
+  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+  const npm = run(npmCommand, ["--version"], {
     check: false,
     shell: process.platform === "win32"
   });
-  checks.push({ name: "pnpm available", ok: pnpm.status === 0, detail: pnpm.stdout?.trim() || "install through Corepack" });
+  checks.push({ name: "npm available", ok: npm.status === 0, detail: npm.stdout?.trim() || "install with Node.js" });
 
   let baseBranchOk = false;
   if (isGitRepository()) {

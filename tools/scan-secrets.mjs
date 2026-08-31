@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const trackedFiles = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' })
   .split('\0')
@@ -13,6 +13,7 @@ const patterns = [
 ];
 const findings = [];
 for (const file of trackedFiles) {
+  if (!existsSync(file)) continue;
   const bytes = readFileSync(file);
   if (bytes.includes(0)) continue;
   const content = bytes.toString('utf8');

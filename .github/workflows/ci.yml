@@ -14,32 +14,29 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.15.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm agent:doctor
+          cache: npm
+      - run: npm ci
+      - run: npm run agent:doctor
       - run: node .agentpack/scripts/agentpack.mjs validate
-      - run: pnpm format:check
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test:unit
-      - run: pnpm test:integration
-      - run: pnpm test:contract
-      - run: pnpm test:security
-      - run: pnpm test:tenant-isolation
-      - run: pnpm test:chaos
-      - run: pnpm test:golden
-      - run: pnpm security:scan
-      - run: pnpm security:audit
-      - run: pnpm build
-      - run: pnpm test:e2e:critical
-      - run: pnpm test:performance
-      - run: pnpm test:hostinger
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:unit
+      - run: npm run test:integration
+      - run: npm run test:contract
+      - run: npm run test:security
+      - run: npm run test:tenant-isolation
+      - run: npm run test:chaos
+      - run: npm run test:golden
+      - run: npm run security:scan
+      - run: npm run security:audit
+      - run: npm run build
+      - run: npm run test:e2e:critical
+      - run: npm run test:performance
+      - run: npm run test:hostinger
       - run: git diff --check
 
   browser:
@@ -47,30 +44,24 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.15.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:e2e
-      - run: pnpm test:a11y
+          cache: npm
+      - run: npm ci
+      - run: npm exec -- playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - run: npm run test:a11y
 
   visual:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.15.0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install chromium
-      - run: pnpm test:visual
+          cache: npm
+      - run: npm ci
+      - run: npm exec -- playwright install chromium
+      - run: npm run test:visual
