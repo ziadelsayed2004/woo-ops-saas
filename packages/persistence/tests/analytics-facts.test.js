@@ -44,7 +44,7 @@ const otherContext = {
 };
 
 test('cost rules are effective-dated and analytics facts rebuild deterministically', () => {
-  assert.equal(schemaVersion, 17);
+  assert.equal(schemaVersion, 18);
   store.createCostRule(context, {
     scope: 'product',
     key: 'p1',

@@ -38,6 +38,9 @@ importers:
       '@woo-ops/documents':
         specifier: workspace:*
         version: link:../../packages/documents
+      '@woo-ops/exports':
+        specifier: workspace:*
+        version: link:../../packages/exports
       '@woo-ops/persistence':
         specifier: workspace:*
         version: link:../../packages/persistence

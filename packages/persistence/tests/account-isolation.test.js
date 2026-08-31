@@ -90,6 +90,28 @@ test('repositories scope reads, selections and jobs by the authenticated account
     undefined,
   );
   assert.equal(store.claimNext(contextB), null);
+
+  const profile = store.createExportProfile(contextA, { name: 'Account A export' });
+  const version = store.createExportProfileVersion(contextA, profile.id, {
+    format: 'csv',
+    rowMode: 'order',
+    columns: [{ key: 'orderNumber', label: 'Order', type: 'text' }],
+    filenameTemplate: 'account-a-{format}',
+  });
+  const exportBatch = store.createExportBatch(contextA, {
+    selectionId: selection.id,
+    profileVersionId: version.id,
+    idempotencyKey: 'account-a-export',
+  });
+  assert.throws(() => store.getExportBatch(contextB, exportBatch.id), /EXPORT_BATCH_NOT_FOUND/);
+  assert.throws(
+    () => store.getExportProfileVersion(contextB, version.id),
+    /EXPORT_PROFILE_VERSION_NOT_FOUND/,
+  );
+  assert.throws(
+    () => store.getExportSnapshotPageForWorker(contextB, exportBatch.id),
+    /EXPORT_BATCH_NOT_FOUND/,
+  );
 });
 
 test('webhook inbox rejects mismatched account/connection and replay is idempotent', () => {

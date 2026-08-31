@@ -93,7 +93,7 @@ test('backup and restore preserve local order sequences, documents, and exports'
     });
 
     const manifest = await createBackup({ dataDirectory, databasePath, database: store.db });
-    assert.equal(manifest.schemaVersion, 17);
+    assert.equal(manifest.schemaVersion, 18);
     assert.equal(
       manifest.files.some((file) => file.path === `private-documents/${pdfRelativePath}`),
       true,

@@ -175,6 +175,7 @@ read-only pull); no route in this group mutates WooCommerce.
 GET    /export-profiles
 POST   /export-profiles
 PATCH  /export-profiles/:id
+GET    /export-profiles/:id/versions
 POST   /export-profiles/:id/versions
 POST   /export-profiles/:id/preview
 
@@ -182,9 +183,23 @@ POST   /export-batches
 GET    /export-batches
 GET    /export-batches/:id
 GET    /export-batches/:id/download
+GET    /export-batches/:id/errors
+POST   /export-batches/:id/retry
 POST   /export-batches/:id/retry-failures
+POST   /export-batches/:id/mark-exported
 POST   /orders/:orderId/export-state/unexport
 ```
+
+Export profile versions are immutable and pin the row mode, canonical column paths, bounded
+transforms/defaults/required fields, filename template, and output format. Preview responses are
+bounded and may report truncation or required-field errors without creating a batch. Batch creation
+returns a local `export.generate` durable job; the worker materializes an account-scoped order
+snapshot in SQLite pages, writes the CSV/XLSX artifact below the private data root, and records its
+checksum before a batch can be marked completed. Authenticated downloads re-check account scope,
+the stored relative path, file size/checksum, and the immutable batch metadata. The retry and
+`retry-failures` paths are aliases and create a new attempt while cancelling a queued/running stale
+job. Exported order state is recorded only after successful artifact completion and never calls a
+remote connector mutation method.
 
 ## Documents and printing
 

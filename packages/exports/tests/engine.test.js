@@ -5,6 +5,7 @@ import {
   generateExport,
   generateExportChunk,
   materializeRows,
+  previewExport,
   sanitizeSpreadsheetValue,
 } from '../dist/index.js';
 
@@ -40,6 +41,21 @@ test('formula-like values are prefixed without changing safe text', () => {
   assert.equal(sanitizeSpreadsheetValue('=SUM(A1:A2)'), "'=SUM(A1:A2)");
   assert.equal(sanitizeSpreadsheetValue('+20100000000'), "'+20100000000");
   assert.equal(sanitizeSpreadsheetValue('00123'), '00123');
+});
+
+test('Arabic labels and values remain UTF-8 export data', async () => {
+  const result = await generateExport({
+    profile: {
+      ...profile('csv'),
+      rowMode: 'order',
+      filenameTemplate: 'arabic-{format}',
+      columns: [{ key: 'customerName', label: 'اسم العميل', type: 'text' }],
+    },
+    orders: [{ ...order, customerName: 'أحمد' }],
+  });
+  const csv = new TextDecoder().decode(result.bytes);
+  assert.match(csv, /اسم العميل/);
+  assert.match(csv, /أحمد/);
 });
 
 test('CSV export materializes line rows, preserves text, and records checksum', async () => {
@@ -79,16 +95,58 @@ test('XLSX export has a frozen header, text formatting, and no formula cells', a
 test('row modes and chunking are bounded and resumable', async () => {
   const orderWithPackages = { ...order, packages: [{ tracking: 'A' }, { tracking: 'B' }] };
   assert.equal(materializeRows([order], { ...profile('csv'), rowMode: 'line' }).length, 2);
-  assert.equal(materializeRows([orderWithPackages], { ...profile('csv'), rowMode: 'package' }).length, 2);
+  assert.equal(
+    materializeRows([orderWithPackages], { ...profile('csv'), rowMode: 'package' }).length,
+    2,
+  );
   assert.throws(
     () => materializeRows([order], { ...profile('csv'), rowMode: 'line' }, 1),
     /EXPORT_ROW_LIMIT_EXCEEDED/,
   );
-  const first = await generateExportChunk({ profile: profile('csv'), orders: [order, order] }, 0, 1);
+  const first = await generateExportChunk(
+    { profile: profile('csv'), orders: [order, order] },
+    0,
+    1,
+  );
   assert.equal(first.result.orderCount, 1);
   assert.equal(first.hasMore, true);
   assert.equal(first.cursor, '1');
-  const second = await generateExportChunk({ profile: profile('csv'), orders: [order, order] }, 1, 1);
+  const second = await generateExportChunk(
+    { profile: profile('csv'), orders: [order, order] },
+    1,
+    1,
+  );
   assert.equal(second.hasMore, false);
   assert.equal(second.cursor, null);
+});
+
+test('profile defaults, transforms, required fields, and preview stay bounded', async () => {
+  const configured = {
+    ...profile('csv'),
+    rowMode: 'order',
+    config: {
+      required: ['billing.phone'],
+      defaults: { currency: 'EGP' },
+      transforms: { orderNumber: 'trim' },
+    },
+  };
+  const preview = previewExport(
+    { profile: configured, orders: [{ ...order, orderNumber: ' 1001 ', billing: {} }] },
+    1,
+    10,
+  );
+  assert.equal(preview.orderCount, 1);
+  assert.equal(preview.rowCount, 1);
+  assert.equal(preview.errors.length, 1);
+  assert.equal(preview.errors[0].key, 'billing.phone');
+  assert.equal(preview.rows[0][0], '1001');
+  assert.equal(preview.rows[0][1], '');
+  await assert.rejects(
+    () => generateExport({ profile: configured, orders: [{ ...order, billing: {} }] }),
+    /EXPORT_REQUIRED_FIELD_MISSING/,
+  );
+  assert.throws(
+    () => previewExport({ profile: configured, orders: [order] }, 1, 0),
+    /EXPORT_PREVIEW_LIMIT_INVALID/,
+  );
 });

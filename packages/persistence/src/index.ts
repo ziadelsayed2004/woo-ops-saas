@@ -477,6 +477,13 @@ export type ExportBatch = Readonly<{
   rowMode: ExportRowMode;
   status: ExportBatchStatus;
   watermark: string;
+  jobId: string | null;
+  snapshotHash: string | null;
+  orderSnapshotHash: string | null;
+  snapshotOrderCount: number;
+  snapshotCursor: string | null;
+  snapshotComplete: boolean;
+  attemptCount: number;
   orderCount: number;
   rowCount: number;
   filename: string | null;
@@ -488,6 +495,14 @@ export type ExportBatch = Readonly<{
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+}>;
+export type ExportSnapshotPage = Readonly<{
+  items: readonly Record<string, unknown>[];
+  orderIds: readonly string[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  orderCount: number;
+  snapshotHash: string | null;
 }>;
 export type ExportEventType = 'exported' | 'unexported';
 export type OrderExportEvent = Readonly<{
@@ -1648,7 +1663,7 @@ const compileFilter = (
   };
 };
 
-export const schemaVersion = 17;
+export const schemaVersion = 18;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -2139,6 +2154,34 @@ const migrations: readonly Migration[] = [
         search_text = LOWER(COALESCE(order_number, '') || ' ' || COALESCE(external_order_id, '') || ' ' ||
           COALESCE(remote_status, '') || ' ' || COALESCE(local_status, '') || ' ' || COALESCE(currency, '') ||
           COALESCE(connection_id, ''));
+      `,
+  },
+  {
+    version: 18,
+    name: 'durable-export-snapshots-and-jobs',
+    sql: `
+      ALTER TABLE export_batches ADD COLUMN job_id TEXT;
+      ALTER TABLE export_batches ADD COLUMN snapshot_hash TEXT;
+      ALTER TABLE export_batches ADD COLUMN order_snapshot_hash TEXT;
+      ALTER TABLE export_batches ADD COLUMN snapshot_order_count INTEGER NOT NULL DEFAULT 0
+        CHECK(snapshot_order_count >= 0);
+      ALTER TABLE export_batches ADD COLUMN snapshot_cursor TEXT;
+      ALTER TABLE export_batches ADD COLUMN snapshot_complete INTEGER NOT NULL DEFAULT 0
+        CHECK(snapshot_complete IN (0, 1));
+      ALTER TABLE export_batches ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0
+        CHECK(attempt_count >= 0);
+      CREATE UNIQUE INDEX export_batches_account_job ON export_batches(account_id, job_id)
+        WHERE job_id IS NOT NULL;
+      CREATE INDEX export_batches_account_snapshot ON export_batches(account_id, snapshot_complete, updated_at, id);
+      CREATE TABLE export_batch_snapshots (
+        account_id TEXT NOT NULL REFERENCES accounts(id), batch_id TEXT NOT NULL, position INTEGER NOT NULL
+          CHECK(position >= 0), order_id TEXT NOT NULL, snapshot_json TEXT NOT NULL,
+        snapshot_hash TEXT NOT NULL, created_at TEXT NOT NULL,
+        PRIMARY KEY(account_id, batch_id, position), UNIQUE(account_id, batch_id, order_id),
+        FOREIGN KEY(account_id, batch_id) REFERENCES export_batches(account_id, id),
+        FOREIGN KEY(account_id, order_id) REFERENCES orders(account_id, id)
+      );
+      CREATE INDEX export_batch_snapshots_account_order ON export_batch_snapshots(account_id, batch_id, order_id);
     `,
   },
 ];
@@ -2319,6 +2362,13 @@ type ExportBatchRow = {
   row_mode: ExportRowMode;
   status: ExportBatchStatus;
   watermark: string;
+  job_id: string | null;
+  snapshot_hash: string | null;
+  order_snapshot_hash: string | null;
+  snapshot_order_count: number;
+  snapshot_cursor: string | null;
+  snapshot_complete: number;
+  attempt_count: number;
   order_count: number;
   row_count: number;
   filename: string | null;
@@ -2331,6 +2381,10 @@ type ExportBatchRow = {
   updated_at: string;
   completed_at: string | null;
 };
+const exportBatchColumns = `id, account_id, selection_id, profile_version_id, format, row_mode, status,
+  watermark, job_id, snapshot_hash, order_snapshot_hash, snapshot_order_count, snapshot_cursor,
+  snapshot_complete, attempt_count, order_count, row_count, filename, file_path, checksum,
+  created_by, idempotency_key, error, created_at, updated_at, completed_at`;
 type OrderExportEventRow = {
   id: string;
   account_id: string;
@@ -2703,6 +2757,13 @@ const exportBatch = (row: ExportBatchRow): ExportBatch => ({
   rowMode: row.row_mode,
   status: row.status,
   watermark: row.watermark,
+  jobId: row.job_id,
+  snapshotHash: row.snapshot_hash,
+  orderSnapshotHash: row.order_snapshot_hash,
+  snapshotOrderCount: row.snapshot_order_count,
+  snapshotCursor: row.snapshot_cursor,
+  snapshotComplete: row.snapshot_complete === 1,
+  attemptCount: row.attempt_count,
   orderCount: row.order_count,
   rowCount: row.row_count,
   filename: row.filename,
@@ -4234,6 +4295,55 @@ export class SqliteStore {
     return rows.map(exportProfile);
   }
 
+  updateExportProfile(
+    context: AccountContext,
+    profileId: string,
+    input: { name?: string; description?: string | null; active?: boolean },
+  ): ExportProfile {
+    const actorId = this.requireMutationActor(context);
+    if (input.name === undefined && input.description === undefined && input.active === undefined)
+      throw new Error('EXPORT_PROFILE_UPDATE_EMPTY');
+    const current = this.db
+      .prepare(
+        'SELECT id, name, description, active FROM export_profiles WHERE account_id = ? AND id = ?',
+      )
+      .get(context.accountId, profileId) as
+      { id: string; name: string; description: string | null; active: number } | undefined;
+    if (!current) throw new Error('EXPORT_PROFILE_NOT_FOUND');
+    const name =
+      input.name === undefined
+        ? current.name
+        : normalizeExportName(input.name, 'EXPORT_PROFILE_NAME_INVALID', 120);
+    const description =
+      input.description === undefined
+        ? current.description
+        : input.description === null
+          ? null
+          : normalizeExportName(input.description, 'EXPORT_DESCRIPTION_INVALID', 500);
+    const active = input.active === undefined ? current.active === 1 : input.active;
+    const now = new Date().toISOString();
+    try {
+      this.db
+        .prepare(
+          'UPDATE export_profiles SET name = ?, description = ?, active = ?, updated_at = ? WHERE account_id = ? AND id = ?',
+        )
+        .run(name, description, active ? 1 : 0, now, context.accountId, profileId);
+    } catch {
+      throw new Error('EXPORT_PROFILE_NAME_EXISTS');
+    }
+    this.audit(context, 'export-profile.updated', 'export_profile', profileId, {
+      actorId,
+      fields: Object.keys(input),
+    });
+    return exportProfile(
+      this.db
+        .prepare(
+          'SELECT id, account_id, name, description, active, created_at, updated_at FROM export_profiles WHERE account_id = ? AND id = ?',
+        )
+        .get(context.accountId, profileId) as ExportProfileRow,
+    );
+  }
+
   createExportProfileVersion(
     context: AccountContext,
     profileId: string,
@@ -4312,6 +4422,39 @@ export class SqliteStore {
     return exportProfileVersion(row);
   }
 
+  listExportProfileVersions(context: AccountContext, profileId: string): ExportProfileVersion[] {
+    this.assertMember(context);
+    const profile = this.db
+      .prepare('SELECT id FROM export_profiles WHERE account_id = ? AND id = ?')
+      .get(context.accountId, profileId);
+    if (!profile) throw new Error('EXPORT_PROFILE_NOT_FOUND');
+    const rows = this.db
+      .prepare(
+        `SELECT id, account_id, profile_id, version, format, row_mode, columns_json,
+          filename_template, config_json, created_by, created_at
+         FROM export_profile_versions WHERE account_id = ? AND profile_id = ?
+         ORDER BY version DESC, id DESC`,
+      )
+      .all(context.accountId, profileId) as ExportProfileVersionRow[];
+    return rows.map(exportProfileVersion);
+  }
+
+  getExportProfileVersionForWorker(
+    context: AccountContext,
+    versionId: string,
+  ): ExportProfileVersion {
+    this.assertContext(context);
+    const row = this.db
+      .prepare(
+        `SELECT id, account_id, profile_id, version, format, row_mode, columns_json,
+          filename_template, config_json, created_by, created_at
+         FROM export_profile_versions WHERE account_id = ? AND id = ?`,
+      )
+      .get(context.accountId, versionId) as ExportProfileVersionRow | undefined;
+    if (!row) throw new Error('EXPORT_PROFILE_VERSION_NOT_FOUND');
+    return exportProfileVersion(row);
+  }
+
   createExportBatch(
     context: AccountContext,
     input: { selectionId: string; profileVersionId: string; idempotencyKey: string },
@@ -4335,43 +4478,70 @@ export class SqliteStore {
     );
     const now = new Date().toISOString();
     const id = randomId();
-    this.db
-      .prepare(
-        `INSERT INTO export_batches
-          (id, account_id, selection_id, profile_version_id, format, row_mode, status, watermark,
-           order_count, row_count, created_by, idempotency_key, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, 0, ?, ?, ?, ?)
-         ON CONFLICT(account_id, idempotency_key) DO NOTHING`,
-      )
-      .run(
-        id,
-        context.accountId,
-        input.selectionId,
-        input.profileVersionId,
-        version.format,
-        version.row_mode,
-        selection.watermark,
-        selection.estimated_count,
-        actorId,
-        idempotencyKey,
-        now,
-        now,
-      );
+    const jobId = randomId();
+    const snapshotHash = requireHash(
+      JSON.stringify({
+        selectionId: input.selectionId,
+        profileVersionId: input.profileVersionId,
+        watermark: selection.watermark,
+        queryJson: selection.query_json,
+        exclusionsJson: selection.exclusions_json,
+      }),
+    );
+    const payloadJson = serializeJobPayload({ exportBatchId: id });
+    const inserted = this.db.transaction(() => {
+      const result = this.db
+        .prepare(
+          `INSERT INTO export_batches
+            (id, account_id, selection_id, profile_version_id, format, row_mode, status, watermark,
+             job_id, snapshot_hash, order_snapshot_hash, snapshot_order_count, snapshot_cursor,
+             snapshot_complete, attempt_count, order_count, row_count, created_by, idempotency_key,
+             created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, NULL, 0, NULL, 0, 0, ?, 0, ?, ?, ?, ?)
+           ON CONFLICT(account_id, idempotency_key) DO NOTHING`,
+        )
+        .run(
+          id,
+          context.accountId,
+          input.selectionId,
+          input.profileVersionId,
+          version.format,
+          version.row_mode,
+          selection.watermark,
+          jobId,
+          snapshotHash,
+          selection.estimated_count,
+          actorId,
+          idempotencyKey,
+          now,
+          now,
+        );
+      if (result.changes !== 1) return false;
+      this.db
+        .prepare(
+          `INSERT INTO jobs
+            (id, account_id, type, idempotency_key, status, attempts, created_at, updated_at,
+             payload_json, max_attempts, available_at)
+           VALUES (?, ?, 'export.generate', ?, 'queued', 0, ?, ?, ?, 3, ?)`,
+        )
+        .run(jobId, context.accountId, `export:${id}`, now, now, payloadJson, now);
+      this.audit(context, 'job.queued', 'job', jobId, { type: 'export.generate', batchId: id });
+      return true;
+    })();
     const row = this.db
       .prepare(
-        `SELECT id, account_id, selection_id, profile_version_id, format, row_mode, status, watermark,
-          order_count, row_count, filename, file_path, checksum, created_by, idempotency_key, error,
-          created_at, updated_at, completed_at FROM export_batches WHERE account_id = ? AND idempotency_key = ?`,
+        `SELECT ${exportBatchColumns} FROM export_batches WHERE account_id = ? AND idempotency_key = ?`,
       )
       .get(context.accountId, idempotencyKey) as ExportBatchRow | undefined;
     if (!row) throw new Error('EXPORT_BATCH_CREATE_FAILED');
     if (row.selection_id !== input.selectionId || row.profile_version_id !== input.profileVersionId)
       throw new Error('EXPORT_IDEMPOTENCY_CONFLICT');
-    if (row.status === 'queued' && row.id === id)
+    if (inserted)
       this.audit(context, 'export-batch.created', 'export_batch', row.id, {
         selectionId: row.selection_id,
         profileVersionId: row.profile_version_id,
         orderCount: row.order_count,
+        jobId: row.job_id,
       });
     return exportBatch(row);
   }
@@ -4379,11 +4549,16 @@ export class SqliteStore {
   getExportBatch(context: AccountContext, batchId: string): ExportBatch {
     this.assertMember(context);
     const row = this.db
-      .prepare(
-        `SELECT id, account_id, selection_id, profile_version_id, format, row_mode, status, watermark,
-          order_count, row_count, filename, file_path, checksum, created_by, idempotency_key, error,
-          created_at, updated_at, completed_at FROM export_batches WHERE account_id = ? AND id = ?`,
-      )
+      .prepare(`SELECT ${exportBatchColumns} FROM export_batches WHERE account_id = ? AND id = ?`)
+      .get(context.accountId, batchId) as ExportBatchRow | undefined;
+    if (!row) throw new Error('EXPORT_BATCH_NOT_FOUND');
+    return exportBatch(row);
+  }
+
+  getExportBatchForWorker(context: AccountContext, batchId: string): ExportBatch {
+    this.assertContext(context);
+    const row = this.db
+      .prepare(`SELECT ${exportBatchColumns} FROM export_batches WHERE account_id = ? AND id = ?`)
       .get(context.accountId, batchId) as ExportBatchRow | undefined;
     if (!row) throw new Error('EXPORT_BATCH_NOT_FOUND');
     return exportBatch(row);
@@ -4395,9 +4570,7 @@ export class SqliteStore {
       throw new Error('EXPORT_BATCH_LIMIT_INVALID');
     const rows = this.db
       .prepare(
-        `SELECT id, account_id, selection_id, profile_version_id, format, row_mode, status, watermark,
-          order_count, row_count, filename, file_path, checksum, created_by, idempotency_key, error,
-          created_at, updated_at, completed_at FROM export_batches WHERE account_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`,
+        `SELECT ${exportBatchColumns} FROM export_batches WHERE account_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`,
       )
       .all(context.accountId, limit) as ExportBatchRow[];
     return rows.map(exportBatch);
@@ -4414,6 +4587,18 @@ export class SqliteStore {
     return this.getExportBatch(context, batchId);
   }
 
+  startExportBatchForWorker(context: AccountContext, batchId: string): ExportBatch {
+    this.assertContext(context);
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `UPDATE export_batches SET status = 'running', updated_at = ?
+         WHERE account_id = ? AND id = ? AND status = 'queued'`,
+      )
+      .run(now, context.accountId, batchId);
+    return this.getExportBatchForWorker(context, batchId);
+  }
+
   completeExportBatch(
     context: AccountContext,
     batchId: string,
@@ -4423,9 +4608,45 @@ export class SqliteStore {
       filename: string;
       filePath: string;
       checksum: string;
+      snapshotHash?: string;
+      orderSnapshotHash?: string;
     },
   ): ExportBatch {
     this.assertMember(context);
+    return this.completeExportBatchInternal(context, batchId, input, false);
+  }
+
+  completeExportBatchForWorker(
+    context: AccountContext,
+    batchId: string,
+    input: {
+      orderCount: number;
+      rowCount: number;
+      filename: string;
+      filePath: string;
+      checksum: string;
+      snapshotHash?: string;
+      orderSnapshotHash?: string;
+    },
+  ): ExportBatch {
+    this.assertContext(context);
+    return this.completeExportBatchInternal(context, batchId, input, true);
+  }
+
+  private completeExportBatchInternal(
+    context: AccountContext,
+    batchId: string,
+    input: {
+      orderCount: number;
+      rowCount: number;
+      filename: string;
+      filePath: string;
+      checksum: string;
+      snapshotHash?: string;
+      orderSnapshotHash?: string;
+    },
+    worker: boolean,
+  ): ExportBatch {
     if (!Number.isInteger(input.orderCount) || input.orderCount < 0 || input.orderCount > 100_000)
       throw new Error('EXPORT_ORDER_COUNT_INVALID');
     if (!Number.isInteger(input.rowCount) || input.rowCount < 0 || input.rowCount > 200_000)
@@ -4435,11 +4656,25 @@ export class SqliteStore {
     if (filePath.includes('..') || filePath.includes('\\') || filePath.startsWith('/'))
       throw new Error('EXPORT_FILE_PATH_INVALID');
     if (!/^[a-f0-9]{64}$/i.test(input.checksum)) throw new Error('EXPORT_CHECKSUM_INVALID');
+    if (input.snapshotHash !== undefined && !/^[a-f0-9]{64}$/i.test(input.snapshotHash))
+      throw new Error('EXPORT_SNAPSHOT_HASH_INVALID');
+    if (input.orderSnapshotHash !== undefined && !/^[a-f0-9]{64}$/i.test(input.orderSnapshotHash))
+      throw new Error('EXPORT_ORDER_SNAPSHOT_HASH_INVALID');
+    const existingBefore = worker
+      ? this.getExportBatchForWorker(context, batchId)
+      : this.getExportBatch(context, batchId);
+    if (
+      existingBefore.snapshotHash !== null &&
+      input.snapshotHash !== undefined &&
+      existingBefore.snapshotHash !== input.snapshotHash.toLowerCase()
+    )
+      throw new Error('EXPORT_SNAPSHOT_HASH_MISMATCH');
     const now = new Date().toISOString();
     const result = this.db
       .prepare(
         `UPDATE export_batches SET status = 'completed', order_count = ?, row_count = ?, filename = ?,
-          file_path = ?, checksum = ?, error = NULL, updated_at = ?, completed_at = ?
+          file_path = ?, checksum = ?, order_snapshot_hash = COALESCE(?, order_snapshot_hash),
+          snapshot_complete = 1, error = NULL, updated_at = ?, completed_at = ?
          WHERE account_id = ? AND id = ? AND status IN ('queued', 'running')`,
       )
       .run(
@@ -4448,18 +4683,23 @@ export class SqliteStore {
         filename,
         filePath,
         input.checksum.toLowerCase(),
+        input.orderSnapshotHash?.toLowerCase() ?? null,
         now,
         now,
         context.accountId,
         batchId,
       );
     if (result.changes !== 1) {
-      const existing = this.getExportBatch(context, batchId);
+      const existing = worker
+        ? this.getExportBatchForWorker(context, batchId)
+        : this.getExportBatch(context, batchId);
       if (
         existing.status === 'completed' &&
         existing.checksum === input.checksum.toLowerCase() &&
         existing.orderCount === input.orderCount &&
-        existing.rowCount === input.rowCount
+        existing.rowCount === input.rowCount &&
+        (input.orderSnapshotHash === undefined ||
+          existing.orderSnapshotHash === input.orderSnapshotHash.toLowerCase())
       )
         return existing;
       throw new Error('EXPORT_BATCH_STATE_CONFLICT');
@@ -4469,20 +4709,256 @@ export class SqliteStore {
       rowCount: input.rowCount,
       checksum: input.checksum.toLowerCase(),
     });
-    return this.getExportBatch(context, batchId);
+    return worker
+      ? this.getExportBatchForWorker(context, batchId)
+      : this.getExportBatch(context, batchId);
   }
 
   failExportBatch(context: AccountContext, batchId: string, error: string): ExportBatch {
     this.assertMember(context);
+    return this.failExportBatchInternal(context, batchId, error, false);
+  }
+
+  failExportBatchForWorker(context: AccountContext, batchId: string, error: string): ExportBatch {
+    this.assertContext(context);
+    return this.failExportBatchInternal(context, batchId, error, true);
+  }
+
+  private failExportBatchInternal(
+    context: AccountContext,
+    batchId: string,
+    error: string,
+    worker: boolean,
+  ): ExportBatch {
     const message = normalizeExportName(error, 'EXPORT_ERROR_INVALID', 500);
     const result = this.db
       .prepare(
         `UPDATE export_batches SET status = 'failed', error = ?, updated_at = ? WHERE account_id = ? AND id = ? AND status IN ('queued', 'running')`,
       )
       .run(message, new Date().toISOString(), context.accountId, batchId);
-    if (result.changes !== 1 && this.getExportBatch(context, batchId).status !== 'failed')
+    const current = worker
+      ? this.getExportBatchForWorker(context, batchId)
+      : this.getExportBatch(context, batchId);
+    if (result.changes !== 1 && current.status !== 'failed')
       throw new Error('EXPORT_BATCH_STATE_CONFLICT');
+    return worker
+      ? this.getExportBatchForWorker(context, batchId)
+      : this.getExportBatch(context, batchId);
+  }
+
+  retryExportBatch(context: AccountContext, batchId: string): ExportBatch {
+    const actorId = this.requireMutationActor(context);
+    const current = this.getExportBatch(context, batchId);
+    if (current.status !== 'failed') throw new Error('EXPORT_RETRY_NOT_AVAILABLE');
+    const now = new Date().toISOString();
+    const nextAttempt = current.attemptCount + 1;
+    const jobId = randomId();
+    const jobKey = `export:${batchId}:retry:${nextAttempt}`;
+    const payloadJson = serializeJobPayload({ exportBatchId: batchId });
+    this.db.transaction(() => {
+      if (current.jobId !== null) {
+        this.db
+          .prepare(
+            `UPDATE jobs SET status = 'failed', cancel_requested = 1, last_error = 'EXPORT_RETRY_SUPERSEDED',
+              lease_until = NULL, updated_at = ?
+             WHERE account_id = ? AND id = ? AND status IN ('queued', 'running')`,
+          )
+          .run(now, context.accountId, current.jobId);
+      }
+      const result = this.db
+        .prepare(
+          `UPDATE export_batches SET status = 'queued', job_id = ?, attempt_count = ?,
+            error = NULL, filename = NULL, file_path = NULL, checksum = NULL,
+            completed_at = NULL, updated_at = ?
+           WHERE account_id = ? AND id = ? AND status = 'failed'`,
+        )
+        .run(jobId, nextAttempt, now, context.accountId, batchId);
+      if (result.changes !== 1) throw new Error('EXPORT_RETRY_CONFLICT');
+      this.db
+        .prepare(
+          `INSERT INTO jobs
+            (id, account_id, type, idempotency_key, status, attempts, created_at, updated_at,
+             payload_json, max_attempts, available_at)
+           VALUES (?, ?, 'export.generate', ?, 'queued', 0, ?, ?, ?, 3, ?)`,
+        )
+        .run(jobId, context.accountId, jobKey, now, now, payloadJson, now);
+      this.audit(context, 'job.queued', 'job', jobId, { type: 'export.generate', batchId });
+      this.audit(context, 'export-batch.retried', 'export_batch', batchId, {
+        actorId,
+        attempt: nextAttempt,
+      });
+    })();
     return this.getExportBatch(context, batchId);
+  }
+
+  materializeExportSnapshotPage(
+    context: AccountContext,
+    batchId: string,
+    limit = 5_000,
+  ): ExportSnapshotPage {
+    this.assertContext(context);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 5_000)
+      throw new Error('EXPORT_SNAPSHOT_PAGE_LIMIT_INVALID');
+    const batch = this.getExportBatchForWorker(context, batchId);
+    if (batch.snapshotComplete)
+      return {
+        items: [],
+        orderIds: [],
+        nextCursor: null,
+        hasMore: false,
+        orderCount: batch.snapshotOrderCount,
+        snapshotHash: batch.orderSnapshotHash,
+      };
+    const selection = this.selectionData(this.selectionRow(context, batch.selectionId));
+    const where = this.compileSelectionWhere(context, selection);
+    const cursor = batch.snapshotCursor;
+    if (cursor) {
+      where.sql += ' AND o.id > ?';
+      where.params.push(cursor);
+    }
+    const selected = this.db
+      .prepare(`SELECT o.id FROM orders o WHERE ${where.sql} ORDER BY o.id ASC LIMIT ?`)
+      .all(...where.params, limit) as Array<{ id: string }>;
+    const now = new Date().toISOString();
+    const firstPosition = batch.snapshotOrderCount;
+    const materialized = this.db.transaction(() => {
+      let inserted = 0;
+      const insert = this.db.prepare(
+        `INSERT OR IGNORE INTO export_batch_snapshots
+          (account_id, batch_id, position, order_id, snapshot_json, snapshot_hash, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const [index, selectedOrder] of selected.entries()) {
+        const order = this.getOrder(context, selectedOrder.id);
+        if (!order) throw new Error('EXPORT_ORDER_SNAPSHOT_NOT_FOUND');
+        const snapshotJson = serializeBoundedJson(
+          order,
+          512 * 1024,
+          'EXPORT_ORDER_SNAPSHOT_TOO_LARGE',
+        );
+        const result = insert.run(
+          context.accountId,
+          batchId,
+          firstPosition + index,
+          selectedOrder.id,
+          snapshotJson,
+          requireHash(snapshotJson),
+          now,
+        );
+        inserted += result.changes;
+      }
+      const nextCursor = selected.at(-1)?.id ?? cursor;
+      const complete = selected.length < limit;
+      this.db
+        .prepare(
+          `UPDATE export_batches SET snapshot_order_count = snapshot_order_count + ?,
+            snapshot_cursor = ?, snapshot_complete = ?, updated_at = ?
+           WHERE account_id = ? AND id = ? AND status IN ('queued', 'running')`,
+        )
+        .run(inserted, nextCursor ?? null, complete ? 1 : 0, now, context.accountId, batchId);
+      return { inserted, nextCursor: nextCursor ?? null, complete };
+    })();
+    const rows = this.db
+      .prepare(
+        `SELECT position, order_id, snapshot_json FROM export_batch_snapshots
+         WHERE account_id = ? AND batch_id = ? AND position >= ?
+         ORDER BY position ASC LIMIT ?`,
+      )
+      .all(context.accountId, batchId, firstPosition, selected.length) as Array<{
+      position: number;
+      order_id: string;
+      snapshot_json: string;
+    }>;
+    return {
+      items: rows.map((row) =>
+        parseStoredJson<Record<string, unknown>>(
+          row.snapshot_json,
+          'EXPORT_ORDER_SNAPSHOT_INVALID',
+        ),
+      ),
+      orderIds: rows.map((row) => row.order_id),
+      nextCursor: materialized.nextCursor,
+      hasMore: !materialized.complete,
+      orderCount: firstPosition + materialized.inserted,
+      snapshotHash: materialized.complete
+        ? this.getExportSnapshotHashForWorker(context, batchId)
+        : null,
+    };
+  }
+
+  getExportSnapshotPageForWorker(
+    context: AccountContext,
+    batchId: string,
+    offset = 0,
+    limit = 5_000,
+  ): {
+    items: readonly Record<string, unknown>[];
+    orderIds: readonly string[];
+    nextOffset: number | null;
+    hasMore: boolean;
+    orderCount: number;
+  } {
+    this.assertContext(context);
+    if (
+      !Number.isInteger(offset) ||
+      offset < 0 ||
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 5_000
+    )
+      throw new Error('EXPORT_SNAPSHOT_PAGE_LIMIT_INVALID');
+    const batch = this.getExportBatchForWorker(context, batchId);
+    const rows = this.db
+      .prepare(
+        `SELECT position, order_id, snapshot_json FROM export_batch_snapshots
+         WHERE account_id = ? AND batch_id = ? AND position >= ?
+         ORDER BY position ASC LIMIT ?`,
+      )
+      .all(context.accountId, batchId, offset, limit + 1) as Array<{
+      position: number;
+      order_id: string;
+      snapshot_json: string;
+    }>;
+    const hasMore = rows.length > limit;
+    const visible = rows.slice(0, limit);
+    return {
+      items: visible.map((row) =>
+        parseStoredJson<Record<string, unknown>>(
+          row.snapshot_json,
+          'EXPORT_ORDER_SNAPSHOT_INVALID',
+        ),
+      ),
+      orderIds: visible.map((row) => row.order_id),
+      nextOffset: hasMore ? (visible.at(-1)?.position ?? offset) + 1 : null,
+      hasMore,
+      orderCount: batch.snapshotOrderCount,
+    };
+  }
+
+  getExportSnapshotHashForWorker(context: AccountContext, batchId: string): string {
+    this.assertContext(context);
+    const batch = this.getExportBatchForWorker(context, batchId);
+    if (!batch.snapshotComplete) throw new Error('EXPORT_SNAPSHOT_INCOMPLETE');
+    const rows = this.db
+      .prepare(
+        `SELECT position, order_id, snapshot_hash FROM export_batch_snapshots
+         WHERE account_id = ? AND batch_id = ? ORDER BY position ASC`,
+      )
+      .all(context.accountId, batchId) as Array<{
+      position: number;
+      order_id: string;
+      snapshot_hash: string;
+    }>;
+    return requireHash(
+      JSON.stringify({
+        selectionSnapshotHash: batch.snapshotHash,
+        orders: rows.map((row) => ({
+          position: row.position,
+          id: row.order_id,
+          hash: row.snapshot_hash,
+        })),
+      }),
+    );
   }
 
   recordExportedOrders(
@@ -4492,6 +4968,33 @@ export class SqliteStore {
     snapshotHash?: string,
   ): { recorded: number; orderIds: readonly string[] } {
     const actorId = this.requireMutationActor(context);
+    return this.recordExportedOrdersInternal(context, batchId, orderIds, snapshotHash, actorId);
+  }
+
+  recordExportedOrdersForWorker(
+    context: AccountContext,
+    batchId: string,
+    orderIds: readonly string[],
+    snapshotHash?: string,
+  ): { recorded: number; orderIds: readonly string[] } {
+    this.assertContext(context);
+    const batch = this.getExportBatchForWorker(context, batchId);
+    return this.recordExportedOrdersInternal(
+      context,
+      batchId,
+      orderIds,
+      snapshotHash,
+      batch.createdBy,
+    );
+  }
+
+  private recordExportedOrdersInternal(
+    context: AccountContext,
+    batchId: string,
+    orderIds: readonly string[],
+    snapshotHash: string | undefined,
+    actorId: string,
+  ): { recorded: number; orderIds: readonly string[] } {
     if (!Array.isArray(orderIds) || orderIds.length < 1 || orderIds.length > 5_000)
       throw new Error('EXPORT_ORDER_IDS_INVALID');
     if (new Set(orderIds).size !== orderIds.length) throw new Error('EXPORT_ORDER_IDS_INVALID');
@@ -4499,22 +5002,58 @@ export class SqliteStore {
       throw new Error('EXPORT_SNAPSHOT_HASH_INVALID');
     const batch = this.db
       .prepare(
-        'SELECT id, selection_id, status FROM export_batches WHERE account_id = ? AND id = ?',
+        'SELECT id, selection_id, status, snapshot_hash, order_snapshot_hash, filename, file_path, checksum FROM export_batches WHERE account_id = ? AND id = ?',
       )
       .get(context.accountId, batchId) as
-      { id: string; selection_id: string; status: ExportBatchStatus } | undefined;
+      | {
+          id: string;
+          selection_id: string;
+          status: ExportBatchStatus;
+          snapshot_hash: string | null;
+          order_snapshot_hash: string | null;
+          filename: string | null;
+          file_path: string | null;
+          checksum: string | null;
+        }
+      | undefined;
     if (!batch) throw new Error('EXPORT_BATCH_NOT_FOUND');
     if (batch.status !== 'completed') throw new Error('EXPORT_BATCH_NOT_COMPLETED');
+    if (!batch.filename || !batch.file_path || !batch.checksum)
+      throw new Error('EXPORT_BATCH_FILE_NOT_READY');
+    if (
+      snapshotHash !== undefined &&
+      batch.order_snapshot_hash !== null &&
+      snapshotHash.toLowerCase() !== batch.order_snapshot_hash
+    )
+      throw new Error('EXPORT_ORDER_SNAPSHOT_HASH_MISMATCH');
+    const effectiveSnapshotHash =
+      snapshotHash?.toLowerCase() ?? batch.order_snapshot_hash ?? batch.snapshot_hash;
     this.verifyOrderIds(context, orderIds);
-    const selection = this.selectionData(this.selectionRow(context, batch.selection_id));
-    const selectedWhere = this.compileSelectionWhere(context, selection);
-    const selected = this.db
+    const snapshotTotal = this.db
       .prepare(
-        `SELECT COUNT(*) AS count FROM orders o WHERE ${selectedWhere.sql} AND o.id IN (${orderIds.map(() => '?').join(',')})`,
+        'SELECT COUNT(*) AS count FROM export_batch_snapshots WHERE account_id = ? AND batch_id = ?',
       )
-      .get(...selectedWhere.params, ...orderIds) as { count: number };
-    if (Number(selected.count) !== orderIds.length)
-      throw new Error('EXPORT_ORDER_NOT_IN_SELECTION');
+      .get(context.accountId, batchId) as { count: number };
+    const snapshotRows = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM export_batch_snapshots
+         WHERE account_id = ? AND batch_id = ? AND order_id IN (${orderIds.map(() => '?').join(',')})`,
+      )
+      .get(context.accountId, batchId, ...orderIds) as { count: number };
+    if (Number(snapshotTotal.count) > 0) {
+      if (Number(snapshotRows.count) !== orderIds.length)
+        throw new Error('EXPORT_ORDER_NOT_IN_SNAPSHOT');
+    } else {
+      const selection = this.selectionData(this.selectionRow(context, batch.selection_id));
+      const selectedWhere = this.compileSelectionWhere(context, selection);
+      const selected = this.db
+        .prepare(
+          `SELECT COUNT(*) AS count FROM orders o WHERE ${selectedWhere.sql} AND o.id IN (${orderIds.map(() => '?').join(',')})`,
+        )
+        .get(...selectedWhere.params, ...orderIds) as { count: number };
+      if (Number(selected.count) !== orderIds.length)
+        throw new Error('EXPORT_ORDER_NOT_IN_SELECTION');
+    }
     const now = new Date().toISOString();
     const insert = this.db.prepare(
       `INSERT OR IGNORE INTO order_export_events
@@ -4530,7 +5069,7 @@ export class SqliteStore {
           context.accountId,
           orderId,
           batchId,
-          snapshotHash?.toLowerCase() ?? null,
+          effectiveSnapshotHash,
           actorId,
           now,
         );
@@ -7646,7 +8185,9 @@ export class SqliteStore {
       feesMinor: String(isRecord(existing.amounts) ? (existing.amounts.feesMinor ?? '0') : '0'),
       localStatus: row.local_status,
       tags: parseStoredJson<unknown[]>(row.tags_json, 'MANUAL_ORDER_DATA_INVALID') as string[],
-      notes: typeof existing.notes === 'string' ? existing.notes : '',
+      ...(typeof existing.notes === 'string' && existing.notes.trim()
+        ? { notes: existing.notes }
+        : {}),
       assigneeId: row.assignee_id,
     };
     const merged: ManualOrderInput = {

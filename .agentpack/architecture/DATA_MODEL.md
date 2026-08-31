@@ -235,6 +235,22 @@ transform pipeline, validation, filename expression, locale, and output type.
 Immutable execution record: selection snapshot, profile version, data watermark, order snapshot
 manifest, result counts, file metadata/checksum, actor, state, errors, and timestamps.
 
+SQLite implementation details (migration 18):
+
+- `export_batches` stores the durable `export.generate` job ID, deterministic selection snapshot
+  hash, final order-snapshot hash, bounded snapshot cursor/count/completion state, attempt count,
+  result metadata, and checksum-bound private file path.
+- `export_batch_snapshots` stores one immutable canonical order JSON snapshot per account/batch
+  position with a per-row SHA-256 hash. Composite account-first foreign keys and unique indexes
+  prevent cross-account reads or duplicate positions/order IDs.
+- Export creation and its durable job insert are one transaction. Snapshot materialization is
+  resumable in pages of at most 5,000 orders. The current in-process worker bounds generation to
+  100,000 orders/200,000 rows; large inputs fail with an explicit limit instead of allocating an
+  unbounded request-sized structure.
+- Artifacts live under the configured private data directory, outside the public web root. The
+  file helper creates account/batch directories with restrictive permissions, rejects traversal or
+  symlink chains, writes at most 100 MiB, and allows only write-once checksum-compatible files.
+
 ### orderExportEvents
 
 Append-only per-order history allowing reliable derived export state and unexport audit without
