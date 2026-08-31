@@ -37,9 +37,15 @@ pnpm db:restore -- backup-<id>
 pnpm db:restore -- backup-<id> --apply
 ```
 
-Before release, run `pnpm test:hostinger`, `pnpm test:e2e:critical`, and `pnpm test:performance`.
-These verify the production start/health/backup path, repeat the fixture-only critical operator
-journey, and enforce documented 10k/100k-order SQLite performance budgets.
+Before release, run the complete local gate matrix: `pnpm agent:doctor`, `pnpm agent:validate`,
+`pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`, `pnpm test:integration`,
+`pnpm test:contract`, `pnpm test:security`, `pnpm test:tenant-isolation`, `pnpm test:chaos`, `pnpm test:golden`,
+`pnpm test:e2e:critical`, `pnpm test:e2e`, `pnpm test:a11y`, `pnpm test:visual`,
+`pnpm test:performance`, `pnpm test:hostinger`, `pnpm security:scan`, `pnpm security:audit`,
+`pnpm build`, and `git diff --check`. The CI workflow runs the non-platform-specific quality,
+security, artifact, critical-E2E and operations gates, plus Linux browser E2E/accessibility and a
+Windows visual-baseline job. Live Woo authorization, Hostinger/DNS/TLS configuration, and legal/tax
+policy remain owner-provided launch inputs.
 
 ## Agent-driven delivery
 
