@@ -2,8 +2,8 @@
 
 Audit date: 2026-08-31  
 Connector under review: `packages/connectors/src/woocommerce.ts`  
-Direction invariant: GET/pull/health/discovery/normalization/webhook verification only. No remote
-order, product, customer, stock or status mutation may be added.
+Direction invariant: pull/health/discovery/webhook verification only. No remote order, product,
+customer, stock or status mutation is supported.
 
 Official baseline references recorded by the architecture contract:
 
@@ -12,43 +12,42 @@ Official baseline references recorded by the architecture contract:
 - <https://developer.woocommerce.com/docs/apis/rest-api/v3/orders/>
 - <https://developer.woocommerce.com/docs/apis/rest-api/v3/webhooks/>
 
-| Capability / threat | Expected contract | Current evidence | Result / task |
+## Local certification
+
+| Capability / threat | Expected contract | Current evidence | Result |
 | --- | --- | --- | --- |
-| REST version | Use `/wp-json/wc/v3`; never legacy REST or direct DB | `WooCommerceConnector` constructs v3 paths; connector tests inspect requests | PASS for current pull slice |
-| Authorization | Woo application authorization with explicit `scope=read` | `createAuthorizationUrl`, T0201/T0802 tests | PASS locally; live store callback is external |
-| Credential storage | AES-256-GCM envelope; plaintext absent from logs/jobs/responses | `encryptCredentialEnvelope`, callback storage and security tests | Partial: decrypt/execution boundary and rotation API are T0808 |
-| Store URL/SSRF | HTTPS, public DNS, no private/special IP, no unsafe redirects/origin changes | `assertPublicStoreUrl`, request security tests | PASS for covered paths; re-check every new health/sync request in T0808 |
-| HTTP method surface | Explicit GET only; no raw/unrestricted request escape hatch | connector interface and `requestPage` | PASS invariant; T0808 must preserve static mutation test |
-| Pagination | bounded page size, page cursor, total pages/links, resumable checkpoint | pull tests support `startPage` and `x-wp-totalpages` | Partial: Link/edge cursor handling and durable per-kind runs are T0808 |
-| Rate limits | classify 429, respect `Retry-After`, bounded exponential backoff and circuit state | 429 classification test exists | Partial: retry policy and health degradation are T0808 |
-| Health | Woo/WordPress version, capabilities, permissions, last success/error, lag | no typed health port or API route | Missing: T0808 |
-| Products/variations | normalize product and variation snapshots, deterministic identity, deletion | T0203 catalog tests and persistence upsert | Implemented slice; sync orchestration and order-line enrichment T0808 |
-| Taxonomies | categories, tags, shipping classes and approved metadata | T0203 normalized catalog tests | Implemented slice; catalog API/backfill UI T0808/T0813 |
-| Standard orders | customer, addresses, lines, coupon, tax, fee, payment, shipping, channel, POS/plugin metadata | `normalizeWooOrder` handles basic amount/date/customer/address/lines/refunds and stores raw JSON | Partial: typed canonical expansion T0809 |
-| Refunds | normalize IDs, amounts, reasons, dates, line allocations idempotently | T0204 refund persistence tests | Partial: orchestration/reconciliation and typed allocations T0808/T0809 |
-| Currency/time | decimal strings to minor units, UTC with raw/source timezone as needed | `decimalToMinorUnits` and connector tests | PASS for covered basic fields; expansion must preserve T0809 invariant |
-| Schema drift | invalid payload quarantined, not treated as valid order | `validateWooOrder`, security test | PASS for current validator; certification corpus expands T0808 |
-| Webhook raw verification | verify bytes/HMAC before parsing, bounded body/topic, owner binding and replay idempotency | API intake + `acceptWebhook`, T0202/T0802 tests | Intake PASS; consumer/normalization/replay effect T0807/T0808 |
-| Webhook delivery IDs | delivery ID preferred, deterministic fallback, topic allowlist | fallback exists; arbitrary topic currently accepted into inbox | Partial: topic policy and dead-letter consumer T0807/T0808 |
-| Incremental sync | modified overlap window, checkpoint after durable effects, missed-event reconciliation | no sync use case/route | Missing: T0808 |
-| Remote deletion | mark deleted, preserve local evidence, remove only from default views | `markRemoteOrderDeleted`/catalog marker | Implemented slice; reconciliation runner T0808 |
-| Metadata | order/line/product/variation scope, sensitivity, typed mapping/backfill | order `meta_data` discovery only | Partial: T0808/T0813 |
-| Observability | redacted categories, lag/counters, sync runs, failures and dead letters | persistence fields exist for catalog/order runs but no API/worker | Missing: T0807/T0808 |
-| No mutation certification | static scan plus negative tests for route/interface/request method | existing T0802 tests | Must be rerun after every connector change and in T0814 |
+| REST version | `/wp-json/wc/v3`; no legacy REST or direct DB | `WooCommerceConnector` paths and connector contract tests | PASS |
+| Authorization | Woo application authorization with `scope=read` | OAuth URL/callback implementation, encrypted credential integration and API E2E | PASS locally; live callback remains external |
+| Credential storage | AES-256-GCM envelope; secrets absent from logs/jobs/responses | Credential lifecycle and security tests; operation responses redact payloads | PASS locally |
+| Store URL/SSRF | HTTPS, public DNS, no private/special IP, safe origin | URL, DNS, redirect and origin security tests | PASS |
+| HTTP method surface | Explicit GET only; no arbitrary HTTP escape hatch | Read-only connector interface and method/security tests | PASS |
+| Pagination/checkpoints | Bounded pages, resumable cursors, durable effect before advance | Woo page/product tests plus sync-run integration and critical E2E | PASS |
+| Rate/failure handling | Classify 429/5xx/network/auth/schema and bound retries | Connector classification and durable job retry/dead-letter tests | PASS |
+| Health | Safe Woo/WordPress versions, capabilities, lag and error status | Connection health route, operations health and Hostinger smoke | PASS locally |
+| Products/variations/taxonomies | Deterministic account/connection snapshots and deletion markers | Catalog contract/integration tests and sync E2E | PASS |
+| Standard orders | Customer/address/line/coupon/tax/fee/payment/shipping/channel/POS facts | Normalization, canonical projection, order detail/filter and critical E2E | PASS for supported fields |
+| Refunds | IDs, amounts, reasons, dates and allocations remain source facts | Woo order contract and persistence sync tests | PASS for supported payloads |
+| Currency/time | Decimal source values to minor units; UTC plus source timezone | Connector normalization and analytics tests | PASS |
+| Schema drift | Invalid payloads quarantined, never treated as valid orders | `validateWooOrder()` contract/security tests | PASS |
+| Webhook intake | Raw bytes/HMAC, bounded body/topic, owner binding, replay idempotency | Webhook security/integration/E2E tests | PASS |
+| Delivery identity | Woo delivery ID or deterministic fallback; topic allowlist | Inbox uniqueness and accepted-topic tests | PASS |
+| Incremental/reconciliation | Overlap window, durable checkpoints, missed-event/deletion recovery | Sync lifecycle integration and critical fixture journey | PASS locally |
+| Metadata and mappings | Safe catalog, typed mapping/backfill, private raw data protected | Metadata/mapping persistence tests, backfill job and admin E2E | PASS for approved fields |
+| Observability | Redacted categories, lag/counters, jobs and dead letters | Operations routes, job runner tests, health smoke | PASS |
+| No-mutation certification | Static surface plus negative requests | Connector security tests and source review | PASS; no remote write port |
 
-## Fixture corpus required for completion
+## Fixture and artifact evidence
 
-T0808 must check in redacted deterministic fixtures for: guest and registered customers; Arabic and
-mixed-language addresses; multiple lines/variations; empty SKU; coupons/discounts; tax and fee lines;
-multiple shipping lines; refunds with allocation; custom statuses; POS-created orders; author and
-carrier/tracking metadata; multiple currencies/timezones; pagination boundaries; 429 with
-`Retry-After`; 5xx/network timeout; deleted records; malformed/schema-drift payloads; duplicate
-webhook deliveries; and origin/redirect rejection.
+The checked-in redacted fixtures and deterministic fake Woo flow cover Arabic/mixed-language data,
+guest/registered customers, variations, empty SKU, discounts, taxes/fees, multiple shipping lines,
+refunds, custom status/POS/author/carrier metadata, currencies/timezones, pagination, 429/5xx and
+schema drift, duplicate webhooks, deletions, redirect/origin rejection, and replay behavior. The
+fresh commands `pnpm test:contract`, `pnpm test:security`, `pnpm test:e2e:critical`, and
+`pnpm test:chaos` pass in the T0814 evidence.
 
 ## External certification boundary
 
-No real store or credentials may be committed or invented. A final live-store smoke must be run by an
-authorized owner after deployment using read-only Woo keys and must verify authorization, health,
-initial sync, webhook delivery, incremental polling and no remote mutation. Until then the connector
-is locally code-certified with fixture evidence, not live-certified.
-
+No real store or credentials are committed or invented. An authorized owner must perform one live
+smoke after deployment using read-only Woo keys and verify authorization, health, initial/incremental/
+reconciliation sync, webhook delivery, and the absence of remote mutation. Until then this connector
+is locally code-certified and fixture-certified, not live-certified.

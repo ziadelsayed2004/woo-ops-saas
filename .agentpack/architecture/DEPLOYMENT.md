@@ -74,10 +74,14 @@ run restore while the Node process is stopped so no open SQLite handle can race 
 
 ## Release gates
 
-Run agentpack validation, frozen install, format, lint, typecheck, unit tests, build, API health smoke,
-connector contract tests, critical E2E, performance, Hostinger smoke, backup/restore tests and security
-checks. Never expose the data directory or credentials through static serving, logs, errors or client
-bundles.
+Run agentpack doctor/validation, frozen install, format, lint, typecheck, unit/integration/contract,
+security, tenant-isolation, chaos/recovery, golden artifact, critical E2E, full browser E2E/accessibility, visual,
+performance, Hostinger smoke, secret scan, dependency audit, build and `git diff --check`. The root
+`lint` script builds workspace packages first so it passes from a clean checkout before `typecheck`
+or a previous build has populated dependent `dist` directories. CI mirrors these gates in a quality
+job, a Linux browser job (with an explicit Chromium install), and a Windows visual-baseline job.
+Visual snapshots are platform-specific and must be reviewed on the runner that owns their baseline.
+Never expose the data directory or credentials through static serving, logs, errors or client bundles.
 
 ## Capacity baseline and operating limits
 
