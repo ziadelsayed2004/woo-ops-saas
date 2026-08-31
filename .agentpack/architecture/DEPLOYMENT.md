@@ -9,15 +9,15 @@ working directory is different), and use environment-provided session/encryption
 No Docker, external database, Redis, or external worker is required.
 
 ```text
-pnpm install --frozen-lockfile
-pnpm db:migrate
-pnpm build
-pnpm --filter @woo-ops/api start
+npm ci
+npm run db:migrate
+npm run build
+npm run start --workspace=@woo-ops/api
 ```
 
 Hostinger uses its Node.js application manager with `node apps/api/dist/index.js` as the start command
 from the repository root (or `node dist/index.js` when the application root is `apps/api`). Set the
-build command to `pnpm install --frozen-lockfile && pnpm build`, and run `pnpm db:migrate` once before
+build command to `npm ci && npm run build`, and run `npm run db:migrate` once before
 the first start. Keep `WOO_OPS_DATA_DIR` outside the public web root. HTTP requests remain bounded;
 long work is durable and resumed from SQLite.
 
@@ -40,9 +40,9 @@ Express API routing.
 Release smoke commands, executed after build and migration, are:
 
 ```text
-pnpm test:hostinger
-pnpm test:e2e:critical
-pnpm test:performance
+npm run test:hostinger
+npm run test:e2e:critical
+npm run test:performance
 ```
 
 `test:hostinger` starts the production API entrypoint, verifies `/` and `/health`, creates a backup,
@@ -60,11 +60,11 @@ are safe for Hostinger Cron because they use bounded file/byte limits and never 
 directory through Express:
 
 ```text
-pnpm db:backup
-pnpm db:maintenance -- --retention 7 --max-files 10000
-pnpm db:backup -- --retention 7 --max-bytes 1073741824
-pnpm db:restore -- backup-<id>                 # validate only
-pnpm db:restore -- backup-<id> --apply         # replace after validation
+npm run db:backup
+npm run db:maintenance -- --retention 7 --max-files 10000
+npm run db:backup -- --retention 7 --max-bytes 1073741824
+npm run db:restore -- backup-<id>                 # validate only
+npm run db:restore -- backup-<id> --apply         # replace after validation
 ```
 
 Restore validates the manifest, every checksum, SQLite integrity, schema version and foreign keys
@@ -74,7 +74,7 @@ run restore while the Node process is stopped so no open SQLite handle can race 
 
 ## Release gates
 
-Run agentpack doctor/validation, frozen install, format, lint, typecheck, unit/integration/contract,
+Run agentpack doctor/validation, `npm ci`, format, lint, typecheck, unit/integration/contract,
 security, tenant-isolation, chaos/recovery, golden artifact, critical E2E, full browser E2E/accessibility, visual,
 performance, Hostinger smoke, secret scan, dependency audit, build and `git diff --check`. The root
 `lint` script builds workspace packages first so it passes from a clean checkout before `typecheck`
@@ -107,12 +107,12 @@ limits and run from durable SQLite jobs.
 Configure Hostinger Cron with a private command or protected maintenance route to run:
 
 ```text
-pnpm db:maintenance -- --retention 7 --max-files 10000
+npm run db:maintenance -- --retention 7 --max-files 10000
 ```
 
 Run backups before releases and retain at least the account policy minimum. Restore is a two-step
-operation: run `pnpm db:restore -- backup-<id>` for validation, stop Node, then run
-`pnpm db:restore -- backup-<id> --apply` and start the compatible release. Confirm `/health`, login,
+operation: run `npm run db:restore -- backup-<id>` for validation, stop Node, then run
+`npm run db:restore -- backup-<id> --apply` and start the compatible release. Confirm `/health`, login,
 queue age, webhook rejects, export/document downloads, and the restored backup manifest.
 
 For rollback, pause the in-process job runner/cron, confirm the target application version is schema

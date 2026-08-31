@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { npmArgs, npmCommand } from './npm-command.mjs';
 
 const [mode = 'e2e', ...forwarded] = process.argv.slice(2);
 const filterIndex = forwarded.indexOf('--filter');
@@ -8,13 +9,12 @@ if (filter && !/^[a-z0-9@._-]+$/i.test(filter)) {
   process.exitCode = 1;
   process.exit();
 }
-const args = ['exec', 'playwright', 'test'];
+const args = npmArgs(['exec', '--', 'playwright', 'test']);
 
 const runApiEndToEnd = () => {
-  const packageManager = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-  const build = spawnSync(packageManager, ['-r', 'build'], {
+  const build = spawnSync(npmCommand, npmArgs(['run', 'build']), {
     stdio: 'inherit',
-    shell: process.platform === 'win32',
+    shell: false,
   });
   if (build.status !== 0) return build.status ?? 1;
   const apiTests = spawnSync(process.execPath, ['tools/run-tests.mjs', 'e2e'], {
@@ -25,11 +25,14 @@ const runApiEndToEnd = () => {
 };
 
 const runPackageVisual = (packageName) => {
-  const packageManager = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-  const result = spawnSync(packageManager, ['--filter', packageName, 'test:visual'], {
-    stdio: 'inherit',
-    shell: process.platform === 'win32',
-  });
+  const result = spawnSync(
+    npmCommand,
+    npmArgs(['run', 'test:visual', `--workspace=${packageName}`]),
+    {
+      stdio: 'inherit',
+      shell: false,
+    },
+  );
   return result.status ?? 1;
 };
 
@@ -48,10 +51,9 @@ else if (filter) args.push('--grep', filter);
 
 const ignored = new Set(['--filter', filter]);
 args.push(...forwarded.filter((argument) => !ignored.has(argument)));
-const packageManager = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-const result = spawnSync(packageManager, args, {
+const result = spawnSync(npmCommand, args, {
   stdio: 'inherit',
-  shell: process.platform === 'win32',
+  shell: false,
 });
 if (result.error) {
   console.error(`Unable to start Playwright: ${result.error.message}`);

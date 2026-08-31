@@ -94,10 +94,10 @@ bounded headers before insertion, and deduplicates by account/connection/deliver
 values are hashed at rest, signed with a constant-time comparison, single-use, and atomically
 claimed. Production session cookies require `Secure`.
 
-Release checks include `pnpm test:security`, `pnpm test:tenant-isolation`,
-`pnpm test:contract --filter woocommerce`, `pnpm security:scan`, and
-`pnpm security:audit`. The lockfile pins the patched `uuid` release required by the production
-dependency graph.
+Release checks include `npm run test:security`, `npm run test:tenant-isolation`,
+`npm run test:contract -- --filter woocommerce`, `npm run security:scan`, and
+`npm run security:audit`. The npm package lock pins the patched `uuid` release required by the
+production dependency graph.
 
 ## High-risk change review
 

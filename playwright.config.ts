@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const port = process.env.PW_PORT ?? '4175';
-const packageManager = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+const packageManager = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -21,7 +21,7 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: `${packageManager} --filter @woo-ops/web dev --host 127.0.0.1 --port ${port}`,
+    command: `${packageManager} run dev --workspace=@woo-ops/web -- --host 127.0.0.1 --port ${port}`,
     url: `http://127.0.0.1:${port}`,
     reuseExistingServer: false,
     timeout: 120_000,

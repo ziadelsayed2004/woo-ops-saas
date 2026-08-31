@@ -42,8 +42,8 @@ The checked-in redacted fixtures and deterministic fake Woo flow cover Arabic/mi
 guest/registered customers, variations, empty SKU, discounts, taxes/fees, multiple shipping lines,
 refunds, custom status/POS/author/carrier metadata, currencies/timezones, pagination, 429/5xx and
 schema drift, duplicate webhooks, deletions, redirect/origin rejection, and replay behavior. The
-fresh commands `pnpm test:contract`, `pnpm test:security`, `pnpm test:e2e:critical`, and
-`pnpm test:chaos` pass in the T0814 evidence.
+fresh commands `npm run test:contract`, `npm run test:security`, `npm run test:e2e:critical`, and
+`npm run test:chaos` pass in the T0814 evidence.
 
 ## External certification boundary
 
