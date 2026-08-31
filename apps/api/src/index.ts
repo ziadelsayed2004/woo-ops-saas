@@ -44,8 +44,12 @@ import {
   connectionSyncRequestSchema,
   connectionRotateSchema,
   connectionWebhookSecretSchema,
+  orderQuerySchema,
+  orderLocalWorkflowSchema,
+  orderTagSchema,
+  orderNoteSchema,
 } from '@woo-ops/contracts';
-import { SqliteStore } from '@woo-ops/persistence';
+import { SqliteStore, ORDER_FILTER_CATALOG } from '@woo-ops/persistence';
 import type {
   AccountContext,
   AccountRole,
@@ -467,6 +471,17 @@ app.post('/api/v1/orders/query', (request, response) => {
     });
     return;
   }
+  const parsed = orderQuerySchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    response.status(400).json({
+      error: {
+        code: 'ORDER_QUERY_INVALID',
+        message: 'Invalid order query',
+        correlationId: String(response.getHeader('x-correlation-id')),
+      },
+    });
+    return;
+  }
   try {
     const result = store.queryOrders(
       {
@@ -474,7 +489,7 @@ app.post('/api/v1/orders/query', (request, response) => {
         actorId: user.id,
         correlationId: String(response.getHeader('x-correlation-id')),
       },
-      request.body as OrderQueryInput,
+      parsed.data as OrderQueryInput,
     );
     response.json(result);
   } catch (error) {
@@ -490,6 +505,22 @@ app.post('/api/v1/orders/query', (request, response) => {
       },
     });
   }
+});
+app.get('/api/v1/orders/filter-catalog', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  response.json({
+    fields: ORDER_FILTER_CATALOG,
+    sorts: [
+      'remoteCreatedAt',
+      'remoteModifiedAt',
+      'createdAt',
+      'updatedAt',
+      'orderNumber',
+      'grandTotalMinor',
+      'id',
+    ],
+  });
 });
 app.get('/api/v1/orders/:orderId', (request, response) => {
   const user = auth.current(request);
@@ -522,6 +553,115 @@ app.get('/api/v1/orders/:orderId', (request, response) => {
     return;
   }
   response.json({ order });
+});
+app.get('/api/v1/orders/:orderId/timeline', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const limit = request.query.limit === undefined ? undefined : Number(request.query.limit);
+  try {
+    response.json({
+      timeline: store.listOrderTimeline(operationContext(user, response), request.params.orderId, {
+        ...(request.query.cursor ? { cursor: String(request.query.cursor) } : {}),
+        ...(limit === undefined ? {} : { limit }),
+      }),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/orders/:orderId/resync', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  try {
+    response.status(202).json({
+      resync: store.enqueueOrderResync(operationContext(user, response), request.params.orderId),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.patch('/api/v1/orders/:orderId/local-workflow', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = orderLocalWorkflowSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'ORDER_WORKFLOW_INVALID', 'Order workflow data is invalid');
+    return;
+  }
+  try {
+    response.json({
+      order: store.updateOrderLocalWorkflow(
+        operationContext(user, response),
+        request.params.orderId,
+        parsed.data,
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/orders/:orderId/tags', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = orderTagSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'ORDER_TAG_INVALID', 'Order tag data is invalid');
+    return;
+  }
+  try {
+    response.json({
+      order: store.addOrderTag(
+        operationContext(user, response),
+        request.params.orderId,
+        parsed.data,
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.delete('/api/v1/orders/:orderId/tags/:tag', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = orderTagSchema.safeParse({
+    tag: request.params.tag,
+    version: request.body?.version,
+  });
+  if (!parsed.success) {
+    sendApiError(response, 400, 'ORDER_TAG_INVALID', 'Order tag data is invalid');
+    return;
+  }
+  try {
+    response.json({
+      order: store.removeOrderTag(
+        operationContext(user, response),
+        request.params.orderId,
+        parsed.data,
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/orders/:orderId/notes', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = orderNoteSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'ORDER_NOTE_INVALID', 'Order note data is invalid');
+    return;
+  }
+  try {
+    response.status(201).json({
+      order: store.addOrderNote(
+        operationContext(user, response),
+        request.params.orderId,
+        parsed.data,
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
 });
 app.post('/api/v1/manual-orders', (request, response) => {
   const user = requireOperationWrite(request, response);

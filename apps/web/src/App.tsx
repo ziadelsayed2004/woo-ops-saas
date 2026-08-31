@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   Chip,
   CircularProgress,
   Container,
@@ -51,7 +52,13 @@ type Order = JsonRecord & {
   lines?: readonly JsonRecord[];
   refunds?: readonly JsonRecord[];
 };
-type QueryResponse = { items: Order[]; nextCursor: string | null; hasMore: boolean };
+type QueryResponse = {
+  items: Order[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  totalCount?: number;
+  facets?: readonly { field: string; values: readonly { value: string; count: number }[] }[];
+};
 type OrderResponse = { order: Order };
 type DocumentTemplate = {
   id: string;
@@ -173,6 +180,36 @@ const copy = {
     noData: 'لا توجد بيانات متاحة',
     loading: 'جارٍ التحميل',
     loadMore: 'تحميل المزيد',
+    advancedFilters: '\u0641\u0644\u0627\u062a\u0631 \u0645\u062a\u0642\u062f\u0645\u0629',
+    hideFilters: '\u0625\u062e\u0641\u0627\u0621 \u0627\u0644\u0641\u0644\u0627\u062a\u0631',
+    sourceFilter: '\u0627\u0644\u0645\u0635\u062f\u0631',
+    exportFilter: '\u062d\u0627\u0644\u0629 \u0627\u0644\u062a\u0635\u062f\u064a\u0631',
+    paymentFilter: '\u0637\u0631\u064a\u0642\u0629 \u0627\u0644\u062f\u0641\u0639',
+    shippingFilterOrders: '\u0637\u0631\u064a\u0642\u0629 \u0627\u0644\u0634\u062d\u0646',
+    posFilter: '\u0646\u0642\u0637\u0629 \u0627\u0644\u0628\u064a\u0639',
+    productFilterOrders: '\u0627\u0644\u0645\u0646\u062a\u062c',
+    categoryFilterOrders: '\u0627\u0644\u062a\u0635\u0646\u064a\u0641',
+    authorFilterOrders: '\u0627\u0644\u0645\u0624\u0644\u0641',
+    selected: '\u0645\u062d\u062f\u062f',
+    selectAllMatching:
+      '\u062a\u062d\u062f\u064a\u062f \u0643\u0644 \u0627\u0644\u0646\u062a\u0627\u0626\u062c',
+    clearSelection: '\u0625\u0644\u063a\u0627\u0621 \u0627\u0644\u062a\u062d\u062f\u064a\u062f',
+    saveView: '\u062d\u0641\u0638 \u0627\u0644\u0645\u0634\u0627\u0647\u062f\u0629',
+    viewName: '\u0627\u0633\u0645 \u0627\u0644\u0645\u0634\u0627\u0647\u062f\u0629',
+    savedViews: '\u0627\u0644\u0645\u0634\u0627\u0647\u062f\u0627\u062a',
+    totalResults: '\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u0646\u062a\u0627\u0626\u062c',
+    retry: '\u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0645\u062d\u0627\u0648\u0644\u0629',
+    authenticationRequired:
+      '\u064a\u062c\u0628 \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062f\u062e\u0648\u0644 \u0644\u0639\u0631\u0636 \u0627\u0644\u0637\u0644\u0628\u0627\u062a',
+    clearFilters: '\u0645\u0633\u062d \u0627\u0644\u0641\u0644\u0627\u062a\u0631',
+    createSelection: '\u062d\u0641\u0638 \u0627\u0644\u062a\u062d\u062f\u064a\u062f',
+    updateWorkflow: '\u062d\u0641\u0638 \u0627\u0644\u062a\u0634\u063a\u064a\u0644',
+    resync: '\u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629',
+    workflowSaved:
+      '\u062a\u0645 \u062d\u0641\u0638 \u0627\u0644\u062a\u0634\u063a\u064a\u0644 \u0645\u062d\u0644\u064a\u0627',
+    resyncQueued:
+      '\u062a\u0645 \u062a\u0633\u062c\u064a\u0644 \u0637\u0644\u0628 \u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629',
+    timeline: '\u0627\u0644\u062e\u0637 \u0627\u0644\u0632\u0645\u0646\u064a',
     language: 'English',
     switchToLtr: 'التبديل إلى LTR',
     switchToRtl: 'التبديل إلى RTL',
@@ -355,6 +392,32 @@ const copy = {
     noData: 'No data available',
     loading: 'Loading',
     loadMore: 'Load more',
+    advancedFilters: 'Advanced filters',
+    hideFilters: 'Hide filters',
+    sourceFilter: 'Source',
+    exportFilter: 'Export state',
+    paymentFilter: 'Payment method',
+    shippingFilterOrders: 'Shipping method',
+    posFilter: 'POS location',
+    productFilterOrders: 'Product / ID / SKU',
+    categoryFilterOrders: 'Category',
+    authorFilterOrders: 'Author',
+    selected: 'selected',
+    selectAllMatching: 'Select all matching results',
+    clearSelection: 'Clear selection',
+    saveView: 'Save view',
+    viewName: 'View name',
+    savedViews: 'Saved views',
+    totalResults: 'Total results',
+    retry: 'Retry',
+    authenticationRequired: 'Sign in to view this account’s orders',
+    clearFilters: 'Clear filters',
+    createSelection: 'Save selection',
+    updateWorkflow: 'Save workflow',
+    resync: 'Request read-only resync',
+    workflowSaved: 'Local workflow saved',
+    resyncQueued: 'Read-only resync queued',
+    timeline: 'Order timeline',
     language: 'العربية',
     switchToLtr: 'Switch to LTR',
     switchToRtl: 'Switch to RTL',
@@ -497,7 +560,52 @@ const columns = [
   'localStatus',
   'total',
   'exportState',
+  'customerName',
+  'customerEmail',
+  'customerPhone',
+  'paymentMethod',
+  'shippingMethod',
+  'posLocation',
+  'quantityTotal',
+  'createdAt',
+  'updatedAt',
 ] as const;
+
+type OrderFilters = {
+  source: string;
+  exportState: string;
+  localStatus: string;
+  paymentMethod: string;
+  shippingMethod: string;
+  posLocation: string;
+  product: string;
+  category: string;
+  author: string;
+  from: string;
+  to: string;
+};
+
+const emptyOrderFilters = (): OrderFilters => ({
+  source: '',
+  exportState: '',
+  localStatus: '',
+  paymentMethod: '',
+  shippingMethod: '',
+  posLocation: '',
+  product: '',
+  category: '',
+  author: '',
+  from: '',
+  to: '',
+});
+
+type SavedOrderView = {
+  id: string;
+  name: string;
+  query: JsonRecord;
+  sort: { field: string; direction: 'asc' | 'desc' } | null;
+  columns: string[];
+};
 
 const asRecord = (value: unknown): JsonRecord =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as JsonRecord) : {};
@@ -1131,13 +1239,19 @@ function OrderDetail({
   locale,
   t,
   onClose,
+  onUpdated,
 }: {
   order: Order;
   locale: Locale;
   t: (typeof copy)[Locale];
   onClose: () => void;
+  onUpdated?: (order: Order) => void;
 }) {
   const [tab, setTab] = useState(0);
+  const [localStatus, setLocalStatus] = useState(valueText(order.localStatus, 'new'));
+  const [workflowSaving, setWorkflowSaving] = useState(false);
+  const [workflowMessage, setWorkflowMessage] = useState('');
+  const [timeline, setTimeline] = useState<JsonRecord[]>([]);
   const currency = valueText(order.currency, '');
   const amounts = asRecord(order.amounts);
   const payment = asRecord(order.payment);
@@ -1149,6 +1263,69 @@ function OrderDetail({
   const exports = asList(order.exports ?? order.exportHistory);
   const documents = asList(order.documents ?? order.documentHistory);
   const tabLabels = [t.summary, t.items, t.customer, t.finance, t.workflow, t.history, t.raw];
+
+  useEffect(() => {
+    setLocalStatus(valueText(order.localStatus, 'new'));
+    setWorkflowMessage('');
+    let active = true;
+    void fetch(`/api/v1/orders/${encodeURIComponent(order.id)}/timeline`, {
+      credentials: 'include',
+    })
+      .then(async (response) =>
+        response.ok
+          ? (((await response.json()) as { timeline?: { items?: JsonRecord[] } }).timeline?.items ??
+            [])
+          : [],
+      )
+      .then((items) => {
+        if (active) setTimeline(items);
+      })
+      .catch(() => {
+        if (active) setTimeline([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [order.id, order.localStatus]);
+
+  const updateWorkflow = async () => {
+    setWorkflowSaving(true);
+    setWorkflowMessage('');
+    try {
+      const response = await fetch(
+        `/api/v1/orders/${encodeURIComponent(order.id)}/local-workflow`,
+        {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+          body: JSON.stringify({ version: order.version, localStatus }),
+        },
+      );
+      if (!response.ok) throw new Error('ORDER_WORKFLOW_FAILED');
+      const result = (await response.json()) as { order: Order };
+      onUpdated?.(result.order);
+      setWorkflowMessage(t.workflowSaved);
+    } catch {
+      setWorkflowMessage(t.errors);
+    } finally {
+      setWorkflowSaving(false);
+    }
+  };
+
+  const requestResync = async () => {
+    try {
+      const response = await fetch(`/api/v1/orders/${encodeURIComponent(order.id)}/resync`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        body: '{}',
+      });
+      if (!response.ok) throw new Error('ORDER_RESYNC_FAILED');
+      setWorkflowMessage(t.resyncQueued);
+    } catch {
+      setWorkflowMessage(t.errors);
+    }
+  };
 
   return (
     <Stack gap={2} role="document" aria-labelledby="order-detail-title">
@@ -1403,6 +1580,41 @@ function OrderDetail({
                 tags.map((tag) => <Chip key={String(tag)} label={String(tag)} size="small" />)
               )}
             </Stack>
+            <Divider />
+            <TextField
+              label={t.localStatusInput}
+              value={localStatus}
+              onChange={(event) => setLocalStatus(event.target.value)}
+              size="small"
+              inputProps={{ 'aria-label': t.localStatusInput }}
+            />
+            {workflowMessage && (
+              <Alert severity={workflowMessage === t.errors ? 'error' : 'success'}>
+                {workflowMessage}
+              </Alert>
+            )}
+            <Stack direction="row" gap={1} flexWrap="wrap">
+              <Button
+                variant="contained"
+                onClick={() => void updateWorkflow()}
+                disabled={workflowSaving}
+              >
+                {workflowSaving ? (
+                  <CircularProgress size={18} aria-label={t.loading} />
+                ) : (
+                  t.updateWorkflow
+                )}
+              </Button>
+              {order.origin === 'woo' && (
+                <Button
+                  variant="outlined"
+                  onClick={() => void requestResync()}
+                  disabled={workflowSaving}
+                >
+                  {t.resync}
+                </Button>
+              )}
+            </Stack>
           </Stack>
         )}
         {tab === 5 && (
@@ -1411,6 +1623,7 @@ function OrderDetail({
             <HistoryList title={t.exports} entries={exports} empty={t.noData} />
             <HistoryList title={t.documents} entries={documents} empty={t.noData} />
             <HistoryList title={t.audit} entries={auditEvents} empty={t.noData} />
+            <HistoryList title={t.timeline} entries={timeline} empty={t.noData} />
           </Stack>
         )}
         {tab === 6 && <Alert severity="warning">{t.restricted}</Alert>}
@@ -1946,44 +2159,194 @@ export function App({
   const t = copy[locale];
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [filters, setFilters] = useState<OrderFilters>(emptyOrderFilters);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [selected, setSelected] = useState<Order | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [selectAllMatching, setSelectAllMatching] = useState(false);
+  const [selectionMessage, setSelectionMessage] = useState('');
+  const [viewName, setViewName] = useState('');
+  const [savedViews, setSavedViews] = useState<SavedOrderView[]>([]);
   const [visibleColumns, setVisibleColumns] = useState<string[]>([...columns]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [authRequired, setAuthRequired] = useState(false);
   const [view, setView] = useState<'orders' | 'manual' | 'documents' | 'analytics'>('orders');
+
+  const orderFilter = useMemo(() => {
+    const leaves: JsonRecord[] = [];
+    if (status) leaves.push({ field: 'remoteStatus', operator: 'equals', value: status });
+    if (filters.source) leaves.push({ field: 'source', operator: 'equals', value: filters.source });
+    if (filters.exportState)
+      leaves.push({ field: 'exportState', operator: 'equals', value: filters.exportState });
+    if (filters.localStatus)
+      leaves.push({ field: 'localStatus', operator: 'contains', value: filters.localStatus });
+    if (filters.paymentMethod)
+      leaves.push({ field: 'paymentMethod', operator: 'contains', value: filters.paymentMethod });
+    if (filters.shippingMethod)
+      leaves.push({ field: 'shippingMethod', operator: 'contains', value: filters.shippingMethod });
+    if (filters.posLocation)
+      leaves.push({ field: 'posLocation', operator: 'contains', value: filters.posLocation });
+    if (filters.product)
+      leaves.push({ field: 'product', operator: 'contains', value: filters.product });
+    if (filters.category)
+      leaves.push({ field: 'category', operator: 'contains-any', value: [filters.category] });
+    if (filters.author)
+      leaves.push({ field: 'author', operator: 'contains-any', value: [filters.author] });
+    if (filters.from || filters.to) {
+      const from = filters.from ? `${filters.from}T00:00:00.000Z` : '1970-01-01T00:00:00.000Z';
+      const to = filters.to ? `${filters.to}T23:59:59.999Z` : '9999-12-31T23:59:59.999Z';
+      leaves.push({ field: 'remoteCreatedAt', operator: 'between', value: [from, to] });
+    }
+    if (leaves.length === 0) return undefined;
+    return leaves.length === 1 ? leaves[0] : { op: 'and', children: leaves };
+  }, [filters, status]);
 
   const loadOrders = async (append = false) => {
     setLoading(true);
     setError(false);
+    setAuthRequired(false);
     try {
-      const filter = status
-        ? { field: 'remoteStatus', operator: 'equals', value: status }
-        : undefined;
       const response = await fetch('/api/v1/orders/query', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
           search: search || undefined,
-          filter,
+          filter: orderFilter,
+          includeFacets: false,
           cursor: append ? cursor : null,
           limit: 50,
           sort: { field: 'remoteCreatedAt', direction: 'desc' },
         }),
       });
-      if (!response.ok) throw new Error('ORDER_QUERY_FAILED');
+      if (!response.ok) {
+        if (response.status === 401) setAuthRequired(true);
+        throw new Error('ORDER_QUERY_FAILED');
+      }
       const body = (await response.json()) as QueryResponse;
       setOrders((previous) => (append ? [...previous, ...body.items] : body.items));
       setCursor(body.nextCursor);
       setHasMore(body.hasMore);
+      setTotalCount(body.totalCount ?? body.items.length);
+      if (!append) {
+        setSelectedIds(new Set());
+        setSelectAllMatching(false);
+        setSelectionMessage('');
+      }
     } catch {
       setError(true);
       if (!append) setOrders([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSavedViews = async () => {
+    try {
+      const response = await fetch('/api/v1/saved-views', { credentials: 'include' });
+      if (!response.ok) return;
+      const body = (await response.json()) as { items: SavedOrderView[] };
+      setSavedViews(body.items ?? []);
+    } catch {
+      // Saved views are optional and never prevent the order workspace from loading.
+    }
+  };
+
+  const saveCurrentView = async () => {
+    if (!viewName.trim()) return;
+    try {
+      const response = await fetch('/api/v1/saved-views', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        body: JSON.stringify({
+          name: viewName.trim(),
+          query: { search: search || undefined, filter: orderFilter },
+          sort: { field: 'remoteCreatedAt', direction: 'desc' },
+          columns: visibleColumns,
+          pageSize: 50,
+          visibility: 'private',
+        }),
+      });
+      if (!response.ok) throw new Error('SAVED_VIEW_FAILED');
+      const body = (await response.json()) as { view: SavedOrderView };
+      setSavedViews((current) => [
+        body.view,
+        ...current.filter((item) => item.id !== body.view.id),
+      ]);
+      setViewName('');
+      setSelectionMessage(body.view.name);
+    } catch {
+      setSelectionMessage('SAVED_VIEW_FAILED');
+    }
+  };
+
+  const applySavedView = (viewId: string) => {
+    const saved = savedViews.find((item) => item.id === viewId);
+    if (!saved) return;
+    setSearch(typeof saved.query.search === 'string' ? saved.query.search : '');
+    setVisibleColumns(saved.columns.length > 0 ? saved.columns : [...columns]);
+    void loadOrders();
+  };
+
+  const toggleOrderSelection = (orderId: string) => {
+    setSelectAllMatching(false);
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  };
+
+  const toggleVisibleSelection = () => {
+    const allVisibleSelected =
+      orders.length > 0 && orders.every((order) => selectedIds.has(order.id));
+    setSelectAllMatching(false);
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const order of orders) {
+        if (allVisibleSelected) next.delete(order.id);
+        else next.add(order.id);
+      }
+      return next;
+    });
+  };
+
+  const clearOrderSelection = () => {
+    setSelectedIds(new Set());
+    setSelectAllMatching(false);
+    setSelectionMessage('');
+  };
+
+  const createSelectionSnapshot = async () => {
+    const body = selectAllMatching
+      ? {
+          mode: 'query',
+          query: {
+            search: search || undefined,
+            filter: orderFilter,
+            sort: { field: 'remoteCreatedAt', direction: 'desc' },
+          },
+        }
+      : { mode: 'explicit', orderIds: [...selectedIds] };
+    try {
+      const response = await fetch('/api/v1/selections', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) throw new Error('SELECTION_FAILED');
+      const result = (await response.json()) as { selection: { estimatedCount: number } };
+      setSelectionMessage(String(result.selection.estimatedCount));
+    } catch {
+      setSelectionMessage('SELECTION_FAILED');
     }
   };
 
@@ -2004,6 +2367,7 @@ export function App({
 
   useEffect(() => {
     void loadOrders();
+    void loadSavedViews();
   }, [status]);
 
   const renderedColumns = useMemo(
@@ -2018,6 +2382,15 @@ export function App({
       localStatus: t.localStatus,
       total: t.total,
       exportState: t.exportState,
+      customerName: t.customerName,
+      customerEmail: t.email,
+      customerPhone: t.phone,
+      paymentMethod: t.payment,
+      shippingMethod: t.shippingMethod,
+      posLocation: t.pos,
+      quantityTotal: t.quantity,
+      createdAt: t.created,
+      updatedAt: t.updated,
     })[column] ?? column;
   const display = (order: Order, column: string): string =>
     column === 'source'
@@ -2026,9 +2399,27 @@ export function App({
         : t.originWoo
       : column === 'total'
         ? formatMinor(order.grandTotalMinor, valueText(order.currency, ''), locale)
-        : column === 'exportState' && order.exportState === 'never-exported'
-          ? t.never
-          : valueText(order[column]);
+        : column === 'customerName'
+          ? valueText(order.customerName ?? orderCustomerName(order))
+          : column === 'customerEmail'
+            ? valueText(order.customerEmail ?? asRecord(order.billing).email)
+            : column === 'customerPhone'
+              ? valueText(order.customerPhone ?? asRecord(order.billing).phone)
+              : column === 'paymentMethod'
+                ? valueText(order.paymentMethodTitle ?? asRecord(order.payment).title)
+                : column === 'shippingMethod'
+                  ? valueText(order.shippingMethodTitle ?? asRecord(order.shippingMethod).title)
+                  : column === 'posLocation'
+                    ? valueText(order.posLocation ?? order.pos)
+                    : column === 'quantityTotal'
+                      ? valueText(order.quantityTotal)
+                      : column === 'createdAt'
+                        ? dateText(order.createdAt ?? order.remoteCreatedAt, locale)
+                        : column === 'updatedAt'
+                          ? dateText(order.updatedAt, locale)
+                          : column === 'exportState' && order.exportState === 'never-exported'
+                            ? t.never
+                            : valueText(order[column]);
 
   return (
     <Box minHeight="100vh" bgcolor="#f6f8fb" dir={direction}>
@@ -2092,6 +2483,9 @@ export function App({
                   {t.orders}
                 </Typography>
                 <Typography color="text.secondary">{t.subtitle}</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {t.totalResults}: {totalCount}
+                </Typography>
               </Box>
               <Stack direction="row" gap={1}>
                 <Button variant="outlined" onClick={() => void loadOrders()} disabled={loading}>
@@ -2151,10 +2545,210 @@ export function App({
                   {t.searchButton}
                 </Button>
               </Stack>
+              <Stack direction="row" gap={1} mt={2} flexWrap="wrap" alignItems="center">
+                <Button
+                  type="button"
+                  size="small"
+                  variant={advancedOpen ? 'contained' : 'text'}
+                  onClick={() => setAdvancedOpen((current) => !current)}
+                >
+                  {advancedOpen ? t.hideFilters : t.advancedFilters}
+                </Button>
+                <FormControl size="small" sx={{ minWidth: 190 }}>
+                  <InputLabel id="orders-saved-view-label">{t.savedViews}</InputLabel>
+                  <Select
+                    value=""
+                    labelId="orders-saved-view-label"
+                    label={t.savedViews}
+                    onChange={(event) => applySavedView(event.target.value)}
+                  >
+                    {savedViews.map((saved) => (
+                      <MenuItem key={saved.id} value={saved.id}>
+                        {saved.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <TextField
+                  size="small"
+                  label={t.viewName}
+                  value={viewName}
+                  onChange={(event) => setViewName(event.target.value)}
+                  sx={{ minWidth: 170 }}
+                />
+                <Button
+                  type="button"
+                  size="small"
+                  onClick={() => void saveCurrentView()}
+                  disabled={!viewName.trim()}
+                >
+                  {t.saveView}
+                </Button>
+              </Stack>
+              {advancedOpen && (
+                <Stack direction={{ xs: 'column', md: 'row' }} gap={2} mt={2} flexWrap="wrap">
+                  <FormControl size="small" sx={{ minWidth: 150 }}>
+                    <InputLabel id="orders-source-label">{t.sourceFilter}</InputLabel>
+                    <Select
+                      value={filters.source}
+                      labelId="orders-source-label"
+                      label={t.sourceFilter}
+                      onChange={(event) =>
+                        setFilters((current) => ({ ...current, source: event.target.value }))
+                      }
+                    >
+                      <MenuItem value="">{t.all}</MenuItem>
+                      <MenuItem value="woo">WooCommerce</MenuItem>
+                      <MenuItem value="manual">{t.originManual}</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <FormControl size="small" sx={{ minWidth: 180 }}>
+                    <InputLabel id="orders-export-label">{t.exportFilter}</InputLabel>
+                    <Select
+                      value={filters.exportState}
+                      labelId="orders-export-label"
+                      label={t.exportFilter}
+                      onChange={(event) =>
+                        setFilters((current) => ({ ...current, exportState: event.target.value }))
+                      }
+                    >
+                      <MenuItem value="">{t.all}</MenuItem>
+                      <MenuItem value="never-exported">{t.never}</MenuItem>
+                      <MenuItem value="exported">exported</MenuItem>
+                      <MenuItem value="changed-after-export">changed-after-export</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <TextField
+                    size="small"
+                    label={t.localStatus}
+                    value={filters.localStatus}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, localStatus: event.target.value }))
+                    }
+                  />
+                  <TextField
+                    size="small"
+                    label={t.paymentFilter}
+                    value={filters.paymentMethod}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, paymentMethod: event.target.value }))
+                    }
+                  />
+                  <TextField
+                    size="small"
+                    label={t.shippingFilterOrders}
+                    value={filters.shippingMethod}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, shippingMethod: event.target.value }))
+                    }
+                  />
+                  <TextField
+                    size="small"
+                    label={t.posFilter}
+                    value={filters.posLocation}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, posLocation: event.target.value }))
+                    }
+                  />
+                  <TextField
+                    size="small"
+                    label={t.productFilterOrders}
+                    value={filters.product}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, product: event.target.value }))
+                    }
+                  />
+                  <TextField
+                    size="small"
+                    label={t.categoryFilterOrders}
+                    value={filters.category}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, category: event.target.value }))
+                    }
+                  />
+                  <TextField
+                    size="small"
+                    label={t.authorFilterOrders}
+                    value={filters.author}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, author: event.target.value }))
+                    }
+                  />
+                  <TextField
+                    size="small"
+                    type="date"
+                    label={t.created}
+                    value={filters.from}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, from: event.target.value }))
+                    }
+                    InputLabelProps={{ shrink: true }}
+                  />
+                  <TextField
+                    size="small"
+                    type="date"
+                    label={t.updated}
+                    value={filters.to}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, to: event.target.value }))
+                    }
+                    InputLabelProps={{ shrink: true }}
+                  />
+                  <Button type="button" onClick={() => setFilters(emptyOrderFilters())}>
+                    {t.clearFilters}
+                  </Button>
+                </Stack>
+              )}
             </Paper>
+            {(selectedIds.size > 0 || selectAllMatching) && (
+              <Paper variant="outlined" sx={{ p: 1.5, mb: 2 }}>
+                <Stack
+                  direction={{ xs: 'column', sm: 'row' }}
+                  gap={1}
+                  alignItems={{ sm: 'center' }}
+                >
+                  <Typography fontWeight={700} sx={{ flexGrow: 1 }}>
+                    {selectAllMatching ? totalCount : selectedIds.size} {t.selected}
+                  </Typography>
+                  {!selectAllMatching && totalCount > orders.length && (
+                    <Button size="small" onClick={() => setSelectAllMatching(true)}>
+                      {t.selectAllMatching} ({totalCount})
+                    </Button>
+                  )}
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => void createSelectionSnapshot()}
+                  >
+                    {t.createSelection}
+                  </Button>
+                  <Button size="small" onClick={clearOrderSelection}>
+                    {t.clearSelection}
+                  </Button>
+                </Stack>
+              </Paper>
+            )}
+            {selectionMessage && (
+              <Alert
+                severity={selectionMessage.endsWith('_FAILED') ? 'error' : 'success'}
+                sx={{ mb: 2 }}
+              >
+                {selectionMessage.endsWith('_FAILED')
+                  ? selectionMessage
+                  : `${t.savedViews}: ${selectionMessage}`}
+              </Alert>
+            )}
             {error && (
-              <Alert severity="warning" sx={{ mb: 2 }}>
-                {t.errors}
+              <Alert
+                severity="warning"
+                sx={{ mb: 2 }}
+                action={
+                  <Button color="inherit" size="small" onClick={() => void loadOrders()}>
+                    {t.retry}
+                  </Button>
+                }
+              >
+                {authRequired ? t.authenticationRequired : t.errors}
               </Alert>
             )}
             <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
@@ -2172,6 +2766,21 @@ export function App({
                 </caption>
                 <TableHead>
                   <TableRow>
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        inputProps={{ 'aria-label': t.selectAllMatching }}
+                        checked={
+                          selectAllMatching ||
+                          (orders.length > 0 && orders.every((order) => selectedIds.has(order.id)))
+                        }
+                        indeterminate={
+                          !selectAllMatching &&
+                          selectedIds.size > 0 &&
+                          selectedIds.size < orders.length
+                        }
+                        onChange={toggleVisibleSelection}
+                      />
+                    </TableCell>
                     {renderedColumns.map((column) => (
                       <TableCell key={column} sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
                         {labelFor(column)}
@@ -2184,6 +2793,7 @@ export function App({
                     <TableRow
                       key={order.id}
                       hover
+                      selected={selectedIds.has(order.id)}
                       tabIndex={0}
                       data-testid={`order-row-${order.id}`}
                       onClick={() => void openOrder(order)}
@@ -2195,6 +2805,15 @@ export function App({
                       }}
                       sx={{ cursor: 'pointer' }}
                     >
+                      <TableCell padding="checkbox" onClick={(event) => event.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.has(order.id) || selectAllMatching}
+                          onChange={() => toggleOrderSelection(order.id)}
+                          inputProps={{
+                            'aria-label': `${t.orderNumber} ${valueText(order.orderNumber)}`,
+                          }}
+                        />
+                      </TableCell>
                       {renderedColumns.map((column) => (
                         <TableCell key={column}>
                           {column === 'remoteStatus' ? (
@@ -2250,7 +2869,18 @@ export function App({
         PaperProps={{ sx: { width: { xs: '100%', sm: 560 }, p: 3 } }}
       >
         {selected && (
-          <OrderDetail order={selected} locale={locale} t={t} onClose={() => setSelected(null)} />
+          <OrderDetail
+            order={selected}
+            locale={locale}
+            t={t}
+            onClose={() => setSelected(null)}
+            onUpdated={(updated) => {
+              setSelected(updated);
+              setOrders((current) =>
+                current.map((item) => (item.id === updated.id ? updated : item)),
+              );
+            }}
+          />
         )}
       </Drawer>
     </Box>

@@ -144,6 +144,20 @@ search:
   compact normalized search/facet fields
 ```
 
+SQLite implementation details (migration 17):
+
+- `orders` stores an account-scoped canonical projection for customer name/email/phone, remote
+  creation time and timezone, channel/POS, payment and shipping identifiers/status, integer-minor
+  amount components, quantity, refund/exception state, and bounded JSON arrays for product,
+  variation, SKU, category, author, remote-tag, and coupon facets.
+- `search_text` is a bounded, lower-cased projection used with escaped LIKE search; raw Woo
+  payloads remain private in `remote_payload_json` and are never returned by ordinary order APIs.
+- `order_timeline_events` stores account/order-scoped remote, local, and system timeline events
+  with unique idempotency keys and bounded summaries. Local workflow/tag/note/resync events are
+  append-only and auditable.
+- Query facets are calculated from fixed SQL expressions and `json_each` over approved projection
+  columns; arbitrary field names and SQL are never accepted from clients.
+
 Imported and manual orders share one read shape. Manual-only editable subdocuments may use a
 separate command model or guarded updates, but API responses remain canonical.
 
@@ -160,6 +174,8 @@ Required indexes:
 - account + line category/author facets
 - account + normalized phone/email
 - SQLite FTS5 index for approved search fields when enabled
+- migration 17 account-first indexes for remote creation, channel/POS, payment, shipping, amounts,
+  quantity, refund/exception, customer contact, and the bounded search projection
 
 ### remoteSnapshots
 
