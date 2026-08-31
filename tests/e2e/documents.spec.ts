@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
 test('edits a safe document template and previews a PDF @a11y @documents', async ({ page }) => {
@@ -15,6 +15,13 @@ test('edits a safe document template and previews a PDF @a11y @documents', async
     footerText: null,
     active: true,
   } as const;
+  await page.route('**/api/v1/auth/session', async (route) => {
+    await route.fulfill({
+      json: {
+        user: { id: 'user-1', accountId: 'account-1', email: 'admin@example.test', role: 'admin' },
+      },
+    });
+  });
   await page.route('**/api/v1/orders/query', async (route) => {
     await route.fulfill({ json: { items: [], nextCursor: null, hasMore: false } });
   });

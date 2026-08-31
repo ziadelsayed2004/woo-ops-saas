@@ -54,6 +54,74 @@ test('API runner executes bulk and analytics jobs through durable transitions', 
   assert.equal(store.getJob(context, analyticsJob.id).status, 'succeeded');
 });
 
+test('field mapping backfills and maintenance run as resumable durable jobs', async () => {
+  const connectionId = randomUUID();
+  store.db
+    .prepare(
+      'INSERT INTO connections (id, account_id, platform, store_url, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
+    .run(
+      connectionId,
+      accountId,
+      'woocommerce',
+      'https://mapping-runner.example',
+      'active',
+      now,
+      now,
+    );
+  store.discoverOrderMetadata(context, connectionId, [
+    { meta_data: [{ key: 'pos_location', value: 'Cairo' }] },
+  ]);
+  const mapping = store.createFieldMapping(context, {
+    connectionId,
+    sourceKey: 'pos_location',
+    label: 'POS location',
+    type: 'text',
+    targetFacet: 'pos',
+  });
+  store.db
+    .prepare(
+      'INSERT INTO orders (id, account_id, connection_id, origin, order_number, external_order_id, currency, grand_total_minor, remote_payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .run(
+      `mapping-order-${randomUUID()}`,
+      accountId,
+      connectionId,
+      'woo',
+      'mapping-order',
+      `mapping-external-${randomUUID()}`,
+      'EGP',
+      '100',
+      JSON.stringify({ meta_data: [{ key: 'pos_location', value: 'Cairo' }] }),
+      now,
+      now,
+    );
+  const mappingJob = store.enqueueJob(worker, {
+    id: randomUUID(),
+    type: 'field-mapping.backfill',
+    idempotencyKey: randomUUID(),
+    payload: { mappingId: mapping.id },
+  });
+  const maintenanceJob = store.enqueueJob(worker, {
+    id: randomUUID(),
+    type: 'maintenance',
+    idempotencyKey: randomUUID(),
+    payload: {},
+  });
+  assert.equal(await runner.drain({ maxJobs: 10 }), 2);
+  assert.equal(store.getJob(context, mappingJob.id).status, 'succeeded');
+  assert.equal(store.getJob(context, mappingJob.id).progress, 100);
+  assert.equal(store.getJob(context, maintenanceJob.id).status, 'succeeded');
+  assert.equal(
+    store.db
+      .prepare(
+        'SELECT COUNT(*) AS count FROM order_mapped_fields WHERE account_id = ? AND mapping_id = ?',
+      )
+      .get(accountId, mapping.id).count,
+    1,
+  );
+});
+
 test('webhook processing normalizes a read-only remote snapshot and is replay-safe', async () => {
   const connectionId = randomUUID();
   store.db
@@ -120,8 +188,10 @@ test('webhook processing normalizes a read-only remote snapshot and is replay-sa
 
 test('webhook deletion marks the local remote snapshot without issuing a platform mutation', async () => {
   const connectionId = store.db
-    .prepare('SELECT id FROM connections WHERE account_id = ? LIMIT 1')
-    .get(accountId).id;
+    .prepare(
+      'SELECT connection_id FROM orders WHERE account_id = ? AND external_order_id = ? LIMIT 1',
+    )
+    .get(accountId, '901').connection_id;
   const body = Buffer.from(JSON.stringify({ id: 901 }));
   const inbox = store.acceptWebhook({
     id: randomUUID(),

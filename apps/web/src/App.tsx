@@ -33,6 +33,15 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import {
+  AdminWorkspace,
+  adminLabel,
+  LoginScreen,
+  sessionExpiredLabel,
+  signOutLabel,
+  type AdminSection,
+  type AuthenticatedUser,
+} from './AdminWorkspaces';
 
 type Locale = 'ar' | 'en';
 type Direction = 'rtl' | 'ltr';
@@ -118,6 +127,7 @@ type AnalyticsMetricKey = (typeof analyticsMetricKeys)[number];
 type AnalyticsSource = 'woo' | 'manual' | 'combined';
 type AnalyticsFilterState = {
   source: AnalyticsSource;
+  currency: string;
   from: string;
   to: string;
   store: string;
@@ -148,7 +158,14 @@ type AnalyticsSummary = {
   metricsVersion: number;
   definitions: AnalyticsDefinition[];
   currencies: AnalyticsCurrency[];
-  freshness?: { lastRebuiltAt: string | null };
+  freshness?: {
+    lastRebuiltAt: string | null;
+    jobId?: string;
+    status?: AnalyticsRebuildJob['status'];
+    progress?: number;
+    error?: string | null;
+    updatedAt?: string;
+  };
   costCoverage?: {
     coveredLines: number;
     totalLines: number;
@@ -175,6 +192,12 @@ type AnalyticsData = {
   summary: AnalyticsSummary;
   timeseries: AnalyticsTimeseriesItem[];
   breakdown: AnalyticsBreakdownItem[];
+};
+type AnalyticsRebuildJob = {
+  id: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'dead-lettered';
+  progress: number;
+  lastError: string | null;
 };
 
 const copy = {
@@ -369,6 +392,7 @@ const copy = {
     analyticsSubtitle:
       '\u0642\u0631\u0627\u0621\u0629 \u0648\u0627\u0636\u062d\u0629 \u0644\u0644\u0625\u064a\u0631\u0627\u062f \u0648\u0627\u0644\u0631\u0628\u062d \u0645\u0646 \u0643\u0644 \u0627\u0644\u0645\u0635\u0627\u062f\u0631',
     analyticsSource: '\u0645\u0635\u062f\u0631 \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a',
+    currencyFilter: '\u0627\u0644\u0639\u0645\u0644\u0629',
     allSources: '\u0643\u0644 \u0627\u0644\u0645\u0635\u0627\u062f\u0631',
     sourceWoo: 'WooCommerce',
     sourceManual: '\u064a\u062f\u0648\u064a',
@@ -417,6 +441,16 @@ const copy = {
       '\u0644\u0627 \u062a\u0648\u062c\u062f \u0628\u064a\u0627\u0646\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629 \u0644\u0647\u0630\u0647 \u0627\u0644\u0641\u0644\u0627\u062a\u0631',
     analyticsError:
       '\u062a\u0639\u0630\u0631 \u062a\u062d\u0645\u064a\u0644 \u0627\u0644\u062a\u062d\u0644\u064a\u0644\u0627\u062a',
+    rebuildState:
+      '\u062d\u0627\u0644\u0629 \u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0628\u0646\u0627\u0621',
+    rebuildError:
+      '\u062e\u0637\u0623 \u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0628\u0646\u0627\u0621',
+    rebuildAnalytics:
+      '\u0625\u0639\u0627\u062f\u0629 \u0628\u0646\u0627\u0621 \u0627\u0644\u062a\u062d\u0644\u064a\u0644\u0627\u062a',
+    rebuildQueued:
+      '\u062c\u0627\u0631\u064d \u0625\u0639\u0627\u062f\u0629 \u0628\u0646\u0627\u0621 \u0627\u0644\u062a\u062d\u0644\u064a\u0644\u0627\u062a',
+    rebuildFailed:
+      '\u0641\u0634\u0644 \u0625\u0639\u0627د\u0629 \u0628\u0646\u0627ء \u0627\u0644\u062a\u062d\u0644\u064a\u0644\u0627\u062a',
   },
   en: {
     app: 'Woo Ops',
@@ -588,6 +622,7 @@ const copy = {
     analyticsTitle: 'Sales analytics dashboard',
     analyticsSubtitle: 'Explainable revenue and contribution profit across every source',
     analyticsSource: 'Data source',
+    currencyFilter: 'Currency',
     allSources: 'All sources',
     sourceWoo: 'WooCommerce',
     sourceManual: 'Manual orders',
@@ -628,6 +663,11 @@ const copy = {
     currencySeparated: 'Currencies are shown separately and are never combined silently.',
     noAnalytics: 'No analytics facts match these filters',
     analyticsError: 'Could not load analytics. Try again',
+    rebuildState: 'Rebuild state',
+    rebuildError: 'Rebuild error',
+    rebuildAnalytics: 'Rebuild analytics',
+    rebuildQueued: 'Analytics rebuild is running',
+    rebuildFailed: 'Analytics rebuild failed',
   },
 } as const;
 
@@ -745,6 +785,7 @@ const addressLines = (addressValue: unknown): string[] => {
 
 const emptyAnalyticsFilters = (): AnalyticsFilterState => ({
   source: 'combined',
+  currency: '',
   from: '',
   to: '',
   store: '',
@@ -784,6 +825,7 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [rebuildJob, setRebuildJob] = useState<AnalyticsRebuildJob | null>(null);
 
   const loadAnalytics = async (
     nextFilters: AnalyticsFilterState,
@@ -793,6 +835,7 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
     setError(false);
     const payload = {
       ...(nextFilters.source === 'combined' ? {} : { source: nextFilters.source }),
+      ...(nextFilters.currency ? { currency: nextFilters.currency } : {}),
       ...(nextFilters.from ? { from: nextFilters.from } : {}),
       ...(nextFilters.to ? { to: nextFilters.to } : {}),
       ...(nextFilters.store ? { store: nextFilters.store } : {}),
@@ -845,6 +888,62 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
     }
   };
 
+  const rebuildAnalytics = async () => {
+    const payload = {
+      ...(appliedFilters.source === 'combined' ? {} : { source: appliedFilters.source }),
+      ...(appliedFilters.currency ? { currency: appliedFilters.currency } : {}),
+      ...(appliedFilters.from ? { from: appliedFilters.from } : {}),
+      ...(appliedFilters.to ? { to: appliedFilters.to } : {}),
+      ...(appliedFilters.store ? { store: appliedFilters.store } : {}),
+      ...(appliedFilters.status ? { status: appliedFilters.status } : {}),
+      ...(appliedFilters.shippingMethod ? { shippingMethod: appliedFilters.shippingMethod } : {}),
+      ...(appliedFilters.product ? { product: appliedFilters.product } : {}),
+      ...(appliedFilters.category ? { category: appliedFilters.category } : {}),
+      ...(appliedFilters.author ? { author: appliedFilters.author } : {}),
+      idempotencyKey: crypto.randomUUID(),
+    };
+    try {
+      const response = await fetch('/api/v1/analytics/rebuilds', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error('ANALYTICS_REBUILD_FAILED');
+      const body = (await response.json()) as {
+        job: {
+          id: string;
+          status: AnalyticsRebuildJob['status'];
+          progress: number;
+          lastError: string | null;
+        };
+      };
+      setRebuildJob(body.job);
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        if (body.job.status === 'succeeded' || body.job.status === 'failed') break;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const statusResponse = await fetch(
+          `/api/v1/operations/jobs/${encodeURIComponent(body.job.id)}`,
+          { credentials: 'include' },
+        );
+        if (!statusResponse.ok) break;
+        const statusBody = (await statusResponse.json()) as { job: AnalyticsRebuildJob };
+        setRebuildJob(statusBody.job);
+        if (['succeeded', 'failed', 'dead-lettered'].includes(statusBody.job.status)) {
+          if (statusBody.job.status === 'succeeded') await loadAnalytics(appliedFilters, dimension);
+          break;
+        }
+      }
+    } catch {
+      setRebuildJob({
+        id: 'local-error',
+        status: 'failed',
+        progress: 0,
+        lastError: 'ANALYTICS_REBUILD_FAILED',
+      });
+    }
+  };
+
   useEffect(() => {
     void loadAnalytics(appliedFilters, dimension);
   }, [appliedFilters, dimension]);
@@ -859,7 +958,8 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
         return maximum;
       }
     }, 0n) ?? 0n;
-  const freshness = summary?.freshness?.lastRebuiltAt ?? null;
+  const freshnessInfo = summary?.freshness;
+  const freshness = freshnessInfo?.lastRebuiltAt ?? null;
   const coverage = summary?.costCoverage;
 
   const updateFilter = <K extends keyof AnalyticsFilterState>(
@@ -870,11 +970,36 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
   return (
     <Stack gap={3} data-testid="analytics-workspace">
       <Box>
-        <Typography variant="h4" component="h1" fontWeight={800}>
-          {t.analyticsTitle}
-        </Typography>
-        <Typography color="text.secondary">{t.analyticsSubtitle}</Typography>
+        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={2}>
+          <Box>
+            <Typography variant="h4" component="h1" fontWeight={800}>
+              {t.analyticsTitle}
+            </Typography>
+            <Typography color="text.secondary">{t.analyticsSubtitle}</Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            onClick={() => void rebuildAnalytics()}
+            disabled={
+              loading || rebuildJob?.status === 'queued' || rebuildJob?.status === 'running'
+            }
+          >
+            {rebuildJob?.status === 'queued' || rebuildJob?.status === 'running'
+              ? `${t.rebuildQueued} (${rebuildJob.progress}%)`
+              : t.rebuildAnalytics}
+          </Button>
+        </Stack>
       </Box>
+
+      {rebuildJob?.status === 'failed' || rebuildJob?.status === 'dead-lettered' ? (
+        <Alert severity="error" data-testid="analytics-rebuild-error">
+          {t.rebuildFailed}: {rebuildJob.lastError ?? 'unknown'}
+        </Alert>
+      ) : rebuildJob ? (
+        <Alert severity="info" data-testid="analytics-rebuild-status">
+          {t.rebuildQueued} · {rebuildJob.progress}%
+        </Alert>
+      ) : null}
 
       <Paper
         component="form"
@@ -909,6 +1034,13 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                 <MenuItem value="manual">{t.sourceManual}</MenuItem>
               </Select>
             </FormControl>
+            <TextField
+              size="small"
+              label={t.currencyFilter}
+              value={filters.currency}
+              onChange={(event) => updateFilter('currency', event.target.value.toUpperCase())}
+              inputProps={{ maxLength: 3 }}
+            />
             <TextField
               size="small"
               type="date"
@@ -1070,6 +1202,16 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
               <Typography variant="body2">
                 {t.lastRebuilt}: {freshness ? dateText(freshness, locale) : t.coverageUnavailable}
               </Typography>
+              {freshnessInfo?.status && (
+                <Typography variant="body2" sx={{ mt: 1 }} data-testid="analytics-freshness-job">
+                  {t.rebuildState}: {freshnessInfo.status} · {freshnessInfo.progress ?? 0}%
+                </Typography>
+              )}
+              {freshnessInfo?.error && (
+                <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+                  {t.rebuildError}: {freshnessInfo.error}
+                </Typography>
+              )}
               <Typography variant="body2" sx={{ mt: 1 }}>
                 {t.costCoverage} ({t.coverageScope}):{' '}
                 {coverage?.percentage === null || coverage === undefined
@@ -2774,6 +2916,29 @@ function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof c
   );
 }
 
+type AppView = 'orders' | 'manual' | 'documents' | 'analytics' | 'exports' | AdminSection;
+type AuthStatus = 'checking' | 'authenticated' | 'unauthenticated';
+
+const viewFromPath = (path: string): AppView => {
+  const value = path.replace(/^\//u, '').split('/')[0];
+  const supported: AppView[] = [
+    'orders',
+    'manual',
+    'documents',
+    'analytics',
+    'exports',
+    'overview',
+    'connections',
+    'field-mappings',
+    'settings',
+    'members',
+    'operations',
+  ];
+  return supported.includes(value as AppView) ? (value as AppView) : 'orders';
+};
+
+const pathForView = (view: AppView): string => (view === 'orders' ? '/' : `/${view}`);
+
 export function App({
   locale,
   direction,
@@ -2786,6 +2951,9 @@ export function App({
   onToggleDirection: () => void;
 }) {
   const t = copy[locale];
+  const [authStatus, setAuthStatus] = useState<AuthStatus>('checking');
+  const [authUser, setAuthUser] = useState<AuthenticatedUser | null>(null);
+  const [sessionMessage, setSessionMessage] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [filters, setFilters] = useState<OrderFilters>(emptyOrderFilters);
@@ -2804,9 +2972,75 @@ export function App({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
-  const [view, setView] = useState<'orders' | 'manual' | 'documents' | 'analytics' | 'exports'>(
-    'orders',
-  );
+  const [view, setViewState] = useState<AppView>(() => viewFromPath(window.location.pathname));
+
+  const setView = (next: AppView) => {
+    setViewState(next);
+    const nextPath = pathForView(next);
+    if (window.location.pathname !== nextPath) window.history.pushState({}, '', nextPath);
+  };
+
+  useEffect(() => {
+    const onPopState = () => setViewState(viewFromPath(window.location.pathname));
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void fetch('/api/v1/auth/session', { credentials: 'include' })
+      .then(async (response) => {
+        if (!active) return;
+        if (!response.ok) {
+          setAuthStatus('unauthenticated');
+          return;
+        }
+        const body = (await response.json()) as { user: AuthenticatedUser };
+        setAuthUser(body.user);
+        setAuthStatus('authenticated');
+      })
+      .catch(() => {
+        if (active) setAuthStatus('unauthenticated');
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (authStatus !== 'authenticated') return;
+    const timer = window.setInterval(
+      () => {
+        void fetch('/api/v1/auth/session', { credentials: 'include' })
+          .then((response) => {
+            if (response.status === 401) expireSession();
+          })
+          .catch(() => undefined);
+      },
+      5 * 60 * 1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [authStatus, locale]);
+
+  const expireSession = () => {
+    setAuthUser(null);
+    setAuthStatus('unauthenticated');
+    setSessionMessage(sessionExpiredLabel(locale));
+  };
+
+  const logout = async () => {
+    try {
+      await fetch('/api/v1/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        body: '{}',
+      });
+    } finally {
+      setAuthUser(null);
+      setAuthStatus('unauthenticated');
+    }
+  };
 
   const orderFilter = useMemo(() => {
     const leaves: JsonRecord[] = [];
@@ -2997,9 +3231,10 @@ export function App({
   };
 
   useEffect(() => {
+    if (authStatus !== 'authenticated') return;
     void loadOrders();
     void loadSavedViews();
-  }, [status]);
+  }, [status, authStatus]);
 
   const renderedColumns = useMemo(
     () => columns.filter((column) => visibleColumns.includes(column)),
@@ -3052,6 +3287,48 @@ export function App({
                             ? t.never
                             : valueText(order[column]);
 
+  if (authStatus === 'checking')
+    return (
+      <Box minHeight="100vh" display="grid" sx={{ placeItems: 'center' }}>
+        <CircularProgress aria-label={t.loading} />
+      </Box>
+    );
+  if (!authUser || authStatus === 'unauthenticated')
+    return (
+      <LoginScreen
+        locale={locale}
+        direction={direction}
+        message={sessionMessage}
+        onAuthenticated={(user) => {
+          setAuthUser(user);
+          setAuthStatus('authenticated');
+          setSessionMessage('');
+        }}
+      />
+    );
+
+  const navigation: readonly { view: AppView; label: string }[] = [
+    { view: 'overview', label: adminLabel('overview', locale) },
+    { view: 'orders', label: t.orders },
+    { view: 'manual', label: locale === 'ar' ? 'الطلبات اليدوية' : 'Manual orders' },
+    { view: 'exports', label: t.exportsNav },
+    { view: 'documents', label: t.documentsNav },
+    { view: 'analytics', label: t.analyticsNav },
+    { view: 'connections', label: adminLabel('connections', locale) },
+    { view: 'field-mappings', label: adminLabel('field-mappings', locale) },
+    { view: 'settings', label: adminLabel('settings', locale) },
+    { view: 'members', label: adminLabel('members', locale) },
+    { view: 'operations', label: adminLabel('operations', locale) },
+  ];
+  const isAdminView = [
+    'overview',
+    'connections',
+    'field-mappings',
+    'settings',
+    'members',
+    'operations',
+  ].includes(view);
+
   return (
     <Box minHeight="100vh" bgcolor="#f6f8fb" dir={direction}>
       <AppBar
@@ -3060,21 +3337,33 @@ export function App({
         color="inherit"
         sx={{ borderBottom: '1px solid #e5e7eb' }}
       >
-        <Toolbar sx={{ gap: 1 }}>
-          <Typography variant="h6" color="primary" sx={{ flexGrow: 1, fontWeight: 800 }}>
+        <Toolbar sx={{ gap: 1, flexWrap: 'wrap', py: 1 }}>
+          <Typography
+            variant="h6"
+            color="primary"
+            sx={{ flexGrow: 1, fontWeight: 800, minWidth: 120 }}
+          >
             {t.app}
           </Typography>
+          <Box
+            component="nav"
+            aria-label={locale === 'ar' ? 'التنقل الرئيسي' : 'Primary navigation'}
+            sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', justifyContent: 'flex-end' }}
+          >
+            {navigation.map((item) => (
+              <Button
+                key={item.view}
+                size="small"
+                color={view === item.view ? 'primary' : 'inherit'}
+                variant={view === item.view ? 'contained' : 'text'}
+                onClick={() => setView(item.view)}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </Box>
           <Button variant="contained" size="small" onClick={() => setView('manual')}>
             {t.manualOrders}
-          </Button>
-          <Button variant="outlined" size="small" onClick={() => setView('documents')}>
-            {t.documentsNav}
-          </Button>
-          <Button variant="outlined" size="small" onClick={() => setView('exports')}>
-            {t.exportsNav}
-          </Button>
-          <Button variant="outlined" size="small" onClick={() => setView('analytics')}>
-            {t.analyticsNav}
           </Button>
           <Button
             onClick={onToggleDirection}
@@ -3087,10 +3376,19 @@ export function App({
           <Button onClick={onToggleLocale} color="primary" size="small">
             {t.language}
           </Button>
+          <Button onClick={() => void logout()} color="inherit" size="small">
+            {signOutLabel(locale)}
+          </Button>
         </Toolbar>
       </AppBar>
       <Container component="main" maxWidth="xl" sx={{ py: 4 }}>
-        {view === 'documents' ? (
+        {isAdminView ? (
+          <AdminWorkspace
+            section={view as AdminSection}
+            locale={locale}
+            onSessionExpired={expireSession}
+          />
+        ) : view === 'documents' ? (
           <DocumentsWorkspace direction={direction} t={t} />
         ) : view === 'exports' ? (
           <ExportsWorkspace direction={direction} t={t} />

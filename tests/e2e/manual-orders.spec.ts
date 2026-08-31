@@ -1,8 +1,15 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Route } from '@playwright/test';
 
 test('creates a manual order through the local-only form', async ({ page }) => {
   const requests: string[] = [];
   let payload: Record<string, unknown> | undefined;
+  await page.route('**/api/v1/auth/session', async (route) => {
+    await route.fulfill({
+      json: {
+        user: { id: 'user-1', accountId: 'account-1', email: 'admin@example.test', role: 'admin' },
+      },
+    });
+  });
   await page.route('**/api/v1/orders/query', async (route) => {
     await route.fulfill({
       json: { items: [], nextCursor: null, hasMore: false },

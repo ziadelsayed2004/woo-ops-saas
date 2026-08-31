@@ -103,6 +103,18 @@ test('runs the complete local critical journey with Woo fixtures', async () => {
       : await response.arrayBuffer();
     return { response, body };
   };
+  const waitForJob = async (jobId, headers) => {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const result = await request(`/api/v1/operations/jobs/${encodeURIComponent(jobId)}`, {
+        headers,
+      });
+      if (result.body?.job?.status === 'succeeded') return result.body.job;
+      if (['failed', 'dead-lettered'].includes(result.body?.job?.status))
+        throw new Error(`CRITICAL_ANALYTICS_JOB_FAILED ${JSON.stringify(result.body.job)}`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error('CRITICAL_ANALYTICS_JOB_TIMEOUT');
+  };
 
   try {
     await waitForHealth();
@@ -356,6 +368,8 @@ test('runs the complete local critical journey with Woo fixtures', async () => {
       body: JSON.stringify({ source: 'combined' }),
     });
     assert.equal(rebuild.response.status, 202);
+    assert.equal(rebuild.body.job.type, 'analytics.rebuild');
+    await waitForJob(rebuild.body.job.id, readHeaders);
     const analytics = await request('/api/v1/analytics/summary', {
       method: 'POST',
       headers: readHeaders,

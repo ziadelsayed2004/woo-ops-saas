@@ -77,6 +77,16 @@ const request = async (path, options = {}) => {
   const text = await response.text();
   return { response, body: text ? JSON.parse(text) : null };
 };
+const waitForJob = async (jobId, headers) => {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const result = await request(`/api/v1/operations/jobs/${encodeURIComponent(jobId)}`, { headers });
+    if (result.body?.job?.status === 'succeeded') return result.body.job;
+    if (['failed', 'dead-lettered'].includes(result.body?.job?.status))
+      throw new Error(`ANALYTICS_JOB_FAILED ${JSON.stringify(result.body.job)}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error('ANALYTICS_JOB_TIMEOUT');
+};
 
 try {
   await waitForHealth();
@@ -120,7 +130,9 @@ try {
     body: JSON.stringify({ source: 'manual' }),
   });
   assert.equal(rebuild.response.status, 202);
-  assert.equal(rebuild.body.rebuild.ordersIncluded, 1);
+  assert.equal(rebuild.body.job.type, 'analytics.rebuild');
+  const completedJob = await waitForJob(rebuild.body.job.id, { cookie: cookies });
+  assert.equal(completedJob.progress, 100);
   const summary = await request('/api/v1/analytics/summary', {
     method: 'POST',
     headers: { cookie: cookies },

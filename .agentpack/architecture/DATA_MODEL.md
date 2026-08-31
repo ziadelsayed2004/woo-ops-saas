@@ -298,10 +298,13 @@ with reason rather than reused.
 Immutable order snapshot, template version, sequence value, format, dimensions, storage file,
 checksum, generated-by, timestamps, and supersession relationship.
 
-### costRules and orderCostSnapshots
+### costRules, orderCostSnapshots and orderCostOverrides
 
 Effective-dated product/variation/shipping/payment/return cost rules. Calculation records the exact
-rule version and inputs. Overrides are append-only events with actor and reason.
+rule version and inputs. Schema migration 20 adds account-scoped `order_cost_overrides` append-only
+events (`order_id`, optional `line_id`, ISO currency, integer minor-unit cost, actor, reason, and
+timestamp). The latest override for a line is applied by an analytics rebuild; it never mutates the
+remote snapshot or the historical override events.
 
 ### dailyOrderFacts
 

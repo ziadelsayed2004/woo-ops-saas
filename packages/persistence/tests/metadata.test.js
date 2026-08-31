@@ -20,6 +20,16 @@ store.db
   )
   .run(connectionId, accountId, 'woocommerce', 'https://metadata.test', 'active', now, now);
 const context = { accountId, actorId: randomUUID(), correlationId: randomUUID() };
+store.db
+  .prepare(
+    'INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+  )
+  .run(context.actorId, 'metadata-admin@example.test', 'test-hash', now, now);
+store.db
+  .prepare(
+    'INSERT INTO account_memberships (account_id, user_id, role, created_at) VALUES (?, ?, ?, ?)',
+  )
+  .run(accountId, context.actorId, 'admin', now);
 
 test('metadata discovery protects private keys and does not infer unsafe types', () => {
   const entries = discoverMetadata([

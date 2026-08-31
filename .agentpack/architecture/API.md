@@ -261,8 +261,11 @@ POST   /analytics/rebuilds
 
 Analytics summaries, time series, and breakdowns return currency-separated metric totals; the API
 never silently adds amounts from different currencies. Each metric definition includes its formula
-and excluded order statuses. Rebuilds read canonical local orders and persist versioned daily facts
-plus immutable line-cost snapshots. Analytics filters accept inclusive date bounds, source (`woo`,
+and excluded order statuses. Rebuilds are durable, account-scoped `analytics.rebuild` jobs with
+bounded progress and retry/recovery semantics; they read canonical local orders and persist
+versioned daily facts plus immutable line-cost snapshots. Cost overrides are append-only,
+account-scoped events and the latest event for a line is applied during the next rebuild without
+altering the remote order snapshot. Analytics filters accept inclusive date bounds, source (`woo`,
 `manual`, or `combined`), store / connection ID, status, shipping method, product or SKU, category,
 and author text facets. Breakdown dimensions include source, store, status, shipping, product,
 category, and author. Summary responses expose the latest fact rebuild timestamp and account-wide
@@ -280,6 +283,7 @@ POST   /operations/jobs/:id/cancel
 GET    /operations/dead-letters
 POST   /operations/dead-letters/:id/replay
 GET    /operations/usage
+POST   /operations/maintenance
 ```
 
 Operations job list/detail responses contain only account-scoped summaries: ID, type, status,

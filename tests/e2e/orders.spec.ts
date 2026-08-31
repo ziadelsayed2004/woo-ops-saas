@@ -70,6 +70,13 @@ const order = {
 
 async function mockOrderApi(page: Page) {
   const queryBodies: Record<string, unknown>[] = [];
+  await page.route('**/api/v1/auth/session', async (route: Route) => {
+    await route.fulfill({
+      json: {
+        user: { id: 'user-1', accountId: 'account-1', email: 'admin@example.test', role: 'admin' },
+      },
+    });
+  });
   await page.route('**/api/v1/orders/query', async (route: Route) => {
     const raw = route.request().postData();
     if (raw) queryBodies.push(JSON.parse(raw) as Record<string, unknown>);

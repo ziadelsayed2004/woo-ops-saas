@@ -197,6 +197,17 @@ export type CostRuleRecord = CostRule & {
   createdAt: string;
   updatedAt: string;
 };
+export type CostOverrideRecord = Readonly<{
+  id: string;
+  accountId: string;
+  orderId: string;
+  lineId: string;
+  currency: string;
+  unitCostMinor: string;
+  reason: string;
+  createdBy: string;
+  createdAt: string;
+}>;
 export type OrderCostSnapshotRecord = {
   id: string;
   accountId: string;
@@ -352,6 +363,17 @@ export type FieldMapping = {
   targetFacet: string | null;
   version: number;
 };
+export type FieldCatalogRecord = Readonly<{
+  id: string;
+  connectionId: string;
+  scope: string;
+  sourceKey: string;
+  sensitivity: MetadataSensitivity;
+  inferredType: MetadataType | 'unknown';
+  occurrences: number;
+  sample: unknown;
+  discoveredAt: string;
+}>;
 
 export type SelectionMode = 'explicit' | 'query';
 export type SelectionQuery = { orderIds: readonly string[] } | OrderQueryInput;
@@ -1740,7 +1762,7 @@ const compileFilter = (
   };
 };
 
-export const schemaVersion = 19;
+export const schemaVersion = 20;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -2325,6 +2347,24 @@ const migrations: readonly Migration[] = [
       CREATE INDEX document_artifacts_account_checksum ON document_artifacts(account_id, checksum);
     `,
   },
+  {
+    version: 20,
+    name: 'append-only-analytics-cost-overrides',
+    sql: `
+      CREATE TABLE order_cost_overrides (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id),
+        order_id TEXT NOT NULL, line_id TEXT NOT NULL, currency TEXT NOT NULL CHECK(length(currency) = 3),
+        unit_cost_minor TEXT NOT NULL
+          CHECK(length(unit_cost_minor) BETWEEN 1 AND 18 AND unit_cost_minor NOT GLOB '*[^0-9]*'),
+        reason TEXT NOT NULL,
+        created_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL,
+        UNIQUE(account_id, id),
+        FOREIGN KEY(account_id, order_id) REFERENCES orders(account_id, id)
+      );
+      CREATE INDEX order_cost_overrides_account_line
+        ON order_cost_overrides(account_id, order_id, line_id, created_at DESC, id DESC);
+    `,
+  },
 ];
 
 const MAX_SELECTION_IDS = 5_000;
@@ -2681,6 +2721,17 @@ type CostRuleRow = {
   created_at: string;
   updated_at: string;
 };
+type CostOverrideRow = {
+  id: string;
+  account_id: string;
+  order_id: string;
+  line_id: string;
+  currency: string;
+  unit_cost_minor: string;
+  reason: string;
+  created_by: string;
+  created_at: string;
+};
 type OrderCostSnapshotRow = {
   id: string;
   account_id: string;
@@ -2996,6 +3047,17 @@ const costRule = (row: CostRuleRow): CostRuleRecord => ({
   createdBy: row.created_by,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
+});
+const costOverride = (row: CostOverrideRow): CostOverrideRecord => ({
+  id: row.id,
+  accountId: row.account_id,
+  orderId: row.order_id,
+  lineId: row.line_id,
+  currency: row.currency,
+  unitCostMinor: row.unit_cost_minor,
+  reason: row.reason,
+  createdBy: row.created_by,
+  createdAt: row.created_at,
 });
 const orderCostSnapshot = (row: OrderCostSnapshotRow): OrderCostSnapshotRecord => ({
   id: row.id,
@@ -5658,6 +5720,150 @@ export class SqliteStore {
     return rows.map(orderCostSnapshot);
   }
 
+  listCostOverrides(context: AccountContext, orderId: string): CostOverrideRecord[] {
+    this.assertMember(context);
+    const order = this.db
+      .prepare('SELECT id FROM orders WHERE account_id = ? AND id = ?')
+      .get(context.accountId, orderId) as { id: string } | undefined;
+    if (!order) throw new Error('ORDER_NOT_FOUND');
+    const rows = this.db
+      .prepare(
+        `SELECT id, account_id, order_id, line_id, currency, unit_cost_minor, reason, created_by, created_at
+         FROM order_cost_overrides WHERE account_id = ? AND order_id = ?
+         ORDER BY created_at DESC, id DESC`,
+      )
+      .all(context.accountId, orderId) as CostOverrideRow[];
+    return rows.map(costOverride);
+  }
+
+  createCostOverride(
+    context: AccountContext,
+    orderId: string,
+    input: {
+      lineId: string;
+      currency: string;
+      unitCostMinor: string;
+      reason: string;
+    },
+  ): CostOverrideRecord {
+    const actorId = this.requireMutationActor(context);
+    if (typeof orderId !== 'string' || orderId.length < 1 || orderId.length > 256)
+      throw new Error('ORDER_ID_INVALID');
+    if (
+      typeof input.lineId !== 'string' ||
+      input.lineId.length < 1 ||
+      input.lineId.length > 256 ||
+      !/^[A-Za-z0-9_:./-]+$/u.test(input.lineId)
+    )
+      throw new Error('COST_OVERRIDE_LINE_INVALID');
+    const currency = normalizeAnalyticsCurrency(input.currency);
+    const unitCostMinor = normalizeAnalyticsMinor(input.unitCostMinor);
+    const reason = normalizeDocumentText(input.reason, 'COST_OVERRIDE_REASON_INVALID', 500);
+    const order = this.db
+      .prepare('SELECT id, currency, normalized_json FROM orders WHERE account_id = ? AND id = ?')
+      .get(context.accountId, orderId) as
+      { id: string; currency: string; normalized_json: string | null } | undefined;
+    if (!order) throw new Error('ORDER_NOT_FOUND');
+    if (normalizeAnalyticsCurrency(order.currency) !== currency)
+      throw new Error('COST_OVERRIDE_CURRENCY_MISMATCH');
+    const normalized = order.normalized_json
+      ? parseStoredJson<Record<string, unknown>>(order.normalized_json, 'ANALYTICS_DATA_INVALID')
+      : {};
+    const lines = Array.isArray(normalized.lines) ? normalized.lines : [];
+    const lineExists = lines.some(
+      (line) =>
+        isRecord(line) &&
+        (line.lineId === input.lineId ||
+          line.id === input.lineId ||
+          line.externalLineId === input.lineId),
+    );
+    if (!lineExists) throw new Error('COST_OVERRIDE_LINE_NOT_FOUND');
+    const id = randomId();
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO order_cost_overrides
+          (id, account_id, order_id, line_id, currency, unit_cost_minor, reason, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        context.accountId,
+        orderId,
+        input.lineId,
+        currency,
+        unitCostMinor,
+        reason,
+        actorId,
+        now,
+      );
+    this.audit(context, 'cost-override.created', 'order_cost_override', id, {
+      orderId,
+      lineId: input.lineId,
+      currency,
+      reason,
+    });
+    return costOverride(
+      this.db
+        .prepare(
+          `SELECT id, account_id, order_id, line_id, currency, unit_cost_minor, reason, created_by, created_at
+           FROM order_cost_overrides WHERE account_id = ? AND id = ?`,
+        )
+        .get(context.accountId, id) as CostOverrideRow,
+    );
+  }
+
+  private latestCostOverridesForWorker(
+    context: AccountContext,
+    orderId: string,
+  ): Map<string, CostOverrideRecord> {
+    const rows = this.db
+      .prepare(
+        `SELECT id, account_id, order_id, line_id, currency, unit_cost_minor, reason, created_by, created_at
+         FROM order_cost_overrides WHERE account_id = ? AND order_id = ?
+         ORDER BY created_at DESC, id DESC`,
+      )
+      .all(context.accountId, orderId) as CostOverrideRow[];
+    const result = new Map<string, CostOverrideRecord>();
+    for (const row of rows) {
+      if (!result.has(row.line_id)) result.set(row.line_id, costOverride(row));
+    }
+    return result;
+  }
+
+  getAnalyticsOrderCountForWorker(context: AccountContext, input: AnalyticsFilter = {}): number {
+    this.assertContext(context);
+    const clauses = ['account_id = ?'];
+    const params: (string | number)[] = [context.accountId];
+    const source = input.source ?? 'combined';
+    if (source !== 'combined') {
+      clauses.push('origin = ?');
+      params.push(source);
+    }
+    if (input.currency !== undefined) {
+      clauses.push('currency = ?');
+      params.push(normalizeAnalyticsCurrency(input.currency));
+    }
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS count FROM orders WHERE ${clauses.join(' AND ')}`)
+      .get(...params) as { count: number };
+    return Number(row.count);
+  }
+
+  getFieldMappingOrderCountForWorker(context: AccountContext, mappingId: string): number {
+    this.assertContext(context);
+    const mapping = this.db
+      .prepare(
+        'SELECT connection_id FROM field_mappings WHERE account_id = ? AND id = ? AND active = 1',
+      )
+      .get(context.accountId, mappingId) as { connection_id: string } | undefined;
+    if (!mapping) throw new Error('FIELD_MAPPING_NOT_FOUND');
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS count FROM orders WHERE account_id = ? AND connection_id = ?`)
+      .get(context.accountId, mapping.connection_id) as { count: number };
+    return Number(row.count);
+  }
+
   private analyticsFactRows(
     context: AccountContext,
     input: AnalyticsFilter = {},
@@ -5789,6 +5995,21 @@ export class SqliteStore {
     );
     const totalLines = Number(coverage.total_lines);
     const coveredLines = Number(coverage.covered_lines);
+    const latestRebuild = this.db
+      .prepare(
+        `SELECT id, status, progress, last_error, updated_at FROM jobs
+         WHERE account_id = ? AND type = 'analytics.rebuild'
+         ORDER BY updated_at DESC, id DESC LIMIT 1`,
+      )
+      .get(context.accountId) as
+      | {
+          id: string;
+          status: DurableJob['status'];
+          progress: number;
+          last_error: string | null;
+          updated_at: string;
+        }
+      | undefined;
     return {
       source: input.source ?? 'combined',
       from: input.from ?? null,
@@ -5796,7 +6017,18 @@ export class SqliteStore {
       excludedStatuses: ['cancelled', 'failed', 'trash'],
       metricsVersion: 1,
       definitions: metricDefinitions(),
-      freshness: { lastRebuiltAt: freshness },
+      freshness: {
+        lastRebuiltAt: freshness,
+        ...(latestRebuild === undefined
+          ? {}
+          : {
+              jobId: latestRebuild.id,
+              status: latestRebuild.status,
+              progress: latestRebuild.progress,
+              error: latestRebuild.last_error,
+              updatedAt: latestRebuild.updated_at,
+            }),
+      },
       costCoverage: {
         scope: 'account',
         coveredLines,
@@ -5920,20 +6152,28 @@ export class SqliteStore {
   rebuildAnalyticsFactsForWorker(
     context: AccountContext,
     input: AnalyticsFilter = {},
+    onProgress?: (processed: number) => void,
   ): AnalyticsRebuildResult {
     this.assertContext(context);
-    return this.rebuildAnalyticsFactsInternal(context, input);
+    return this.rebuildAnalyticsFactsInternal(context, input, onProgress);
   }
 
   private rebuildAnalyticsFactsInternal(
     context: AccountContext,
     input: AnalyticsFilter = {},
+    onProgress?: (processed: number) => void,
   ): AnalyticsRebuildResult {
     const from = input.from === undefined ? null : normalizeAnalyticsDateKey(input.from);
     const to = input.to === undefined ? null : normalizeAnalyticsDateKey(input.to);
     if (from !== null && to !== null && from > to) throw new Error('ANALYTICS_DATE_RANGE_INVALID');
     const currency =
       input.currency === undefined ? undefined : normalizeAnalyticsCurrency(input.currency);
+    if (from !== null && to !== null) {
+      const spanDays =
+        (Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) /
+        (24 * 60 * 60 * 1000);
+      if (spanDays > 366) throw new Error('ANALYTICS_DATE_RANGE_TOO_LARGE');
+    }
     const source = input.source ?? 'combined';
     const account = this.db
       .prepare('SELECT timezone FROM accounts WHERE id = ?')
@@ -5944,13 +6184,18 @@ export class SqliteStore {
       .prepare(
         `SELECT id, origin, connection_id, order_number, external_order_id, remote_status,
           local_status, export_state, stale_export_at, currency, grand_total_minor, source_hash,
-          remote_modified_at, normalized_json, created_at FROM orders WHERE account_id = ? ORDER BY id ASC`,
+          remote_modified_at, remote_created_at, normalized_json, created_at FROM orders WHERE account_id = ? ORDER BY id ASC`,
       )
       .all(context.accountId) as Array<Record<string, unknown>>;
     const snapshotSelect = this.db.prepare(
       `SELECT id, account_id, order_id, line_id, rule_id, currency, source, effective_at,
         quantity, unit_cost_minor, total_cost_minor, source_hash, created_at
        FROM order_cost_snapshots WHERE account_id = ? AND order_id = ? ORDER BY line_id`,
+    );
+    const overrideSelect = this.db.prepare(
+      `SELECT id, account_id, order_id, line_id, currency, unit_cost_minor, reason, created_by, created_at
+       FROM order_cost_overrides WHERE account_id = ? AND order_id = ?
+       ORDER BY created_at DESC, id DESC`,
     );
     const snapshotsInsert = this.db.prepare(
       `INSERT OR IGNORE INTO order_cost_snapshots
@@ -5975,7 +6220,9 @@ export class SqliteStore {
     let snapshotsWritten = 0;
     const rebuiltAt = new Date().toISOString();
     const results: Array<{ row: Record<string, unknown>; result: OrderMetricResult }> = [];
+    let processed = 0;
     for (const row of orderRows) {
+      processed += 1;
       const rowSource = row.origin === 'manual' ? 'manual' : 'woo';
       if (source !== 'combined' && source !== rowSource) continue;
       if (currency !== undefined && row.currency !== currency) continue;
@@ -5992,6 +6239,14 @@ export class SqliteStore {
       const snapshotMap = new Map(
         storedSnapshots.map((item) => [item.line_id, orderCostSnapshot(item)]),
       );
+      const overrideMap = new Map<string, CostOverrideRecord>();
+      for (const overrideRow of overrideSelect.all(
+        context.accountId,
+        row.id,
+      ) as CostOverrideRow[]) {
+        if (!overrideMap.has(overrideRow.line_id))
+          overrideMap.set(overrideRow.line_id, costOverride(overrideRow));
+      }
       const lines = Array.isArray(normalized.lines)
         ? normalized.lines.map((line) => {
             if (!isRecord(line)) return line;
@@ -6001,15 +6256,27 @@ export class SqliteStore {
                 : typeof line.id === 'string'
                   ? line.id
                   : '';
-            const snapshot = snapshotMap.get(lineKey);
-            return snapshot
+            const override = overrideMap.get(lineKey);
+            const storedSnapshot = snapshotMap.get(lineKey);
+            if (override) {
+              return {
+                ...line,
+                costSnapshot: {
+                  ruleId: null,
+                  source: 'manual-override',
+                  effectiveAt: null,
+                  unitCostMinor: override.unitCostMinor,
+                },
+              };
+            }
+            return storedSnapshot
               ? {
                   ...line,
                   costSnapshot: {
-                    ruleId: snapshot.ruleId,
-                    source: snapshot.source,
-                    effectiveAt: snapshot.effectiveAt,
-                    unitCostMinor: snapshot.unitCostMinor,
+                    ruleId: storedSnapshot.ruleId,
+                    source: storedSnapshot.source,
+                    effectiveAt: storedSnapshot.effectiveAt,
+                    unitCostMinor: storedSnapshot.unitCostMinor,
                   },
                 }
               : line;
@@ -6030,7 +6297,7 @@ export class SqliteStore {
             : row.export_state,
         currency: row.currency,
         grandTotalMinor: row.grand_total_minor,
-        remoteCreatedAt: row.remote_modified_at,
+        remoteCreatedAt: row.remote_created_at ?? row.remote_modified_at,
         createdAt: row.created_at,
         lines,
       };
@@ -6060,6 +6327,7 @@ export class SqliteStore {
           totals: result.totals,
         });
       }
+      onProgress?.(processed);
     }
     const deleteClauses = ['account_id = ?'];
     const deleteParams: (string | number)[] = [context.accountId];
@@ -9741,6 +10009,69 @@ export class SqliteStore {
     return entries;
   }
 
+  listFieldCatalog(context: AccountContext, connectionId: string): FieldCatalogRecord[] {
+    this.assertMember(context);
+    this.assertConnection(context, connectionId);
+    const rows = this.db
+      .prepare(
+        `SELECT id, connection_id, scope, source_key, sensitivity, inferred_type, occurrences,
+          sample_json, discovered_at FROM field_catalogs
+         WHERE account_id = ? AND connection_id = ? ORDER BY scope, source_key LIMIT 500`,
+      )
+      .all(context.accountId, connectionId) as Array<{
+      id: string;
+      connection_id: string;
+      scope: string;
+      source_key: string;
+      sensitivity: MetadataSensitivity;
+      inferred_type: MetadataType | 'unknown';
+      occurrences: number;
+      sample_json: string | null;
+      discovered_at: string;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      connectionId: row.connection_id,
+      scope: row.scope,
+      sourceKey: row.source_key,
+      sensitivity: row.sensitivity,
+      inferredType: row.inferred_type,
+      occurrences: row.occurrences,
+      sample:
+        row.sensitivity === 'safe' && row.sample_json !== null
+          ? parseStoredJson<unknown>(row.sample_json, 'FIELD_CATALOG_INVALID')
+          : null,
+      discoveredAt: row.discovered_at,
+    }));
+  }
+
+  listFieldMappings(context: AccountContext, connectionId: string): FieldMapping[] {
+    this.assertMember(context);
+    this.assertConnection(context, connectionId);
+    const rows = this.db
+      .prepare(
+        `SELECT id, source_key, label, type, target_facet, version
+         FROM field_mappings WHERE account_id = ? AND connection_id = ? AND active = 1
+         ORDER BY source_key, id LIMIT 500`,
+      )
+      .all(context.accountId, connectionId) as Array<{
+      id: string;
+      source_key: string;
+      label: string;
+      type: MetadataType;
+      target_facet: string | null;
+      version: number;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      sourceKey: row.source_key,
+      label: row.label,
+      type: row.type,
+      targetFacet: row.target_facet,
+      version: row.version,
+    }));
+  }
+
   createFieldMapping(
     context: AccountContext,
     input: {
@@ -9751,6 +10082,7 @@ export class SqliteStore {
       targetFacet?: string;
     },
   ): FieldMapping {
+    this.requireMutationActor(context);
     this.assertConnection(context, input.connectionId);
     if (
       !input.label.trim() ||
