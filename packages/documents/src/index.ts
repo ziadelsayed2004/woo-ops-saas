@@ -29,6 +29,8 @@ export type DocumentRequest = Readonly<{
   barcodeValue?: string;
   qrValue?: string;
   thermalHeightMm?: number;
+  /** Legal invoice wording is opt-in from the account document policy. */
+  documentKind?: 'order' | 'invoice';
 }>;
 export type DocumentSnapshot = Readonly<{
   orderId: string;
@@ -55,6 +57,11 @@ export type DocumentBatchResult = Readonly<{
   checksum: string;
 }>;
 
+export type ZipEntry = Readonly<{
+  name: string;
+  bytes: Uint8Array;
+}>;
+
 const MM_TO_POINTS = 72 / 25.4;
 const PAGE_SIZES: Readonly<Record<DocumentFormat, readonly [number, number]>> = {
   a4: [210 * MM_TO_POINTS, 297 * MM_TO_POINTS],
@@ -66,6 +73,9 @@ const DOCUMENT_FORMATS: readonly DocumentFormat[] = ['a4', 'a5', 'thermal-80mm',
 const DOCUMENT_LOCALES: readonly DocumentLocale[] = ['ar-EG', 'en-US'];
 const DOCUMENT_DIRECTIONS: readonly DocumentDirection[] = ['rtl', 'ltr'];
 const MAX_BATCH_DOCUMENTS = 500;
+const MAX_ZIP_ENTRIES = 501;
+const MAX_ZIP_ENTRY_BYTES = 50 * 1024 * 1024;
+const MAX_ZIP_BYTES = 100 * 1024 * 1024;
 const MAX_LINES = 100;
 const MAX_TEMPLATE_BODY = 5_000;
 const templateTokenPattern = /\{\{\s*([A-Za-z][A-Za-z0-9_.-]*)\s*\}\}/gu;
@@ -217,6 +227,8 @@ const normalizeRequest = (request: DocumentRequest): DocumentRequest => {
   const template = normalizeTemplate(request.template);
   if (!DOCUMENT_FORMATS.includes(request.format)) throw new Error('DOCUMENT_FORMAT_INVALID');
   if (!isRecord(request.order)) throw new Error('DOCUMENT_ORDER_INVALID');
+  const documentKind = request.documentKind ?? 'order';
+  if (!['order', 'invoice'].includes(documentKind)) throw new Error('DOCUMENT_KIND_INVALID');
   const height = request.thermalHeightMm ?? 150;
   if (!Number.isFinite(height) || height < 50 || height > 500)
     throw new Error('DOCUMENT_THERMAL_HEIGHT_INVALID');
@@ -224,6 +236,7 @@ const normalizeRequest = (request: DocumentRequest): DocumentRequest => {
     ...request,
     template,
     thermalHeightMm: height,
+    documentKind,
     ...(request.orderId === undefined
       ? {}
       : { orderId: assertText(request.orderId, 'DOCUMENT_ORDER_ID_INVALID', 256) }),
@@ -242,6 +255,9 @@ const snapshotSource = (request: DocumentRequest): string =>
   JSON.stringify({
     orderId: request.orderId ?? orderValue(request.order, 'id', 'orderId', 'orderNumber'),
     format: request.format,
+    documentKind: request.documentKind ?? 'order',
+    documentNumber: request.documentNumber ?? null,
+    thermalHeightMm: request.thermalHeightMm ?? 150,
     template: {
       id: request.template.id ?? null,
       version: request.template.version,
@@ -355,13 +371,17 @@ const drawDocument = async (
   const title =
     normalized.format === 'label-100x150mm'
       ? direction === 'rtl'
-        ? 'بوليصة الشحن'
+        ? 'بولیصة الشحن'
         : 'SHIPPING LABEL'
       : normalized.format === 'thermal-80mm'
         ? normalized.template.companyName
-        : direction === 'rtl'
-          ? 'فاتورة'
-          : 'INVOICE';
+        : normalized.documentKind === 'invoice'
+          ? direction === 'rtl'
+            ? 'فاتورة'
+            : 'INVOICE'
+          : direction === 'rtl'
+            ? 'مستند'
+            : 'DOCUMENT';
   page.drawText(rtlText(title, direction), {
     x: direction === 'rtl' ? margin : margin,
     y,
@@ -554,22 +574,139 @@ export const generateDocumentBatch = async (
       });
     }
   }
-  const merged = await PDFDocument.create();
-  for (const document of documents) {
-    const source = await PDFDocument.load(document.bytes);
-    const pages = await merged.copyPages(source, source.getPageIndices());
-    pages.forEach((page) => merged.addPage(page));
-  }
-  merged.setTitle('Woo Ops document batch');
-  merged.setCreationDate(new Date(0));
-  merged.setModificationDate(new Date(0));
-  const mergedPdf = pdfBytes(await merged.save({ useObjectStreams: false, addDefaultPage: false }));
+  const mergedPdf = await mergeDocumentPdfs(documents.map((document) => document.bytes));
   return {
     documents,
     failures,
     mergedPdf,
     checksum: createHash('sha256').update(mergedPdf).digest('hex'),
   };
+};
+
+/** Merge already-rendered PDFs without re-reading mutable order or template data. */
+export const mergeDocumentPdfs = async (documents: readonly Uint8Array[]): Promise<Uint8Array> => {
+  if (!Array.isArray(documents) || documents.length > MAX_BATCH_DOCUMENTS)
+    throw new Error('DOCUMENT_BATCH_SIZE_INVALID');
+  const merged = await PDFDocument.create();
+  for (const bytes of documents) {
+    if (!(bytes instanceof Uint8Array) || bytes.length < 1 || bytes.length > MAX_ZIP_ENTRY_BYTES)
+      throw new Error('DOCUMENT_FILE_SIZE_INVALID');
+    const source = await PDFDocument.load(bytes);
+    const pages = await merged.copyPages(source, source.getPageIndices());
+    pages.forEach((page) => merged.addPage(page));
+  }
+  merged.setTitle('Woo Ops document batch');
+  merged.setCreationDate(new Date(0));
+  merged.setModificationDate(new Date(0));
+  return pdfBytes(await merged.save({ useObjectStreams: false, addDefaultPage: false }));
+};
+
+const zipName = (name: string): Uint8Array => {
+  if (
+    typeof name !== 'string' ||
+    name.length < 1 ||
+    name.length > 180 ||
+    /[\u0000-\u001f\u007f]/u.test(name) ||
+    name.startsWith('/') ||
+    name.includes('\\') ||
+    name.split('/').some((part) => part === '' || part === '.' || part === '..')
+  )
+    throw new Error('DOCUMENT_ZIP_ENTRY_INVALID');
+  return new TextEncoder().encode(name);
+};
+
+const crc32 = (bytes: Uint8Array): number => {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+};
+
+const writeU16 = (view: DataView, offset: number, value: number): void =>
+  view.setUint16(offset, value, true);
+const writeU32 = (view: DataView, offset: number, value: number): void =>
+  view.setUint32(offset, value >>> 0, true);
+
+/** Create a deterministic, path-safe, uncompressed ZIP suitable for private download bundles. */
+export const createZipArchive = (entries: readonly ZipEntry[]): Uint8Array => {
+  if (!Array.isArray(entries) || entries.length < 1 || entries.length > MAX_ZIP_ENTRIES)
+    throw new Error('DOCUMENT_ZIP_ENTRY_COUNT_INVALID');
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let localOffset = 0;
+  let totalSize = 0;
+  const names = new Set<string>();
+  for (const entry of entries) {
+    if (!entry || names.has(entry.name)) throw new Error('DOCUMENT_ZIP_ENTRY_INVALID');
+    names.add(entry.name);
+    const name = zipName(entry.name);
+    const bytes = entry.bytes;
+    if (!(bytes instanceof Uint8Array) || bytes.length > MAX_ZIP_ENTRY_BYTES)
+      throw new Error('DOCUMENT_ZIP_ENTRY_SIZE_INVALID');
+    totalSize += bytes.length;
+    if (totalSize > MAX_ZIP_BYTES) throw new Error('DOCUMENT_ZIP_SIZE_INVALID');
+    const crc = crc32(bytes);
+    const localHeader = new Uint8Array(30 + name.length);
+    const localView = new DataView(localHeader.buffer);
+    writeU32(localView, 0, 0x04034b50);
+    writeU16(localView, 4, 20);
+    writeU16(localView, 6, 0x800);
+    writeU16(localView, 8, 0);
+    writeU16(localView, 10, 0);
+    writeU16(localView, 12, 0);
+    writeU32(localView, 14, crc);
+    writeU32(localView, 18, bytes.length);
+    writeU32(localView, 22, bytes.length);
+    writeU16(localView, 26, name.length);
+    writeU16(localView, 28, 0);
+    localHeader.set(name, 30);
+    localParts.push(localHeader, bytes);
+
+    const centralHeader = new Uint8Array(46 + name.length);
+    const centralView = new DataView(centralHeader.buffer);
+    writeU32(centralView, 0, 0x02014b50);
+    writeU16(centralView, 4, 20);
+    writeU16(centralView, 6, 20);
+    writeU16(centralView, 8, 0x800);
+    writeU16(centralView, 10, 0);
+    writeU16(centralView, 12, 0);
+    writeU16(centralView, 14, 0);
+    writeU32(centralView, 16, crc);
+    writeU32(centralView, 20, bytes.length);
+    writeU32(centralView, 24, bytes.length);
+    writeU16(centralView, 28, name.length);
+    writeU16(centralView, 30, 0);
+    writeU16(centralView, 32, 0);
+    writeU16(centralView, 34, 0);
+    writeU16(centralView, 36, 0);
+    writeU32(centralView, 38, 0);
+    writeU32(centralView, 42, localOffset);
+    centralHeader.set(name, 46);
+    centralParts.push(centralHeader);
+    localOffset += localHeader.length + bytes.length;
+  }
+  const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  writeU32(endView, 0, 0x06054b50);
+  writeU16(endView, 8, entries.length);
+  writeU16(endView, 10, entries.length);
+  writeU32(endView, 12, centralSize);
+  writeU32(endView, 16, localOffset);
+  const output = new Uint8Array(localOffset + centralSize + end.length);
+  let offset = 0;
+  for (const part of localParts) {
+    output.set(part, offset);
+    offset += part.length;
+  }
+  for (const part of centralParts) {
+    output.set(part, offset);
+    offset += part.length;
+  }
+  output.set(end, offset);
+  return output;
 };
 
 export const documentPageSize = (

@@ -261,6 +261,33 @@ editing old export batches.
 Safe template identity plus immutable HTML/CSS/token contract versions. No arbitrary remote script,
 network fetch, or executable template expression.
 
+### documentIdentityPolicies, documentBatches, documentBatchItems, and documentArtifacts
+
+SQLite migration 19 adds the durable batch/document boundary:
+
+- `document_identity_policies` stores the local invoice numbering switch, safe prefix, next
+  sequence, and administrator-supplied external approval reference. Legal invoice mode is rejected
+  unless numbering and the approval reference are both configured; this is a policy boundary, not
+  legal or tax approval.
+- `document_batches` pins the account, selection, template ID/version, complete template snapshot,
+  physical format, action, deterministic idempotency key, aggregate snapshot hash, progress counts,
+  durable job ID, and artifact IDs. Creation snapshots no more than 500 authenticated orders in one
+  transaction, so later remote/local edits cannot change an in-flight document.
+- `document_batch_items` stores each immutable canonical order snapshot and hash, zero-based stable
+  position, optional reserved invoice number, attempt/status/error, and the checksum-bound order PDF
+  artifact ID. A worker lease recovery re-queues only items left running and keeps successful items
+  reusable.
+- `document_artifacts` stores account/batch/order ownership, template version, format, artifact kind
+  (`order-pdf`, `merged-pdf`, `zip`, or `manifest`), private relative path, safe filename, MIME,
+  bounded byte size, content checksum, source snapshot hash, and actor/timestamp metadata. Files
+  remain outside SQLite and outside the public web root; every download rechecks the private path
+  chain and checksum.
+
+Required indexes include account/status/update order for batch lists, account/batch/status/position
+for bounded worker claims, and account/batch/order lookups for artifact lists and authorization.
+Merged PDFs, ZIP bundles, and JSON manifests are derived artifacts; per-order PDFs remain available
+when a batch is partial. Retry creates a new job attempt without mutating old artifact records.
+
 ### documentSequences
 
 Atomic counter per approved sequence scope. Counter increments are irreversible; gaps are recorded
