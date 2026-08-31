@@ -18,6 +18,13 @@ const version = {
 };
 
 async function mockExports(page: Page) {
+  await page.route('**/api/v1/auth/session', async (route: Route) => {
+    await route.fulfill({
+      json: {
+        user: { id: 'user-1', accountId: 'account-1', email: 'admin@example.test', role: 'admin' },
+      },
+    });
+  });
   await page.route('**/api/v1/orders/query', async (route: Route) => {
     await route.fulfill({ json: { items: [], nextCursor: null, hasMore: false, totalCount: 0 } });
   });

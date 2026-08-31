@@ -44,7 +44,7 @@ const otherContext = {
 };
 
 test('cost rules are effective-dated and analytics facts rebuild deterministically', () => {
-  assert.equal(schemaVersion, 19);
+  assert.equal(schemaVersion, 20);
   store.createCostRule(context, {
     scope: 'product',
     key: 'p1',
@@ -123,6 +123,45 @@ test('cost rules are effective-dated and analytics facts rebuild deterministical
   assert.equal(store.getAnalyticsSummary(context, { status: 'new' }).currencies.length, 1);
   assert.equal(store.getAnalyticsBreakdown(context, { dimension: 'product' }).items[0].key, 'p1');
   assert.equal(store.getAnalyticsTimeseries(context, { source: 'manual' }).items.length, 1);
+  const firstOverride = store.createCostOverride(context, order.id, {
+    lineId: 'manual-line-1',
+    currency: 'EGP',
+    unitCostMinor: '800',
+    reason: 'Supplier correction',
+  });
+  const secondOverride = store.createCostOverride(context, order.id, {
+    lineId: 'manual-line-1',
+    currency: 'EGP',
+    unitCostMinor: '900',
+    reason: 'Final invoice received',
+  });
+  assert.notEqual(firstOverride.id, secondOverride.id);
+  assert.equal(store.listCostOverrides(context, order.id).length, 2);
+  assert.throws(
+    () =>
+      store.db
+        .prepare(
+          'INSERT INTO order_cost_overrides (id, account_id, order_id, line_id, currency, unit_cost_minor, reason, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(
+          randomUUID(),
+          accountId,
+          order.id,
+          'manual-line-1',
+          'EGP',
+          '1x',
+          'invalid fixture',
+          actorId,
+          now,
+        ),
+    /CHECK constraint failed/,
+  );
+  store.rebuildAnalyticsFacts(context, { source: 'manual' });
+  assert.equal(
+    store.getAnalyticsSummary(context, { source: 'manual' }).currencies[0].totals.cogsMinor,
+    '1800',
+  );
+  assert.throws(() => store.listCostOverrides(otherContext, order.id), /ORDER_NOT_FOUND/);
   assert.equal(
     store.getAnalyticsBreakdown(context, { source: 'manual', dimension: 'source' }).items[0].key,
     'manual',

@@ -9,6 +9,7 @@ export const DURABLE_JOB_TYPES = [
   'export.generate',
   'document.generate',
   'analytics.rebuild',
+  'field-mapping.backfill',
   'backup.create',
   'maintenance',
 ] as const;

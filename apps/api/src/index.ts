@@ -32,9 +32,13 @@ import {
   documentJobListSchema,
   documentIdentityPolicyUpdateSchema,
   analyticsFilterSchema,
+  analyticsRebuildSchema,
   analyticsBreakdownSchema,
   costRuleCreateSchema,
   costRuleUpdateSchema,
+  costOverrideCreateSchema,
+  fieldMappingCreateSchema,
+  fieldMappingBackfillSchema,
   healthResponseSchema,
   accountUpdateSchema,
   memberRoleUpdateSchema,
@@ -45,6 +49,7 @@ import {
   passwordResetConfirmSchema,
   sessionTargetSchema,
   operationJobListSchema,
+  maintenanceJobCreateSchema,
   connectionSyncRequestSchema,
   connectionRotateSchema,
   connectionWebhookSecretSchema,
@@ -409,6 +414,7 @@ const operationJobInput = (value: {
     | 'export.generate'
     | 'document.generate'
     | 'analytics.rebuild'
+    | 'field-mapping.backfill'
     | 'backup.create'
     | 'maintenance'
     | undefined;
@@ -910,6 +916,97 @@ app.get('/api/v1/connections/:connectionId', (request, response) => {
         request.params.connectionId,
       ),
     });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/operations/maintenance', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = maintenanceJobCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'MAINTENANCE_INPUT_INVALID', 'Maintenance input is invalid');
+    return;
+  }
+  try {
+    const context = operationContext(user, response);
+    const job = store.enqueueJob(context, {
+      id: randomUUID(),
+      type: 'maintenance',
+      idempotencyKey: parsed.data.idempotencyKey,
+      payload: {},
+      maxAttempts: 3,
+    });
+    response.status(202).json({ job: store.getJob(context, job.id) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/connections/:connectionId/fields', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    const context = operationContext(user, response);
+    response.json({
+      catalog: store.listFieldCatalog(context, request.params.connectionId),
+      mappings: store.listFieldMappings(context, request.params.connectionId),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.put('/api/v1/connections/:connectionId/field-mappings', (request, response) => {
+  const user = requireConnectionAdmin(request, response);
+  if (!user) return;
+  const parsed = fieldMappingCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'FIELD_MAPPING_INPUT_INVALID', 'Field mapping is invalid');
+    return;
+  }
+  try {
+    const input = parsed.data;
+    const mapping = store.createFieldMapping(operationContext(user, response), {
+      connectionId: request.params.connectionId,
+      sourceKey: input.sourceKey,
+      label: input.label,
+      type: input.type,
+      ...(input.targetFacet === undefined ? {} : { targetFacet: input.targetFacet }),
+    });
+    response.status(201).json({ mapping });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/connections/:connectionId/field-mappings/backfill', (request, response) => {
+  const user = requireConnectionAdmin(request, response);
+  if (!user) return;
+  const parsed = fieldMappingBackfillSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(
+      response,
+      400,
+      'FIELD_MAPPING_BACKFILL_INPUT_INVALID',
+      'Backfill input is invalid',
+    );
+    return;
+  }
+  try {
+    const context = operationContext(user, response);
+    const mapping = store
+      .listFieldMappings(context, request.params.connectionId)
+      .find((item) => item.id === parsed.data.mappingId);
+    if (!mapping) throw new Error('FIELD_MAPPING_NOT_FOUND');
+    const idempotencyKey =
+      parsed.data.idempotencyKey ??
+      `field-mapping:${request.params.connectionId}:${mapping.id}:${randomUUID()}`;
+    const job = store.enqueueJob(context, {
+      id: randomUUID(),
+      type: 'field-mapping.backfill',
+      idempotencyKey,
+      payload: { mappingId: mapping.id },
+      maxAttempts: 5,
+    });
+    response.status(202).json({ job: store.getJob(context, job.id), mapping });
   } catch (error) {
     sendOperationError(response, error);
   }
@@ -2510,6 +2607,37 @@ app.post('/api/v1/analytics/breakdown', (request, response) => {
     sendOperationError(response, error);
   }
 });
+app.get('/api/v1/orders/:orderId/cost-overrides', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({
+      items: store.listCostOverrides(operationContext(user, response), request.params.orderId),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/orders/:orderId/cost-overrides', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = costOverrideCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'COST_OVERRIDE_INPUT_INVALID', 'Cost override is invalid');
+    return;
+  }
+  try {
+    response.status(201).json({
+      override: store.createCostOverride(
+        operationContext(user, response),
+        request.params.orderId,
+        parsed.data,
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
 app.get('/api/v1/cost-rules', (request, response) => {
   const user = authenticatedUser(request, response);
   if (!user) return;
@@ -2577,17 +2705,29 @@ app.patch('/api/v1/cost-rules/:ruleId', (request, response) => {
 app.post('/api/v1/analytics/rebuilds', (request, response) => {
   const user = requireOperationWrite(request, response);
   if (!user) return;
-  const parsed = analyticsFilterSchema.safeParse(request.body ?? {});
+  const parsed = analyticsRebuildSchema.safeParse(request.body ?? {});
   if (!parsed.success) {
     sendApiError(response, 400, 'ANALYTICS_INPUT_INVALID', 'Analytics rebuild input is invalid');
     return;
   }
   try {
+    const context = operationContext(user, response);
+    const filter = analyticsFilterInput(parsed.data);
+    const requestKey = parsed.data.idempotencyKey ?? randomUUID();
+    const scopeHash = createHash('sha256')
+      .update(JSON.stringify(filter))
+      .digest('hex')
+      .slice(0, 32);
+    const job = store.enqueueJob(context, {
+      id: randomUUID(),
+      type: 'analytics.rebuild',
+      idempotencyKey: `analytics:${scopeHash}:${requestKey}`,
+      payload: filter,
+      maxAttempts: 3,
+    });
     response.status(202).json({
-      rebuild: store.rebuildAnalyticsFacts(
-        operationContext(user, response),
-        analyticsFilterInput(parsed.data),
-      ),
+      job: store.getJob(context, job.id),
+      freshness: store.getAnalyticsSummary(context, filter).freshness,
     });
   } catch (error) {
     sendOperationError(response, error);

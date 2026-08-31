@@ -160,12 +160,42 @@ export const createApiJobRunner = (
   runner.register('document.generate', requiredEffect('DOCUMENT', options.effects?.document));
 
   runner.register('analytics.rebuild', async (job, context) => {
-    store.rebuildAnalyticsFactsForWorker(workerContext(job, context), analyticsFilter(job.payload));
+    const account = workerContext(job, context);
+    const filter = analyticsFilter(job.payload);
+    const total = store.getAnalyticsOrderCountForWorker(account, filter);
+    await context.reportProgress(0);
+    store.rebuildAnalyticsFactsForWorker(account, filter, (processed) => {
+      const progress = total === 0 ? 100 : Math.min(99, Math.floor((processed / total) * 100));
+      void context.reportProgress(progress);
+    });
+    await context.reportProgress(100);
+  });
+
+  runner.register('field-mapping.backfill', async (job, context) => {
+    if (!isRecord(job.payload)) throw new Error('FIELD_MAPPING_JOB_PAYLOAD_INVALID');
+    const mappingId = requiredString(job.payload.mappingId, 'FIELD_MAPPING_JOB_PAYLOAD_INVALID');
+    const account = workerContext(job, context);
+    const total = store.getFieldMappingOrderCountForWorker(account, mappingId);
+    let cursor: string | null = null;
+    let processed = 0;
+    await context.reportProgress(0);
+    for (;;) {
+      if (await context.isCancellationRequested()) return;
+      const page = store.backfillFieldMapping(account, mappingId, cursor, 100);
+      processed += page.processed;
+      cursor = page.nextCursor;
+      await context.reportProgress(
+        cursor === null || total === 0 ? 100 : Math.min(99, Math.floor((processed / total) * 100)),
+      );
+      if (cursor === null) break;
+    }
   });
 
   runner.register('backup.create', requiredEffect('BACKUP', options.effects?.backup));
   runner.register('maintenance', async (_job, context) => {
+    await context.reportProgress(0);
     await store.recoverExpiredJobsAny(context.correlationId);
+    await context.reportProgress(100);
   });
 
   return runner;

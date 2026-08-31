@@ -297,6 +297,31 @@ export const costRuleUpdateSchema = z
     effectiveTo: z.string().datetime({ offset: true }).nullable().optional(),
   })
   .strict();
+export const analyticsRebuildSchema = analyticsFilterSchema
+  .extend({ idempotencyKey: z.string().trim().min(1).max(200).optional() })
+  .strict();
+export const costOverrideCreateSchema = z
+  .object({
+    lineId: z.string().trim().min(1).max(256),
+    currency: z.string().regex(/^[A-Za-z]{3}$/),
+    unitCostMinor: z.string().regex(/^(?:0|[1-9]\d{0,17})$/),
+    reason: z.string().trim().min(1).max(500),
+  })
+  .strict();
+export const fieldMappingCreateSchema = z
+  .object({
+    sourceKey: z.string().trim().min(1).max(256),
+    label: z.string().trim().min(1).max(120),
+    type: z.enum(['text', 'number', 'money', 'boolean', 'date', 'enum', 'entity']),
+    targetFacet: z.string().trim().min(1).max(120).optional(),
+  })
+  .strict();
+export const fieldMappingBackfillSchema = z
+  .object({
+    mappingId: z.string().trim().min(1).max(256),
+    idempotencyKey: z.string().trim().min(1).max(200).optional(),
+  })
+  .strict();
 const manualJsonObjectSchema = z.record(z.string(), z.unknown());
 const manualLineSchema = z
   .object({
@@ -405,6 +430,7 @@ export const durableJobTypeSchema = z.enum([
   'export.generate',
   'document.generate',
   'analytics.rebuild',
+  'field-mapping.backfill',
   'backup.create',
   'maintenance',
 ]);
@@ -422,6 +448,9 @@ export const operationJobListSchema = z
     status: durableJobStatusSchema.optional(),
     type: durableJobTypeSchema.optional(),
   })
+  .strict();
+export const maintenanceJobCreateSchema = z
+  .object({ idempotencyKey: z.string().trim().min(1).max(200) })
   .strict();
 
 export const wooCredentialSchema = z
