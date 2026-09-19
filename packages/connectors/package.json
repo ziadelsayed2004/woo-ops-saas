@@ -17,7 +17,7 @@
     "test:security": "node --test tests/security.test.js",
     "test:contract": "node --test tests/*.test.js"
   },
-  "devDependencies": {
+  "dependencies": {
     "@types/node": "^22.18.0"
   }
 }

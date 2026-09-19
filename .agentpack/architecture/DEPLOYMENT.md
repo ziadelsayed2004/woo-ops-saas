@@ -14,13 +14,21 @@ npm run start --workspace=@woo-ops/api
 ```
 
 Hostinger uses Node.js 22.x and its application manager with `apps/api/dist/index.js` as the entry
-file from the repository root. Set the build command to
-`npm ci --include=dev && npm run build` and output directory to `.`; `--include=dev` is required
-because TypeScript and Vite are build-time dependencies. Persistence uses Node's built-in
-`node:sqlite`, with no node-gyp/Python/GLIBC-specific addon. The application opens SQLite and applies
+file from the repository root. Set the build command to `npm run build` and output directory to `.`.
+Hostinger installs production dependencies automatically before this command; TypeScript, Vite and
+the type packages required to compile the deployable application are intentionally production build
+dependencies. Browser-test and formatting tools remain development-only. Persistence uses Node's
+built-in `node:sqlite`, with no node-gyp/Python/GLIBC-specific addon. The application opens SQLite and applies
 migrations during startup, so a separate build-time migration is not required. Keep
 `WOO_OPS_DATA_DIR` outside the public web root. HTTP requests remain bounded;
 long work is durable and resumed from SQLite.
+
+Reproduce Hostinger's install/build boundary before deployment:
+
+```text
+npm ci --omit=dev
+npm run build
+```
 
 Required production environment:
 
