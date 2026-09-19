@@ -1053,7 +1053,7 @@
       "estimate": "XL",
       "parallelGroup": "production-design-audit",
       "dependencies": ["T0815"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/TESTING.md", ".agentpack/architecture/DEPLOYMENT.md", "README.md", "template/template.main/client/src/theme/ThemeConfig.jsx", "template/template.main/client/src/theme/ThemeConfig.css", "template/template.main/client/src/layouts/MainLayout.jsx", "template/template.main/client/src/styles/MainLayout.css", "template/template.main/client/src/styles/variables.css"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/TESTING.md", ".agentpack/architecture/DEPLOYMENT.md", "README.md"],
       "scope": [
         "Audit the shipped web and API implementation against the PRD, architecture, tests and actual runtime behavior, fixing reproducible locally actionable defects without weakening account isolation or read-only Woo connector direction",
         "Extract the visual language, theme tokens, responsive top bar, collapsible sidebar, RTL/LTR behavior, navigation grouping and content distribution from the supplied template and implement them as typed reusable Material UI primitives for Woo Ops",
@@ -1152,7 +1152,7 @@
       "estimate": "XL",
       "parallelGroup": "onboarding-shell-cleanup",
       "dependencies": ["T0819"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DEPLOYMENT.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/TESTING.md", "README.md", ".env.example", "apps/web/src/App.tsx", "apps/web/src/AdminWorkspaces.tsx", "apps/web/src/main.tsx", "apps/api/src/index.ts", "apps/api/src/auth.ts", "template/template.main/client/src/theme/ThemeConfig.jsx", "template/template.main/client/src/theme/ThemeConfig.css", "template/template.main/client/src/layouts/MainLayout.jsx", "template/template.main/client/src/styles/MainLayout.css", "template/template.main/client/src/styles/variables.css"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DEPLOYMENT.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/TESTING.md", "README.md", ".env.example", "apps/web/src/App.tsx", "apps/web/src/AdminWorkspaces.tsx", "apps/web/src/main.tsx", "apps/api/src/index.ts", "apps/api/src/auth.ts"],
       "scope": [
         "Make first-owner registration, login, session recovery and WooCommerce authorization a clear production onboarding journey with successful callback redirect and actionable errors",
         "Replace the crowded top navigation with a professional responsive Material UI shell derived from the supplied template, including desktop sidebar, mobile drawer, grouped navigation, RTL/LTR and polished login/connect states",
