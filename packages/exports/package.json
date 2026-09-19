@@ -17,9 +17,7 @@
     "test:golden": "node --test tests/*.test.js"
   },
   "dependencies": {
+    "@types/node": "22.0.0",
     "exceljs": "4.4.0"
-  },
-  "devDependencies": {
-    "@types/node": "22.0.0"
   }
 }

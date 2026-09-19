@@ -19,12 +19,10 @@
   },
   "dependencies": {
     "@pdf-lib/fontkit": "1.1.1",
+    "@types/node": "22.0.0",
+    "@types/qrcode": "1.5.5",
     "bwip-js": "4.5.1",
     "pdf-lib": "1.17.1",
     "qrcode": "1.5.4"
-  },
-  "devDependencies": {
-    "@types/node": "22.0.0",
-    "@types/qrcode": "1.5.5"
   }
 }
