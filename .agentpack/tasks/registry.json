@@ -1267,6 +1267,32 @@
         "Redundant navigation is removed or renamed without deleting supported backend capabilities"
       ],
       "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "git diff --check"]
+    },
+    {
+      "id": "T0904",
+      "epic": "E09",
+      "title": "Finish single-store Woo operations with real catalog facets and export workflow",
+      "type": "feat",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "XL",
+      "parallelGroup": "single-store-production",
+      "dependencies": ["T0903"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/SYNC_AND_CONNECTORS.md", ".agentpack/architecture/TESTING.md", "apps/web/src/App.tsx", "apps/web/src/AdminWorkspaces.tsx", "apps/api/src/index.ts", "apps/api/src/woo-sync.ts", "packages/connectors/src/woocommerce.ts", "packages/persistence/src/index.ts"],
+      "scope": [
+        "Repair real Woo catalog synchronization endpoints and resumable initial sync for products, variations, categories, tags and shipping classes",
+        "Replace free-text order and analytics facets with searchable selections populated from account-scoped Woo-derived data, emphasizing status, governorate, product, category, payment and shipping",
+        "Expose remote Woo export metadata read-only when discoverable and provide an explicit local shipping export workflow that never mutates WooCommerce",
+        "Simplify the shell and copy for one merchant installation while keeping reusable internal boundaries suitable for a later Electron wrapper"
+      ],
+      "acceptance": [
+        "A standard Woo REST v3 store completes catalog then order sync without the current taxonomy 404 and shows products, variations, prices, stock and categories",
+        "Order filters are concise, searchable and populated from real account data including Woo statuses and normalized shipping governorate",
+        "Operators can filter and locally change shipping export readiness/history while Woo-provided export metadata remains visibly read-only",
+        "Woo-only analytics rebuild from synchronized orders and present non-empty per-currency financial facts when eligible orders exist",
+        "Primary UI describes one store/account and retains no broken or redundant multi-store workflow"
+      ],
+      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "git diff --check"]
     }
   ]
 }
