@@ -22,10 +22,13 @@ The API listens on `http://localhost:3000`; health is available at `/health`.
 
 ## Hostinger deployment
 
-Create a Node.js application and set its start command to `node apps/api/dist/index.js` from the
-repository root (or `node dist/index.js` when the application root is `apps/api`). Set
-`WOO_OPS_DATA_DIR` to a writable directory outside the public web root, configure production secrets
-from `.env.example`, run `npm run db:migrate`, and expose `/health` as the health check. The API serves
+Create a Node.js 18.x application with repository root `./`, build command `npm run build`, output
+directory `.`, and entry file `apps/api/dist/index.js`. Do not define `PORT`; Hostinger injects it.
+The project pins `better-sqlite3` 8.2.0 because later native prebuilds require a newer GLIBC than the
+shared hosting image provides. Set `WOO_OPS_DATA_DIR` to a writable private directory outside the
+public web root, configure production secrets from `.env.example`, and expose `/health` as the health
+check. The database schema is migrated when the API opens it; `npm run db:migrate` remains available
+for an explicit one-off migration from the application terminal. The API serves
 the built Vite application from `apps/web/dist`; set `WOO_OPS_WEB_DIST_DIR` when Hostinger uses a
 different working directory. Optional Cron can invoke bounded maintenance for jobs and backups.
 Backups include the SQLite snapshot and private generated files, with checksum manifests and dry-run

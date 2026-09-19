@@ -261,7 +261,7 @@ SQL fragments, JavaScript expressions, field paths, or regular expressions.
 - Session rotation, CSRF protection, origin checks, rate limiting, and secure cookie defaults.
 - Private filesystem permissions and time-limited signed file URLs.
 - Configurable PII retention and redacted logs.
-- Dependency, secret, and container scanning in CI.
+- Dependency, secret, and static scanning in CI.
 
 ### Accessibility and localization
 

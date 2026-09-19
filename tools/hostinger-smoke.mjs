@@ -1,8 +1,21 @@
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+const rootPackage = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+const lockfile = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+const sqlitePackages = Object.entries(lockfile.packages ?? {}).filter(([path]) =>
+  path.endsWith('node_modules/better-sqlite3'),
+);
+if (rootPackage.engines?.node !== '>=18 <23') throw new Error('HOSTINGER_NODE_ENGINE_NOT_PINNED');
+if (
+  sqlitePackages.length === 0 ||
+  sqlitePackages.some(([, metadata]) => metadata.version !== '8.2.0')
+)
+  throw new Error('HOSTINGER_SQLITE_BINARY_NOT_COMPATIBLE');
 
 const runNode = (args, env) => {
   const result = spawnSync(process.execPath, args, {
