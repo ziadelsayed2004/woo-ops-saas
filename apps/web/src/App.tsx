@@ -830,6 +830,28 @@ const formatMinor = (value: unknown, currency: string, locale: Locale): string =
   }
 };
 
+function MoneyValue({
+  value,
+  currency,
+  locale,
+  fontWeight,
+}: {
+  value: unknown;
+  currency: string;
+  locale: Locale;
+  fontWeight?: number;
+}) {
+  return (
+    <Box
+      component="span"
+      dir="ltr"
+      sx={{ display: 'inline-block', unicodeBidi: 'isolate', fontWeight }}
+    >
+      {formatMinor(value, currency, locale)}
+    </Box>
+  );
+}
+
 const orderCustomerName = (order: Order): string => {
   const billing = asRecord(order.billing);
   return `${valueText(billing.first_name, '')} ${valueText(billing.last_name, '')}`.trim() || '—';
@@ -1105,8 +1127,19 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
               {t.currencySeparated}
             </Typography>
           </Stack>
-          <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} flexWrap="wrap">
-            <FormControl size="small" sx={{ minWidth: 180 }}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                sm: 'repeat(2, minmax(0, 1fr))',
+                lg: 'repeat(3, minmax(180px, 1fr))',
+              },
+              gap: 2,
+              '& .MuiFormControl-root': { width: '100%', minWidth: 0 },
+            }}
+          >
+            <FormControl size="small">
               <InputLabel id="analytics-source-label">{t.analyticsSource}</InputLabel>
               <Select
                 labelId="analytics-source-label"
@@ -1148,7 +1181,7 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
               value={filters.store}
               onChange={(event) => updateFilter('store', event.target.value)}
             />
-            <FormControl size="small" sx={{ minWidth: 160 }}>
+            <FormControl size="small">
               <InputLabel id="analytics-status-label">{t.statusFilter}</InputLabel>
               <Select
                 labelId="analytics-status-label"
@@ -1162,8 +1195,19 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                 <MenuItem value="cancelled">cancelled</MenuItem>
               </Select>
             </FormControl>
-          </Stack>
-          <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} flexWrap="wrap">
+          </Box>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                sm: 'repeat(2, minmax(0, 1fr))',
+                lg: 'repeat(4, minmax(180px, 1fr))',
+              },
+              gap: 2,
+              '& .MuiFormControl-root': { width: '100%', minWidth: 0 },
+            }}
+          >
             <TextField
               size="small"
               label={t.shippingFilter}
@@ -1188,7 +1232,9 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
               value={filters.author}
               onChange={(event) => updateFilter('author', event.target.value)}
             />
-            <Button type="submit" variant="contained" disabled={loading}>
+          </Box>
+          <Stack direction="row" gap={1.5} justifyContent="flex-end" flexWrap="wrap">
+            <Button type="submit" variant="contained" disabled={loading} sx={{ minWidth: 140 }}>
               {loading ? <CircularProgress size={18} aria-label={t.loading} /> : t.applyFilters}
             </Button>
             <Button
@@ -1239,11 +1285,11 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                           {t.revenue}
                         </Typography>
                         <Typography variant="h5" component="div" fontWeight={800}>
-                          {formatMinor(
-                            currency.totals.collectedRevenueMinor,
-                            currency.currency,
-                            locale,
-                          )}
+                          <MoneyValue
+                            value={currency.totals.collectedRevenueMinor}
+                            currency={currency.currency}
+                            locale={locale}
+                          />
                         </Typography>
                       </Box>
                       <Box flex={1} data-testid="analytics-profit">
@@ -1256,11 +1302,11 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                           fontWeight={800}
                           color="success.main"
                         >
-                          {formatMinor(
-                            currency.totals.contributionProfitMinor,
-                            currency.currency,
-                            locale,
-                          )}
+                          <MoneyValue
+                            value={currency.totals.contributionProfitMinor}
+                            currency={currency.currency}
+                            locale={locale}
+                          />
                         </Typography>
                       </Box>
                     </Stack>
@@ -1344,13 +1390,11 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                           <TableCell dir="ltr">{item.date}</TableCell>
                           <TableCell>
                             <Stack gap={0.5}>
-                              <span>
-                                {formatMinor(
-                                  item.totals.collectedRevenueMinor,
-                                  item.currency,
-                                  locale,
-                                )}
-                              </span>
+                              <MoneyValue
+                                value={item.totals.collectedRevenueMinor}
+                                currency={item.currency}
+                                locale={locale}
+                              />
                               <LinearProgress
                                 variant="determinate"
                                 value={Math.min(width, 100)}
@@ -1359,11 +1403,11 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                             </Stack>
                           </TableCell>
                           <TableCell>
-                            {formatMinor(
-                              item.totals.contributionProfitMinor,
-                              item.currency,
-                              locale,
-                            )}
+                            <MoneyValue
+                              value={item.totals.contributionProfitMinor}
+                              currency={item.currency}
+                              locale={locale}
+                            />
                           </TableCell>
                           <TableCell>{item.orderCount}</TableCell>
                         </TableRow>
@@ -1423,10 +1467,18 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                     <TableCell>{item.key}</TableCell>
                     <TableCell>{item.currency}</TableCell>
                     <TableCell>
-                      {formatMinor(item.totals.collectedRevenueMinor, item.currency, locale)}
+                      <MoneyValue
+                        value={item.totals.collectedRevenueMinor}
+                        currency={item.currency}
+                        locale={locale}
+                      />
                     </TableCell>
                     <TableCell>
-                      {formatMinor(item.totals.contributionProfitMinor, item.currency, locale)}
+                      <MoneyValue
+                        value={item.totals.contributionProfitMinor}
+                        currency={item.currency}
+                        locale={locale}
+                      />
                     </TableCell>
                     <TableCell>{item.orderCount}</TableCell>
                   </TableRow>
@@ -2249,7 +2301,12 @@ function ManualOrderForm({
   const selectCatalogProduct = (id: string) => {
     setSelectedCatalogId(id);
     const item = catalog.find((candidate) => candidate.id === id);
-    if (!item) return;
+    if (!item) {
+      setProductName('');
+      setProductSku('');
+      setUnitPriceMinor('0');
+      return;
+    }
     setProductName(item.name);
     setProductSku(item.sku ?? '');
     const match = /^(\d+)(?:\.(\d{1,2}))?$/u.exec(item.price ?? '');
@@ -2262,7 +2319,7 @@ function ManualOrderForm({
       config?.rates.find((candidate) => candidate.governorate === value)?.amountMinor ?? '0',
     );
   };
-  const total = useMemo(() => {
+  const totalMinor = useMemo(() => {
     try {
       const subtotal = BigInt(unitPriceMinor || '0') * BigInt(quantity || '0');
       const value =
@@ -2271,20 +2328,14 @@ function ManualOrderForm({
         BigInt(taxMinor || '0') +
         BigInt(shippingMinor || '0') +
         BigInt(feesMinor || '0');
-      return formatMinor(value.toString(), currency.toUpperCase(), locale);
+      return value.toString();
     } catch {
-      return '—';
+      return '0';
     }
-  }, [
-    currency,
-    discountMinor,
-    feesMinor,
-    locale,
-    quantity,
-    shippingMinor,
-    taxMinor,
-    unitPriceMinor,
-  ]);
+  }, [discountMinor, feesMinor, quantity, shippingMinor, taxMinor, unitPriceMinor]);
+  const shippingRatesConfigured = (config?.rates.length ?? 0) > 0;
+  const selectedCatalogItem =
+    catalog.find((candidate) => candidate.id === selectedCatalogId) ?? null;
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -2385,7 +2436,13 @@ function ManualOrderForm({
         {error && <Alert severity="error">{t.invalidManual}</Alert>}
         {saved && <Alert severity="success">{t.createdManual}</Alert>}
         <Section title={t.customer}>
-          <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
+              gap: 2,
+            }}
+          >
             <TextField
               required
               fullWidth
@@ -2407,55 +2464,103 @@ function ManualOrderForm({
               value={customerPhone}
               onChange={(event) => setCustomerPhone(event.target.value)}
             />
-          </Stack>
-          <TextField
-            required
-            fullWidth
-            sx={{ mt: 2 }}
-            label={t.address}
-            value={address}
-            onChange={(event) => setAddress(event.target.value)}
-          />
-          <FormControl required fullWidth sx={{ mt: 2 }}>
-            <InputLabel id="manual-governorate-label">
-              {locale === 'ar' ? 'المحافظة' : 'Governorate'}
-            </InputLabel>
-            <Select
-              labelId="manual-governorate-label"
-              label={locale === 'ar' ? 'المحافظة' : 'Governorate'}
-              value={governorate}
-              onChange={(event) => selectGovernorate(event.target.value)}
-            >
-              {(config?.rates ?? []).map((rate) => (
-                <MenuItem key={rate.governorate} value={rate.governorate}>
-                  {egyptianGovernorateName(rate.governorate, locale)} ·{' '}
-                  {formatMinor(rate.amountMinor, currency, locale)}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Section>
-        <Section title={t.items}>
-          <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
-            <FormControl required fullWidth>
-              <InputLabel id="manual-product-label">{t.productName}</InputLabel>
+          </Box>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 2fr) minmax(260px, 1fr)' },
+              gap: 2,
+              mt: 2,
+              alignItems: 'start',
+            }}
+          >
+            <TextField
+              required
+              fullWidth
+              label={t.address}
+              value={address}
+              onChange={(event) => setAddress(event.target.value)}
+            />
+            <FormControl required fullWidth disabled={!shippingRatesConfigured}>
+              <InputLabel id="manual-governorate-label">
+                {locale === 'ar' ? 'المحافظة' : 'Governorate'}
+              </InputLabel>
               <Select
-                labelId="manual-product-label"
-                label={t.productName}
-                value={selectedCatalogId}
-                onChange={(event) => selectCatalogProduct(event.target.value)}
+                labelId="manual-governorate-label"
+                label={locale === 'ar' ? 'المحافظة' : 'Governorate'}
+                value={governorate}
+                onChange={(event) => selectGovernorate(event.target.value)}
               >
-                {catalog.map((item) => (
-                  <MenuItem
-                    key={item.id}
-                    value={item.id}
-                    disabled={item.stockStatus === 'outofstock'}
-                  >
-                    {item.name} · {item.price} {currency} {item.sku ? `· ${item.sku}` : ''}
+                {(config?.rates ?? []).map((rate) => (
+                  <MenuItem key={rate.governorate} value={rate.governorate}>
+                    <Stack
+                      direction="row"
+                      justifyContent="space-between"
+                      alignItems="center"
+                      gap={2}
+                      width="100%"
+                    >
+                      <span>{egyptianGovernorateName(rate.governorate, locale)}</span>
+                      <MoneyValue value={rate.amountMinor} currency={currency} locale={locale} />
+                    </Stack>
                   </MenuItem>
                 ))}
               </Select>
             </FormControl>
+          </Box>
+          {config && !shippingRatesConfigured && (
+            <Alert severity="warning" sx={{ mt: 2 }} data-testid="shipping-rates-empty">
+              {locale === 'ar'
+                ? 'أسعار شحن المحافظات غير مضبوطة. أضف WOO_OPS_EGYPT_SHIPPING_RATES_JSON في متغيرات بيئة Hostinger ثم أعد تشغيل التطبيق.'
+                : 'Governorate shipping rates are not configured. Add WOO_OPS_EGYPT_SHIPPING_RATES_JSON to Hostinger environment variables, then restart the app.'}
+            </Alert>
+          )}
+        </Section>
+        <Section title={t.items}>
+          {catalog.length === 0 && config && (
+            <Alert severity="warning" sx={{ mb: 2 }} data-testid="manual-catalog-empty">
+              {locale === 'ar'
+                ? 'لا توجد منتجات مسعّرة متاحة. شغّل مزامنة WooCommerce ثم أعد فتح الطلب اليدوي.'
+                : 'No priced products are available. Run WooCommerce sync, then reopen the manual order.'}
+            </Alert>
+          )}
+          <Autocomplete
+            fullWidth
+            options={catalog}
+            value={selectedCatalogItem}
+            getOptionLabel={(item) => `${item.name}${item.sku ? ` · ${item.sku}` : ''}`}
+            isOptionEqualToValue={(option, value) => option.id === value.id}
+            getOptionDisabled={(item) => item.stockStatus === 'outofstock'}
+            onChange={(_event, item) => selectCatalogProduct(item?.id ?? '')}
+            noOptionsText={locale === 'ar' ? 'لا توجد منتجات مطابقة' : 'No matching products'}
+            renderOption={(props, item) => (
+              <Box component="li" {...props} key={item.id}>
+                <Stack width="100%" gap={0.25}>
+                  <Typography fontWeight={700}>{item.name}</Typography>
+                  <Stack direction="row" justifyContent="space-between" gap={2}>
+                    <Typography variant="caption" color="text.secondary" dir="ltr">
+                      {item.sku || '—'} · {item.stockStatus || 'unknown'}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {item.price} {currency}
+                    </Typography>
+                  </Stack>
+                </Stack>
+              </Box>
+            )}
+            renderInput={(params) => <TextField {...params} required label={t.productName} />}
+          />
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                sm: 'minmax(0, 2fr) repeat(2, minmax(140px, 1fr))',
+              },
+              gap: 2,
+              mt: 2,
+            }}
+          >
             <TextField
               fullWidth
               label={t.productSku}
@@ -2478,21 +2583,27 @@ function ManualOrderForm({
               value={unitPriceMinor}
               InputProps={{ readOnly: true }}
             />
-          </Stack>
+          </Box>
         </Section>
         <Section title={t.finance}>
-          <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
-            <TextField
-              label={t.currency}
-              value={currency}
-              onChange={(event) => setCurrency(event.target.value)}
-            />
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                sm: 'repeat(2, minmax(0, 1fr))',
+                lg: 'repeat(5, minmax(140px, 1fr))',
+              },
+              gap: 2,
+            }}
+          >
+            <TextField label={t.currency} value={currency} InputProps={{ readOnly: true }} />
             <TextField
               label={t.shippingMinor}
               type="number"
               inputProps={{ min: 0, step: 1 }}
               value={shippingMinor}
-              onChange={(event) => setShippingMinor(event.target.value)}
+              InputProps={{ readOnly: true }}
             />
             <TextField
               label={t.discountMinor}
@@ -2515,11 +2626,20 @@ function ManualOrderForm({
               value={feesMinor}
               onChange={(event) => setFeesMinor(event.target.value)}
             />
-          </Stack>
-          <Typography sx={{ mt: 2 }} fontWeight={800}>
-            {t.total}: {total}
-          </Typography>
-          <Button component="label" variant="outlined" sx={{ mt: 2 }}>
+          </Box>
+          <Paper
+            variant="outlined"
+            sx={{ mt: 2, p: 2, display: 'flex', justifyContent: 'space-between', gap: 2 }}
+          >
+            <Typography fontWeight={800}>{t.total}</Typography>
+            <MoneyValue
+              value={totalMinor}
+              currency={currency.toUpperCase()}
+              locale={locale}
+              fontWeight={800}
+            />
+          </Paper>
+          <Button component="label" variant="outlined" sx={{ mt: 2, minWidth: 220 }}>
             {paymentProof
               ? paymentProof.name
               : locale === 'ar'
@@ -2532,6 +2652,14 @@ function ManualOrderForm({
               onChange={(event) => setPaymentProof(event.target.files?.[0] ?? null)}
             />
           </Button>
+          {paymentProof && (
+            <Alert severity="success" sx={{ mt: 1 }} data-testid="payment-proof-selected">
+              {locale === 'ar' ? 'تم اختيار إثبات التحويل:' : 'Transfer proof selected:'}{' '}
+              <Box component="span" dir="ltr" sx={{ unicodeBidi: 'isolate' }}>
+                {paymentProof.name}
+              </Box>
+            </Alert>
+          )}
           <Typography display="block" variant="caption" color="text.secondary">
             {locale === 'ar'
               ? 'JPG أو PNG أو PDF بحد أقصى 5 ميجابايت'
@@ -2539,8 +2667,16 @@ function ManualOrderForm({
           </Typography>
         </Section>
         <Section title={t.workflow}>
-          <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'minmax(180px, .7fr) 1fr 1.3fr' },
+              gap: 2,
+              alignItems: 'start',
+            }}
+          >
             <TextField
+              fullWidth
               label={t.localStatusInput}
               value={localStatus}
               onChange={(event) => setLocalStatus(event.target.value)}
@@ -2557,13 +2693,17 @@ function ManualOrderForm({
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
             />
-          </Stack>
+          </Box>
         </Section>
         <Stack direction="row" gap={2} justifyContent="flex-end">
           <Button type="button" onClick={onCancel} disabled={saving}>
             {t.cancel}
           </Button>
-          <Button type="submit" variant="contained" disabled={saving}>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={saving || !shippingRatesConfigured || catalog.length === 0}
+          >
             {saving ? <CircularProgress size={18} aria-label={t.loading} /> : t.saveManual}
           </Button>
         </Stack>

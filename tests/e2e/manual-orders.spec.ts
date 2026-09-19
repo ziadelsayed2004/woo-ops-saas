@@ -1,4 +1,44 @@
-import { expect, test, type Route } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
+
+const openManualForm = async (page: Page, rates: unknown[]) => {
+  await page.route('**/api/v1/auth/session', async (route: Route) => {
+    await route.fulfill({
+      json: {
+        user: { id: 'user-1', accountId: 'account-1', email: 'admin@example.test', role: 'admin' },
+      },
+    });
+  });
+  await page.route('**/api/v1/orders/query', async (route: Route) => {
+    await route.fulfill({ json: { items: [], nextCursor: null, hasMore: false } });
+  });
+  await page.route('**/api/v1/catalog?**', async (route: Route) => {
+    await route.fulfill({
+      json: {
+        items: [
+          {
+            id: 'catalog-1',
+            kind: 'product',
+            externalId: '44',
+            parentExternalId: null,
+            name: 'Woo product',
+            sku: 'WOO-44',
+            price: '125.00',
+            stockStatus: 'instock',
+            stockQuantity: 8,
+            categories: [{ id: '5', name: 'Coffee' }],
+          },
+        ],
+      },
+    });
+  });
+  await page.route('**/api/v1/manual-orders/config', async (route: Route) => {
+    await route.fulfill({
+      json: { currency: 'EGP', rates, proofTypes: ['image/png'], proofMaxBytes: 5242880 },
+    });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'إنشاء طلب يدوي' }).click();
+};
 
 test('creates a manual order through the local-only form', async ({ page }) => {
   const requests: string[] = [];
@@ -124,4 +164,36 @@ test('creates a manual order through the local-only form', async ({ page }) => {
     },
   ]);
   expect(requests.some((url) => url.includes('/connections'))).toBe(false);
+});
+
+test('explains missing shipping rates instead of opening an empty governorate list', async ({
+  page,
+}) => {
+  await openManualForm(page, []);
+  await expect(page.getByTestId('shipping-rates-empty')).toBeVisible();
+  await expect(page.getByLabel('المحافظة')).toBeDisabled();
+  await expect(page.locator('button[type="submit"]')).toBeDisabled();
+});
+
+test('keeps a deterministic responsive manual-order baseline @visual @manual-orders', async ({
+  page,
+}) => {
+  await openManualForm(page, [{ governorate: 'EGSHR', amountMinor: '1500' }]);
+  await expect(page.getByLabel('اسم المنتج')).toBeVisible();
+  await expect(page).toHaveScreenshot('manual-order-form.png', {
+    animations: 'disabled',
+    fullPage: true,
+  });
+});
+
+test('stacks the manual-order form cleanly on narrow screens @visual @manual-orders', async ({
+  page,
+}) => {
+  await openManualForm(page, [{ governorate: 'EGSHR', amountMinor: '1500' }]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByLabel('اسم المنتج')).toBeVisible();
+  await expect(page).toHaveScreenshot('manual-order-form-mobile.png', {
+    animations: 'disabled',
+    fullPage: true,
+  });
 });

@@ -164,6 +164,17 @@ test('renders revenue, profit, sources and explainable analytics in English layo
     .toBe(true);
 });
 
+test('isolates currency values from Arabic RTL reordering @analytics', async ({ page }) => {
+  await mockAnalyticsApi(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'التحليلات' }).click();
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  const revenue = page.getByTestId('analytics-revenue').locator('[dir="ltr"]');
+  const profit = page.getByTestId('analytics-profit').locator('[dir="ltr"]');
+  await expect(revenue).toHaveText('١٬٦٠٠.00 EGP');
+  await expect(profit).toHaveText('٦٨٠.00 EGP');
+});
+
 test('shows an explicit empty state when filters have no facts @analytics', async ({ page }) => {
   await mockAnalyticsApi(page, true);
   await openAnalytics(page);
