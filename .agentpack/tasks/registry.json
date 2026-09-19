@@ -1092,6 +1092,31 @@
         "README and environment documentation provide exact deploy settings and a repeatable health/startup verification path for ops.wasatalbalad.store"
       ],
       "validation": ["npm ci", "npm run agent:doctor", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:hostinger", "npm run build", "npm run security:scan", "npm run security:audit", "git diff --check"]
+    },
+    {
+      "id": "T0818",
+      "epic": "E08",
+      "title": "Migrate SQLite runtime to native Node 22 and remove native addons",
+      "type": "fix",
+      "phase": 8,
+      "priority": "P0",
+      "estimate": "XL",
+      "parallelGroup": "node22-native-sqlite",
+      "dependencies": ["T0817"],
+      "references": ["AGENTS.md", ".agentpack/manifest.json", ".agentpack/product/PRD.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/DEPLOYMENT.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/TESTING.md", "README.md", "package.json", "package-lock.json", "packages/persistence/src/index.ts", "packages/persistence/package.json", "apps/api/src/auth.ts", "apps/api/src/backup.ts", "apps/api/package.json", "tools/hostinger-smoke.mjs", "tools/performance-test.mjs"],
+      "scope": [
+        "Replace better-sqlite3 and node-gyp-dependent packages with Node 22.18 built-in node:sqlite while preserving the synchronous repository contract and existing SQLite files",
+        "Adapt transactions, prepared statements, result metadata, backup integrity checks and test helpers without weakening account scoping, durable jobs or local-only data rules",
+        "Restore the repository, CI and Hostinger deployment contract to Node 22 and remove obsolete Node 18 compatibility pins and native-addon warnings",
+        "Verify clean production and development installs, migrations, build, security, tenant isolation, critical journeys, backup/restore and Hostinger startup"
+      ],
+      "acceptance": [
+        "npm ci on Node 22 installs without better-sqlite3, prebuild-install, node-gyp, Python or GLIBC-specific application dependencies",
+        "The existing schema, transactions, repositories, jobs, analytics, exports, documents and backups pass unchanged behavioral tests against node:sqlite",
+        "Hostinger configuration uses Node 22.x, builds with development tooling, starts the production entrypoint and reports a connected schema-current database",
+        "Woo remains read-only, manual and exported state remain local, and account isolation/security gates remain green"
+      ],
+      "validation": ["npm ci", "npm run agent:doctor", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:hostinger", "npm run test:performance", "npm run build", "npm run security:scan", "npm run security:audit", "git diff --check"]
     }
   ]
 }
