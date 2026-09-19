@@ -98,10 +98,11 @@ import { readPrivateDocumentArtifact } from './document-artifacts.js';
 import { createApiJobRunner } from './job-runner.js';
 import { createWooSyncEffect, healthCheckWooConnection } from './woo-sync.js';
 import { readPaymentProof, writePaymentProof } from './payment-proof-files.js';
+import { resolveRuntimePaths } from './runtime-paths.js';
 
 const port = Number(process.env.PORT ?? 3000);
-const dataDirectory = resolve(process.env.WOO_OPS_DATA_DIR ?? './data');
-const databasePath = resolve(process.env.WOO_OPS_DATABASE ?? `${dataDirectory}/woo-ops.sqlite`);
+const runtimePaths = resolveRuntimePaths();
+const { dataDirectory, databasePath } = runtimePaths;
 const documentStorageRoot = resolve(dataDirectory, 'private-documents');
 const exportStorageRoot = resolve(dataDirectory, 'private-exports');
 const paymentProofStorageRoot = resolve(dataDirectory, 'private-payment-proofs');
@@ -407,6 +408,10 @@ const healthBody = (): {
       version: '0.1.0',
       schemaVersion: health.schemaVersion,
       queue: health.queue,
+      persistence: {
+        mode: runtimePaths.persistenceMode,
+        durable: runtimePaths.durable,
+      },
     }),
   };
 };

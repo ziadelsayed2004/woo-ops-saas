@@ -69,7 +69,9 @@ The project uses Node's built-in `node:sqlite`, so deployment does not require n
 host-specific native SQLite binary. Hostinger may install with production-only dependencies before
 running the build; the compiler and web bundler required for that build are therefore declared as
 production build dependencies, while Playwright and formatting tools remain development-only. Set
-`WOO_OPS_DATA_DIR` to a writable private directory outside the public web root, configure production
+Woo Ops automatically detects Hostinger `hbuilds` releases and stores runtime state in the stable
+domain-level `.woo-ops-data` directory, outside the replaced release repository. You may instead set
+`WOO_OPS_DATA_DIR` to an absolute writable private directory outside the public web root; configure production
 secrets from `.env.example`, and expose `/health` as the health check. The database schema is migrated
 when the API opens it; `npm run db:migrate` remains available for an explicit one-off migration from
 the application terminal. The API serves

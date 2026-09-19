@@ -1,0 +1,39 @@
+import assert from 'node:assert/strict';
+import { join, resolve } from 'node:path';
+import test from 'node:test';
+import { resolveRuntimePaths } from '../../src/runtime-paths.ts';
+
+test('Hostinger release directories share one domain-level data root', () => {
+  const domainRoot = resolve('fixtures', 'domains', 'ops.example.test');
+  const first = resolveRuntimePaths(
+    { NODE_ENV: 'production' },
+    join(domainRoot, 'hbuilds', 'release-a', 'source', 'repository'),
+  );
+  const second = resolveRuntimePaths(
+    { NODE_ENV: 'production' },
+    join(domainRoot, 'hbuilds', 'release-b', 'source', 'repository'),
+  );
+
+  assert.equal(first.persistenceMode, 'hostinger-domain');
+  assert.equal(first.durable, true);
+  assert.equal(first.dataDirectory, join(domainRoot, '.woo-ops-data'));
+  assert.equal(second.dataDirectory, first.dataDirectory);
+  assert.equal(second.databasePath, first.databasePath);
+});
+
+test('explicit data and database paths keep precedence', () => {
+  const cwd = resolve('fixtures', 'release');
+  const paths = resolveRuntimePaths(
+    {
+      NODE_ENV: 'production',
+      WOO_OPS_DATA_DIR: '../private-data',
+      WOO_OPS_DATABASE: '../private-db/store.sqlite',
+    },
+    cwd,
+  );
+
+  assert.equal(paths.persistenceMode, 'configured');
+  assert.equal(paths.durable, false);
+  assert.equal(paths.dataDirectory, resolve(cwd, '../private-data'));
+  assert.equal(paths.databasePath, resolve(cwd, '../private-db/store.sqlite'));
+});

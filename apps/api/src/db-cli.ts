@@ -1,9 +1,8 @@
-import { resolve } from 'node:path';
 import { SqliteStore } from '@woo-ops/persistence';
 import { createBackup, listBackups, restoreBackup } from './backup.js';
+import { resolveRuntimePaths } from './runtime-paths.js';
 
-const dataDirectory = resolve(process.env.WOO_OPS_DATA_DIR ?? './data');
-const databasePath = resolve(process.env.WOO_OPS_DATABASE ?? `${dataDirectory}/woo-ops.sqlite`);
+const { dataDirectory, databasePath } = resolveRuntimePaths();
 const command = process.argv[2];
 const args = process.argv.slice(3);
 

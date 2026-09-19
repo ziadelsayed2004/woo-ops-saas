@@ -13,6 +13,12 @@ export const healthResponseSchema = z.object({
       deadLettered: z.number().int().nonnegative(),
     })
     .optional(),
+  persistence: z
+    .object({
+      mode: z.enum(['configured', 'hostinger-domain', 'release-local']),
+      durable: z.boolean(),
+    })
+    .optional(),
 });
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
