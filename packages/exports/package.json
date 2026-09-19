@@ -13,8 +13,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test:unit": "node --test tests",
-    "test:golden": "node --test tests"
+    "test:unit": "node --test tests/*.test.js",
+    "test:golden": "node --test tests/*.test.js"
   },
   "dependencies": {
     "exceljs": "4.4.0"

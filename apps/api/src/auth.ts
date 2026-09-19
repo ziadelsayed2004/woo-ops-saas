@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import type { Request, Response } from 'express';
-import type Database from 'better-sqlite3';
+import type { SqliteDatabase } from '@woo-ops/persistence';
 
 const SESSION_COOKIE = 'woo_ops_session';
 const CSRF_COOKIE = 'woo_ops_csrf';
@@ -63,7 +63,7 @@ const setCookies = (response: Response, session: string, csrf: string): void => 
 };
 
 export class AuthService {
-  constructor(private readonly db: Database.Database) {}
+  constructor(private readonly db: SqliteDatabase) {}
 
   private createSession(row: { id: string; email: string; account_id: string; role: string }): {
     user: AuthUser;
@@ -327,7 +327,7 @@ export const can = (
 };
 
 export const recordAudit = (
-  db: Database.Database,
+  db: SqliteDatabase,
   input: {
     accountId: string;
     actorId?: string;

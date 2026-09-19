@@ -1,4 +1,3 @@
-import Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   chmodSync,
@@ -15,7 +14,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, relative, resolve, sep } from 'node:path';
-import { schemaVersion } from '@woo-ops/persistence';
+import { schemaVersion, SqliteDatabase } from '@woo-ops/persistence';
 
 const manifestName = 'manifest.json';
 const databaseName = 'database.sqlite';
@@ -43,7 +42,7 @@ export type BackupManifest = {
 export type BackupOptions = {
   dataDirectory: string;
   databasePath: string;
-  database: Database.Database;
+  database: SqliteDatabase;
   retention?: number;
   maxFiles?: number;
   maxBytes?: number;
@@ -206,7 +205,7 @@ const writeJsonAtomically = (path: string, value: unknown): void => {
   privateFile(path);
 };
 
-const schemaVersionFrom = (database: Database.Database): number => {
+const schemaVersionFrom = (database: SqliteDatabase): number => {
   const row = database
     .prepare('SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations')
     .get() as { version: number } | undefined;
@@ -311,9 +310,9 @@ const verifyRegularFile = async (
 };
 
 const validateDatabase = (path: string, manifest: BackupManifest): void => {
-  let database: Database.Database | undefined;
+  let database: SqliteDatabase | undefined;
   try {
-    database = new Database(path, { readonly: true, fileMustExist: true });
+    database = new SqliteDatabase(path, { readonly: true, fileMustExist: true });
     const integrity = database.pragma('integrity_check', { simple: true });
     if (integrity !== 'ok') throw new Error('BACKUP_DATABASE_INTEGRITY_FAILED');
     const actualSchema = schemaVersionFrom(database);

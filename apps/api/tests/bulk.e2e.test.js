@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { execFile, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import Database from 'better-sqlite3';
+import { SqliteDatabase as Database } from '@woo-ops/persistence';
 
 const directory = mkdtempSync(join(tmpdir(), 'woo-api-bulk-e2e-'));
 const databasePath = join(directory, 'e2e.sqlite');

@@ -1,4 +1,5 @@
-import Database from 'better-sqlite3';
+import { SqliteDatabase } from './sqlite.js';
+export { SqliteDatabase } from './sqlite.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { validateSafeTemplate } from '@woo-ops/documents';
 import {
@@ -3458,9 +3459,9 @@ const normalizeBulkParameters = (action: BulkAction, value: unknown): Record<str
 };
 
 export class SqliteStore {
-  readonly db: Database.Database;
+  readonly db: SqliteDatabase;
   constructor(filename: string) {
-    this.db = new Database(filename);
+    this.db = new SqliteDatabase(filename);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this.db.pragma('busy_timeout = 5000');

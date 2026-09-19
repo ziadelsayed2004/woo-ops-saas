@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import Database from 'better-sqlite3';
+import { SqliteDatabase as Database } from '@woo-ops/persistence';
 import { WooCommerceConnector, normalizeWooOrder } from '@woo-ops/connectors';
 import { generateCsv } from '../../../packages/exports/dist/index.js';
 import { SqliteStore } from '@woo-ops/persistence';

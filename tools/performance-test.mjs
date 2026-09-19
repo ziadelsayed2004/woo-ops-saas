@@ -1,13 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { createRequire } from 'node:module';
 import { performance } from 'node:perf_hooks';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { SqliteStore } from '../packages/persistence/dist/index.js';
-
-const require = createRequire(import.meta.url);
-const Database = require('better-sqlite3');
+import { SqliteDatabase, SqliteStore } from '../packages/persistence/dist/index.js';
 
 const DATASETS = [10_000, 100_000];
 const ITERATIONS = 25;
@@ -48,7 +44,7 @@ const seed = (count) => {
   const connectionId = randomUUID();
   const actorId = randomUUID();
   const now = new Date().toISOString();
-  const database = new Database(databasePath);
+  const database = new SqliteDatabase(databasePath);
   database
     .prepare('INSERT INTO accounts (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)')
     .run(accountId, `Performance ${count}`, now, now);

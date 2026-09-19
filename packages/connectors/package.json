@@ -15,7 +15,7 @@
     "lint": "tsc -p tsconfig.json --noEmit",
     "test:unit": "node --test",
     "test:security": "node --test tests/security.test.js",
-    "test:contract": "node --test tests"
+    "test:contract": "node --test tests/*.test.js"
   },
   "devDependencies": {
     "@types/node": "^22.18.0"

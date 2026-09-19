@@ -13,9 +13,11 @@ npm run build
 npm run start --workspace=@woo-ops/api
 ```
 
-Hostinger uses Node.js 18.x and its application manager with `apps/api/dist/index.js` as the entry
-file from the repository root. Set the build command to `npm run build` and output directory to `.`;
-Hostinger installs locked dependencies before this command. The application opens SQLite and applies
+Hostinger uses Node.js 22.x and its application manager with `apps/api/dist/index.js` as the entry
+file from the repository root. Set the build command to
+`npm ci --include=dev && npm run build` and output directory to `.`; `--include=dev` is required
+because TypeScript and Vite are build-time dependencies. Persistence uses Node's built-in
+`node:sqlite`, with no node-gyp/Python/GLIBC-specific addon. The application opens SQLite and applies
 migrations during startup, so a separate build-time migration is not required. Keep
 `WOO_OPS_DATA_DIR` outside the public web root. HTTP requests remain bounded;
 long work is durable and resumed from SQLite.
@@ -84,8 +86,8 @@ Never expose the data directory or credentials through static serving, logs, err
 
 ## Capacity baseline and operating limits
 
-The checked-in benchmark uses Node 24 on Windows with SQLite WAL, 25 warm iterations, a 100-row page,
-and synthetic order payloads. The enforced p95 budgets are:
+The checked-in benchmark uses Node 22.18 with built-in `node:sqlite` on Windows, SQLite WAL, 25 warm
+iterations, a 100-row page, and synthetic order payloads. The enforced p95 budgets are:
 
 | Operation | Budget |
 | --- | ---: |
@@ -95,8 +97,8 @@ and synthetic order payloads. The enforced p95 budgets are:
 | cross-page selection page | 700 ms |
 | durable job enqueue/claim/complete | 250 ms |
 
-The observed 100k-order baseline is 86.42 ms list, 88.02 ms filtered list, 130.95 ms search,
-82.77 ms selection, and 0.50 ms job round-trip p95. These are a release regression budget, not a
+The observed 100k-order baseline is 192.63 ms list, 337.71 ms filtered list, 466.15 ms search,
+165.44 ms selection, and 31.38 ms job round-trip p95. These are a release regression budget, not a
 promise of Hostinger capacity; repeat the benchmark on the selected hosting tier before increasing
 concurrency. Export/document jobs must remain bounded by the existing 100k-order, 200k-row and 500-page
 limits and run from durable SQLite jobs.

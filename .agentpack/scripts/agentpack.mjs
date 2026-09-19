@@ -70,8 +70,8 @@ function doctor() {
   const checks = [];
   const nodeMajor = Number(process.versions.node.split(".")[0]);
   checks.push({
-    name: "Node >= 18 and < 23",
-    ok: nodeMajor >= 18 && nodeMajor < 23,
+    name: "Node 22",
+    ok: nodeMajor === 22,
     detail: process.versions.node,
   });
 
