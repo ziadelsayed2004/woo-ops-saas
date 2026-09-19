@@ -23,6 +23,7 @@
     "worktree:list": "node .agentpack/scripts/agentpack.mjs worktree list",
     "worktree:prune": "node .agentpack/scripts/agentpack.mjs worktree prune",
     "dev": "node tools/run-dev.mjs",
+    "demo:local": "node tools/local-demo.mjs",
     "build": "node tools/run-workspaces.mjs build",
     "typecheck": "node tools/run-workspaces.mjs build && node tools/run-workspaces.mjs typecheck",
     "lint": "node tools/run-workspaces.mjs build && node tools/run-workspaces.mjs lint",

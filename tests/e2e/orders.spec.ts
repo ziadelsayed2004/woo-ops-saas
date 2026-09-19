@@ -120,14 +120,10 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
   await expect(closeButton).toHaveCount(1);
   await closeButton.click();
 
-  const directionButton = page.getByRole('button', { name: 'التبديل إلى LTR' });
-  await expect(directionButton).toHaveCount(1);
-  await directionButton.click();
-  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-
   const languageButton = page.getByRole('button', { name: 'English' });
   await expect(languageButton).toHaveCount(1);
   await languageButton.click();
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.getByRole('heading', { name: 'Orders workspace' })).toBeVisible();
 });
 

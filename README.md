@@ -20,6 +20,12 @@ npm run dev
 
 The API listens on `http://localhost:3000`; health is available at `/health`.
 
+To inspect the authenticated screens without touching the live merchant account, run
+`npm run build` then `npm run demo:local`. The command creates a temporary SQLite database and a
+random local-only owner password, prints its loopback URL and login, and removes the demo database
+when stopped with Ctrl+C. It does not connect to WooCommerce or contain real customer data. Never
+use this demo account or its displayed password on the production subdomain.
+
 ## First owner and WooCommerce connection
 
 After Hostinger reports a healthy deployment, open `https://ops.wasatalbalad.store/`. On a fresh
@@ -34,6 +40,12 @@ approve the **read** permission. WooCommerce posts the keys directly to the appl
 callback, then sends your browser back to Connections. If the store takes a moment to appear, use
 the refresh control. Run **Health check** and **Initial sync** to import the catalog and orders;
 check **Operations** for progress and errors. Woo Ops never writes orders, stock or products back.
+
+If the connection reports `WOO_PERMALINKS_BROKEN` or the Woo grant URL displays a 404, WooCommerce
+is installed but WordPress rewrite rules are stale. In WordPress admin open **Settings →
+Permalinks**, select **Post name** (do not use Plain), click **Save Changes** twice, clear the
+Hostinger/CDN cache, and verify that both `/wp-json/` and `/wc-auth/v1/authorize` no longer show the
+hosting 404 page. Then start a new connection so it receives a fresh one-time authorization state.
 
 Set both `WEB_PUBLIC_URL` and `API_PUBLIC_URL` to `https://ops.wasatalbalad.store` in Hostinger,
 without a trailing slash. Set `SESSION_SECRET` (32+ random characters) and

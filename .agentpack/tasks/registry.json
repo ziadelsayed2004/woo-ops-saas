@@ -1181,11 +1181,15 @@
       "references": ["AGENTS.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/TESTING.md", "README.md", "apps/web/src/main.tsx", "apps/web/src/AdminWorkspaces.tsx", "tests/e2e/admin.spec.ts"],
       "scope": [
         "Align text, field labels and outlined notches to the right in Arabic RTL across Material UI forms while keeping LTR usable",
+        "Make Arabic always RTL and English always LTR across the shell and account settings; normalize form spacing and dimensions across core views and mobile",
+        "Detect broken WordPress pretty-permalink routing before Woo authorization and provide an actionable recovery message instead of sending the operator to a hosting 404",
         "Keep login branding and headings visually centered at desktop and mobile sizes",
         "Provide a safe, explicitly local-only way to preview authenticated screens without publishing shared test credentials or touching the production account"
       ],
       "acceptance": [
         "Arabic text fields and outlined select labels/notches align on the right, including login fields; English LTR remains correct",
+        "Language changes direction in one action and account settings cannot store a conflicting direction",
+        "A store with active Woo REST query routes but broken pretty routes returns WOO_PERMALINKS_BROKEN with WordPress recovery steps",
         "Login title, subtitle and brand remain centered in both locales",
         "A developer can open a local demo account with non-production data and instructions without exposing a fixed production login"
       ],

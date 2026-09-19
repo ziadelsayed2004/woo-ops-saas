@@ -130,6 +130,9 @@ try {
   const homepageContentType = homepage.headers.get('content-type') ?? '';
   if (!homepage.ok || !homepageContentType.includes('text/html'))
     throw new Error(`HOSTINGER_SMOKE_WEB_FAILED ${homepage.status} ${homepageContentType}`);
+  const contentSecurityPolicy = homepage.headers.get('content-security-policy') ?? '';
+  if (!contentSecurityPolicy.includes("style-src 'self' 'unsafe-inline'"))
+    throw new Error('HOSTINGER_MATERIAL_UI_STYLES_BLOCKED');
   await stop(child);
 
   const commandEnv = {

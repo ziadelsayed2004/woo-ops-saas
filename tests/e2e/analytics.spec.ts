@@ -123,12 +123,12 @@ async function openAnalytics(page: Page) {
   await expect(page.getByTestId('analytics-workspace')).toBeVisible();
 }
 
-test('renders revenue, profit, sources and explainable analytics in Arabic layout @analytics', async ({
+test('renders revenue, profit, sources and explainable analytics in English layout @analytics', async ({
   page,
 }) => {
   const requestBodies = await mockAnalyticsApi(page);
   await openAnalytics(page);
-  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.getByRole('heading', { name: 'Sales analytics dashboard' })).toBeVisible();
   await expect(page.getByTestId('analytics-revenue')).toContainText('1,600.00 EGP');
   await expect(page.getByTestId('analytics-profit')).toContainText('680.00 EGP');

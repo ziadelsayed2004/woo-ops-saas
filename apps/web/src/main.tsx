@@ -7,19 +7,13 @@ function AppShell() {
   const [locale, setLocale] = useState<'ar' | 'en'>(
     () => (localStorage.getItem('woo-ops-locale') as 'ar' | 'en') ?? 'ar',
   );
-  const [direction, setDirection] = useState<'rtl' | 'ltr'>(
-    () => (localStorage.getItem('woo-ops-direction') as 'rtl' | 'ltr') ?? 'rtl',
-  );
-  const toggleLocale = () => {
-    const next = locale === 'ar' ? 'en' : 'ar';
+  const direction = locale === 'ar' ? 'rtl' : 'ltr';
+  const changeLocale = (next: 'ar' | 'en') => {
     setLocale(next);
     localStorage.setItem('woo-ops-locale', next);
+    localStorage.setItem('woo-ops-direction', next === 'ar' ? 'rtl' : 'ltr');
   };
-  const toggleDirection = () => {
-    const next = direction === 'rtl' ? 'ltr' : 'rtl';
-    setDirection(next);
-    localStorage.setItem('woo-ops-direction', next);
-  };
+  const toggleLocale = () => changeLocale(locale === 'ar' ? 'en' : 'ar');
   document.documentElement.lang = locale;
   document.documentElement.dir = direction;
   const theme = createTheme({
@@ -34,6 +28,25 @@ function AppShell() {
       divider: '#e5e7eb',
     },
     components: {
+      MuiCssBaseline: {
+        styleOverrides: {
+          '[dir="rtl"] .MuiInputBase-input': { textAlign: 'right' },
+          '[dir="rtl"] .MuiOutlinedInput-notchedOutline': { direction: 'rtl', textAlign: 'right' },
+          '[dir="rtl"] .MuiOutlinedInput-notchedOutline legend': { textAlign: 'right' },
+          '[dir="rtl"] .MuiInputLabel-outlined': {
+            left: 'auto',
+            right: 14,
+            transformOrigin: 'top right',
+            transform: 'translate(0, 16px) scale(1)',
+          },
+          '[dir="rtl"] .MuiInputLabel-outlined.MuiInputLabel-sizeSmall': {
+            transform: 'translate(0, 9px) scale(1)',
+          },
+          '[dir="rtl"] .MuiInputLabel-outlined.MuiInputLabel-shrink': {
+            transform: 'translate(0, -9px) scale(0.75)',
+          },
+        },
+      },
       MuiPaper: { styleOverrides: { root: { backgroundImage: 'none' } } },
       MuiButton: {
         styleOverrides: { root: { borderRadius: 10, textTransform: 'none', fontWeight: 700 } },
@@ -48,7 +61,7 @@ function AppShell() {
         locale={locale}
         direction={direction}
         onToggleLocale={toggleLocale}
-        onToggleDirection={toggleDirection}
+        onLocaleChange={changeLocale}
       />
     </ThemeProvider>
   );

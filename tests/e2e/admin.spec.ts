@@ -200,6 +200,82 @@ test('expired sessions return to login and can authenticate again @admin', async
   await expect(page.getByRole('button', { name: 'تسجيل الخروج' })).toBeVisible();
 });
 
+test('Arabic login fields, labels and notches align right while headings stay centered @admin', async ({
+  page,
+}) => {
+  await page.route('**/api/v1/auth/session', (route) =>
+    route.fulfill({ status: 401, json: { error: { code: 'AUTH_UNAUTHENTICATED' } } }),
+  );
+  await page.route('**/api/v1/auth/setup', (route) =>
+    route.fulfill({ json: { registrationOpen: false } }),
+  );
+  await page.goto('/');
+  const email = page.getByLabel('البريد الإلكتروني');
+  await expect(email).toBeVisible();
+  const positions = await page.evaluate(() => {
+    const input = document.querySelector<HTMLInputElement>('input[type="email"]')!;
+    const field = input.closest('.MuiFormControl-root')!;
+    const label = field.querySelector('label')!;
+    const legend = field.querySelector('legend')!;
+    const heading = document.querySelector('h1')!;
+    const subtitle = document.querySelector('h2')!;
+    const paper = document.querySelector('main')!;
+    const center = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.left + rect.width / 2;
+    };
+    return {
+      inputAlign: getComputedStyle(input).textAlign,
+      fieldRight: field.getBoundingClientRect().right,
+      labelRight: label.getBoundingClientRect().right,
+      legendRight: legend.getBoundingClientRect().right,
+      headingCenter: center(heading),
+      subtitleCenter: center(subtitle),
+      paperCenter: center(paper),
+    };
+  });
+  expect(positions.inputAlign).toBe('right');
+  expect(positions.fieldRight - positions.labelRight).toBeLessThan(40);
+  expect(positions.fieldRight - positions.legendRight).toBeLessThan(40);
+  expect(Math.abs(positions.headingCenter - positions.paperCenter)).toBeLessThan(5);
+  expect(Math.abs(positions.subtitleCenter - positions.paperCenter)).toBeLessThan(5);
+});
+
+test('Arabic outlined selects use right-hand labels and notches @admin', async ({ page }) => {
+  await mockAdminApi(page);
+  await page.goto('/settings');
+  const positions = await page.getByTestId('settings-workspace').evaluate((workspace) => {
+    const select = workspace.querySelector('.MuiSelect-select')!;
+    const field = select.closest('.MuiFormControl-root')!;
+    const label = field.querySelector('label')!;
+    const legend = field.querySelector('legend')!;
+    return {
+      selectAlign: getComputedStyle(select).textAlign,
+      fieldRight: field.getBoundingClientRect().right,
+      labelRight: label.getBoundingClientRect().right,
+      legendRight: legend.getBoundingClientRect().right,
+    };
+  });
+  expect(positions.selectAlign).toBe('right');
+  expect(positions.fieldRight - positions.labelRight).toBeLessThan(40);
+  expect(positions.fieldRight - positions.legendRight).toBeLessThan(40);
+});
+
+test('language switch updates text and direction together @admin', async ({ page }) => {
+  await mockAdminApi(page);
+  await page.goto('/settings');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await page.getByRole('button', { name: 'English' }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+  await page.getByRole('button', { name: 'العربية' }).click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.getByRole('heading', { name: 'الإعدادات' })).toBeVisible();
+});
+
 test('admin workspaces have no automated accessibility violations @a11y @admin', async ({
   page,
 }) => {

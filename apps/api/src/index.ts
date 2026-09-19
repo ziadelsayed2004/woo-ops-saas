@@ -150,6 +150,30 @@ const attempts = new Map<string, { count: number; resetAt: number }>();
 const callbackSecret = process.env.SESSION_SECRET ?? 'development-only-session-secret';
 if (process.env.NODE_ENV === 'production' && callbackSecret.length < 32)
   throw new Error('SESSION_SECRET_REQUIRED');
+const assertWooPrettyPermalinks = async (storeUrl: URL): Promise<void> => {
+  try {
+    const pretty = await fetch(new URL('/wp-json/', storeUrl), {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (pretty.status !== 404) return;
+    const fallback = await fetch(new URL('/?rest_route=/', storeUrl), {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!fallback.ok) return;
+    const body = (await fallback.json()) as { namespaces?: unknown };
+    if (Array.isArray(body.namespaces) && body.namespaces.includes('wc/v3'))
+      throw new Error('WOO_PERMALINKS_BROKEN');
+  } catch (error) {
+    if (error instanceof Error && error.message === 'WOO_PERMALINKS_BROKEN') throw error;
+    // The Woo grant page remains authoritative when the store blocks server-side probing.
+  }
+};
 const stateHash = (nonce: string): string => createHash('sha256').update(nonce).digest('hex');
 const signState = (nonce: string): string =>
   `${nonce}.${createHmac('sha256', callbackSecret).update(nonce).digest('base64url')}`;
@@ -297,7 +321,7 @@ app.use((_request, response, next) => {
   response.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   response.setHeader(
     'Content-Security-Policy',
-    "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'",
+    "default-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'",
   );
   if (process.env.NODE_ENV === 'production')
     response.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
@@ -815,6 +839,7 @@ app.post('/api/v1/connections/woocommerce/authorize', async (request, response) 
   try {
     const storeUrl = canonicalizeStoreUrl(String(request.body?.storeUrl ?? ''));
     await assertPublicStoreUrl(storeUrl);
+    await assertWooPrettyPermalinks(storeUrl);
     const nonce = randomBytes(24).toString('base64url');
     const now = new Date();
     store.createAuthorizationState(operationContext(user, response), {
@@ -836,7 +861,10 @@ app.post('/api/v1/connections/woocommerce/authorize', async (request, response) 
     response.status(400).json({
       error: {
         code: error instanceof Error ? error.message : 'CONNECTOR_URL_INVALID',
-        message: 'Invalid WooCommerce store URL',
+        message:
+          error instanceof Error && error.message === 'WOO_PERMALINKS_BROKEN'
+            ? 'WooCommerce is active but WordPress pretty permalinks are not routing API and wc-auth paths'
+            : 'Invalid WooCommerce store URL',
         correlationId: response.getHeader('x-correlation-id'),
       },
     });
@@ -2776,7 +2804,7 @@ if (webDistDirectory) {
   });
 }
 
-const server = app.listen(port, () => {
+const server = app.listen(port, process.env.WOO_OPS_BIND_HOST ?? '0.0.0.0', () => {
   jobRunner.start();
   console.log(`Woo Ops API listening on ${port}`);
 });

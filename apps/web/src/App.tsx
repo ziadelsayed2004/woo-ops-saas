@@ -2941,12 +2941,12 @@ export function App({
   locale,
   direction,
   onToggleLocale,
-  onToggleDirection,
+  onLocaleChange,
 }: {
   locale: Locale;
   direction: Direction;
   onToggleLocale: () => void;
-  onToggleDirection: () => void;
+  onLocaleChange: (locale: Locale) => void;
 }) {
   const t = copy[locale];
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking');
@@ -3355,7 +3355,6 @@ export function App({
         }))}
         onNavigate={(id) => setView(id as AppView)}
         onToggleLocale={onToggleLocale}
-        onToggleDirection={onToggleDirection}
         onLogout={() => void logout()}
         onCreateManual={() => setView('manual')}
       >
@@ -3378,6 +3377,7 @@ export function App({
           <AdminWorkspace
             section={view as AdminSection}
             locale={locale}
+            onLocaleChange={onLocaleChange}
             onSessionExpired={expireSession}
           />
         ) : view === 'documents' ? (

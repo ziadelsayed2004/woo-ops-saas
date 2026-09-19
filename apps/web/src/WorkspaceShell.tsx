@@ -68,7 +68,6 @@ export function WorkspaceShell({
   navigation,
   onNavigate,
   onToggleLocale,
-  onToggleDirection,
   onLogout,
   onCreateManual,
   children,
@@ -80,7 +79,6 @@ export function WorkspaceShell({
   navigation: readonly ShellNavigationItem[];
   onNavigate: (id: string) => void;
   onToggleLocale: () => void;
-  onToggleDirection: () => void;
   onLogout: () => void;
   onCreateManual: () => void;
   children: ReactNode;
@@ -235,14 +233,6 @@ export function WorkspaceShell({
           </Button>
           <Button onClick={onToggleLocale} startIcon={<LanguageOutlined />} size="small">
             {locale === 'ar' ? 'English' : 'العربية'}
-          </Button>
-          <Button
-            color="inherit"
-            size="small"
-            onClick={onToggleDirection}
-            aria-label={direction === 'rtl' ? 'التبديل إلى LTR' : 'Switch to RTL'}
-          >
-            {direction.toUpperCase()}
           </Button>
           <Tooltip title={locale === 'ar' ? 'تسجيل الخروج' : 'Sign out'}>
             <IconButton onClick={onLogout} color="inherit">

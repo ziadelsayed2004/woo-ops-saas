@@ -203,6 +203,8 @@ const translations = {
     sessionExpired: 'انتهت الجلسة. سجل الدخول مرة أخرى للمتابعة.',
     signOut: 'تسجيل الخروج',
     externalOnly: 'إجراء خارجي',
+    permalinksBroken:
+      'WooCommerce يعمل، لكن روابط WordPress الدائمة لا تمرر مسارات API والتفويض. من لوحة WordPress افتح الإعدادات ← روابط دائمة، اختر «اسم المقالة» ثم اضغط حفظ التغييرات مرتين، وبعدها جرّب الربط مجددًا.',
   },
   en: {
     overview: 'Overview',
@@ -288,6 +290,8 @@ const translations = {
     sessionExpired: 'Your session expired. Sign in again to continue.',
     signOut: 'Sign out',
     externalOnly: 'External action',
+    permalinksBroken:
+      'WooCommerce is active, but WordPress permalinks are not routing API and authorization paths. In WordPress open Settings → Permalinks, select Post name, save twice, then retry.',
   },
 } as const;
 
@@ -463,12 +467,20 @@ export function LoginScreen({
         }}
       >
         <Stack component="form" gap={2.5} onSubmit={(event) => void submit(event)}>
-          <Box textAlign="center" mb={1}>
+          <Box
+            mb={1}
+            sx={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              textAlign: 'center',
+            }}
+          >
             <Box
               sx={{
                 width: 52,
                 height: 52,
-                mx: 'auto',
                 mb: 2,
                 borderRadius: 3,
                 bgcolor: 'primary.main',
@@ -754,7 +766,11 @@ function ConnectionsWorkspace({
         </Button>
       </Box>
       {failed && <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />}
-      {message && <Alert severity={message === 'FORBIDDEN' ? 'warning' : 'info'}>{message}</Alert>}
+      {message && (
+        <Alert severity={message === 'FORBIDDEN' ? 'warning' : 'info'}>
+          {message === 'WOO_PERMALINKS_BROKEN' ? copy.permalinksBroken : message}
+        </Alert>
+      )}
       <Paper
         component="form"
         variant="outlined"
@@ -1146,14 +1162,16 @@ function FieldMappingsWorkspace({
 function SettingsWorkspace({
   copy,
   onSessionExpired,
+  onLocaleChange,
 }: {
   copy: Copy;
   onSessionExpired: () => void;
+  onLocaleChange: (locale: AdminLocale) => void;
 }) {
   const [account, setAccount] = useState<Account | null>(null);
   const [name, setName] = useState('');
   const [locale, setLocale] = useState<'ar-EG' | 'en-US'>('ar-EG');
-  const [direction, setDirection] = useState<AdminDirection>('rtl');
+  const direction: AdminDirection = locale === 'ar-EG' ? 'rtl' : 'ltr';
   const [timezone, setTimezone] = useState('Africa/Cairo');
   const [baseCurrency, setBaseCurrency] = useState('EGP');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -1169,7 +1187,6 @@ function SettingsWorkspace({
       setAccount(body.account);
       setName(body.account.name);
       setLocale(body.account.locale);
-      setDirection(body.account.direction);
       setTimezone(body.account.timezone);
       setBaseCurrency(body.account.baseCurrency);
     } catch (error) {
@@ -1191,8 +1208,7 @@ function SettingsWorkspace({
       });
       setAccount(body.account);
       setMessage(copy.saved);
-      localStorage.setItem('woo-ops-locale', body.account.locale === 'ar-EG' ? 'ar' : 'en');
-      localStorage.setItem('woo-ops-direction', body.account.direction);
+      onLocaleChange(body.account.locale === 'ar-EG' ? 'ar' : 'en');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'REQUEST_FAILED');
     }
@@ -1250,18 +1266,6 @@ function SettingsWorkspace({
               >
                 <MenuItem value="ar-EG">العربية</MenuItem>
                 <MenuItem value="en-US">English</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl fullWidth>
-              <InputLabel id="admin-direction-label">{copy.direction}</InputLabel>
-              <Select
-                labelId="admin-direction-label"
-                label={copy.direction}
-                value={direction}
-                onChange={(event) => setDirection(event.target.value as AdminDirection)}
-              >
-                <MenuItem value="rtl">RTL</MenuItem>
-                <MenuItem value="ltr">LTR</MenuItem>
               </Select>
             </FormControl>
             <TextField
@@ -1699,10 +1703,12 @@ export function AdminWorkspace({
   section,
   locale,
   onSessionExpired,
+  onLocaleChange,
 }: {
   section: AdminSection;
   locale: AdminLocale;
   onSessionExpired: () => void;
+  onLocaleChange: (locale: AdminLocale) => void;
 }) {
   const copy = translations[locale];
   if (section === 'overview')
@@ -1712,7 +1718,13 @@ export function AdminWorkspace({
   if (section === 'field-mappings')
     return <FieldMappingsWorkspace copy={copy} onSessionExpired={onSessionExpired} />;
   if (section === 'settings')
-    return <SettingsWorkspace copy={copy} onSessionExpired={onSessionExpired} />;
+    return (
+      <SettingsWorkspace
+        copy={copy}
+        onSessionExpired={onSessionExpired}
+        onLocaleChange={onLocaleChange}
+      />
+    );
   if (section === 'members')
     return <MembersWorkspace copy={copy} onSessionExpired={onSessionExpired} />;
   return <OperationsWorkspace copy={copy} onSessionExpired={onSessionExpired} />;
