@@ -75,6 +75,7 @@ const order = {
   lines: [{ lineId: 'line-1', productId: 'p1', quantity: 2, subtotalMinor: '3000' }],
   shippingMethod: { methodId: 'flat_rate' },
   payment: { methodId: 'cod' },
+  customer: { name: 'Customer One', email: 'customer@example.com' },
   shipping: { state: 'Cairo' },
   refunds: [{ amountMinor: '-500' }],
 };
@@ -110,6 +111,7 @@ test('calculates explainable minor-unit metrics and immutable line costs', () =>
   assert.equal(result.dimensions.remoteStatus, 'processing');
   assert.equal(result.dimensions.exportState, null);
   assert.equal(result.dimensions.governorate, 'Cairo');
+  assert.equal(result.dimensions.customer, 'customer@example.com');
   assert.equal(
     calculateOrderMetrics({ ...order, amounts: { ...order.amounts, collectedMinor: '0' } }, rules)
       .totals.collectedRevenueMinor,

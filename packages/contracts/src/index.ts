@@ -282,6 +282,7 @@ export const analyticsBreakdownSchema = analyticsFilterSchema
         'localStatus',
         'exportState',
         'governorate',
+        'customer',
         'product',
         'category',
         'author',

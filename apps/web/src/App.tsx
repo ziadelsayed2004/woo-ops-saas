@@ -239,7 +239,7 @@ const copy = {
     app: 'Woo Ops',
     orders: 'إدارة الطلبات',
     subtitle: 'بحث وتشغيل الطلبات من كل المصادر في مكان واحد',
-    search: 'ابحث برقم الطلب أو العميل أو SKU أو الهاتف',
+    search: 'ابحث برقم الطلب أو اسم العميل أو الهاتف',
     searchButton: 'بحث',
     status: 'الحالة',
     all: 'الكل',
@@ -287,8 +287,8 @@ const copy = {
       '\u062a\u062d\u062f\u064a\u062f \u0643\u0644 \u0627\u0644\u0646\u062a\u0627\u0626\u062c',
     clearSelection: '\u0625\u0644\u063a\u0627\u0621 \u0627\u0644\u062a\u062d\u062f\u064a\u062f',
     saveView: '\u062d\u0641\u0638 \u0627\u0644\u0645\u0634\u0627\u0647\u062f\u0629',
-    viewName: '\u0627\u0633\u0645 \u0627\u0644\u0645\u0634\u0627\u0647\u062f\u0629',
-    savedViews: '\u0627\u0644\u0645\u0634\u0627\u0647\u062f\u0627\u062a',
+    viewName: 'اسم الفلتر المحفوظ',
+    savedViews: 'الفلاتر المحفوظة',
     totalResults: '\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u0646\u062a\u0627\u0626\u062c',
     retry: '\u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0645\u062d\u0627\u0648\u0644\u0629',
     authenticationRequired:
@@ -476,6 +476,7 @@ const copy = {
       '\u062f\u0648\u0631\u0629 \u0627\u0644\u0637\u0644\u0628 \u0627\u0644\u064a\u062f\u0648\u064a',
     dimensionExportState: '\u062d\u0627\u0644\u0629 \u0627\u0644\u062a\u0635\u062f\u064a\u0631',
     dimensionGovernorate: '\u0627\u0644\u0645\u062d\u0627\u0641\u0638\u0629',
+    dimensionCustomer: 'العميل',
     dimensionShipping: '\u0627\u0644\u0634\u062d\u0646',
     dimensionProduct: '\u0627\u0644\u0645\u0646\u062a\u062c',
     dimensionCategory: '\u0627\u0644\u062a\u0635\u0646\u064a\u0641',
@@ -509,7 +510,7 @@ const copy = {
     app: 'Woo Ops',
     orders: 'Orders workspace',
     subtitle: 'Search and operate orders from every source in one place',
-    search: 'Search order number, customer, SKU or phone',
+    search: 'Search order number, customer or phone',
     searchButton: 'Search',
     status: 'Status',
     all: 'All',
@@ -549,7 +550,7 @@ const copy = {
     paymentFilter: 'Payment method',
     shippingFilterOrders: 'Shipping method',
     posFilter: 'POS location',
-    productFilterOrders: 'Product / ID / SKU',
+    productFilterOrders: 'Product',
     categoryFilterOrders: 'Category',
     authorFilterOrders: 'Author',
     selected: 'selected',
@@ -720,6 +721,7 @@ const copy = {
     dimensionLocalStatus: 'Manual order lifecycle',
     dimensionExportState: 'Export state',
     dimensionGovernorate: 'Governorate / region',
+    dimensionCustomer: 'Customer',
     dimensionShipping: 'Shipping',
     dimensionProduct: 'Product',
     dimensionCategory: 'Category',
@@ -920,6 +922,7 @@ type AnalyticsDimension =
   | 'localStatus'
   | 'exportState'
   | 'governorate'
+  | 'customer'
   | 'shippingMethod'
   | 'product'
   | 'category'
@@ -1463,6 +1466,7 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                   <MenuItem value="localStatus">{t.dimensionLocalStatus}</MenuItem>
                   <MenuItem value="exportState">{t.dimensionExportState}</MenuItem>
                   <MenuItem value="governorate">{t.dimensionGovernorate}</MenuItem>
+                  <MenuItem value="customer">{t.dimensionCustomer}</MenuItem>
                   <MenuItem value="shippingMethod">{t.dimensionShipping}</MenuItem>
                   <MenuItem value="product">{t.dimensionProduct}</MenuItem>
                   <MenuItem value="category">{t.dimensionCategory}</MenuItem>
@@ -2135,7 +2139,7 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
           <TextField
             fullWidth
             size="small"
-            label={locale === 'ar' ? 'ابحث بالاسم أو SKU' : 'Search name or SKU'}
+            label={locale === 'ar' ? 'ابحث باسم المنتج' : 'Search product name'}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -2211,7 +2215,6 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
             <TableHead>
               <TableRow>
                 <TableCell>{locale === 'ar' ? 'المنتج' : 'Product'}</TableCell>
-                <TableCell>SKU</TableCell>
                 <TableCell>{locale === 'ar' ? 'التصنيفات' : 'Categories'}</TableCell>
                 <TableCell>{locale === 'ar' ? 'السعر' : 'Price'}</TableCell>
                 <TableCell>{locale === 'ar' ? 'المخزون' : 'Stock'}</TableCell>
@@ -2223,12 +2226,9 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
               {items.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>{item.name}</TableCell>
-                  <TableCell>{item.sku ?? '—'}</TableCell>
                   <TableCell>
                     {item.categories.map((entry) => entry.name).join(', ') || '—'}
                   </TableCell>
-                  <TableCell>{item.backorders ?? '—'}</TableCell>
-                  <TableCell>{item.catalogVisibility ?? '—'}</TableCell>
                   <TableCell>
                     <Box component="bdi" dir="ltr">
                       {item.price ?? '—'}
@@ -2247,6 +2247,20 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
                       }
                     />
                   </TableCell>
+                  <TableCell>
+                    {item.backorders === 'notify'
+                      ? locale === 'ar'
+                        ? 'مسموح مع تنبيه'
+                        : 'Allowed with notice'
+                      : item.backorders === 'yes'
+                        ? locale === 'ar'
+                          ? 'مسموح'
+                          : 'Allowed'
+                        : locale === 'ar'
+                          ? 'غير مسموح'
+                          : 'Not allowed'}
+                  </TableCell>
+                  <TableCell>{item.catalogVisibility ?? '—'}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -2738,7 +2752,7 @@ function ManualOrderForm({
             fullWidth
             options={catalog}
             value={selectedCatalogItem}
-            getOptionLabel={(item) => `${item.name}${item.sku ? ` · ${item.sku}` : ''}`}
+            getOptionLabel={(item) => item.name}
             isOptionEqualToValue={(option, value) => option.id === value.id}
             getOptionDisabled={(item) => item.stockStatus === 'outofstock'}
             onChange={(_event, item) => selectCatalogProduct(item?.id ?? '')}
@@ -2748,8 +2762,8 @@ function ManualOrderForm({
                 <Stack width="100%" gap={0.25}>
                   <Typography fontWeight={700}>{item.name}</Typography>
                   <Stack direction="row" justifyContent="space-between" gap={2}>
-                    <Typography variant="caption" color="text.secondary" dir="ltr">
-                      {item.sku || '—'} · {item.stockStatus || 'unknown'}
+                    <Typography variant="caption" color="text.secondary">
+                      {item.stockStatus || 'unknown'}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       {item.price} {currency}
@@ -2765,20 +2779,11 @@ function ManualOrderForm({
           <Box
             sx={{
               display: 'grid',
-              gridTemplateColumns: {
-                xs: '1fr',
-                sm: 'minmax(0, 2fr) repeat(2, minmax(140px, 1fr))',
-              },
+              gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(140px, 1fr))' },
               gap: 2,
               mt: 2,
             }}
           >
-            <TextField
-              fullWidth
-              label={t.productSku}
-              value={productSku}
-              InputProps={{ readOnly: true }}
-            />
             <TextField
               required
               label={t.quantity}
@@ -4129,27 +4134,121 @@ export function App({
     }
   };
 
-  const markSelectionExportReady = async () => {
+  const ensureOrderExportVersion = async (
+    format: 'xlsx' | 'csv',
+  ): Promise<ExportVersionSummary> => {
+    const profilesResponse = await fetch('/api/v1/export-profiles', { credentials: 'include' });
+    if (!profilesResponse.ok) throw new Error('EXPORT_PROFILES_LOAD_FAILED');
+    const profiles =
+      ((await profilesResponse.json()) as { items?: ExportProfileSummary[] }).items ?? [];
+    let profile = profiles.find((item) => item.name === `Orders ${format.toUpperCase()}`);
+    if (!profile) {
+      const createProfileResponse = await fetch('/api/v1/export-profiles', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        body: JSON.stringify({
+          name: `Orders ${format.toUpperCase()}`,
+          description: 'Default shipping operations export',
+        }),
+      });
+      if (!createProfileResponse.ok) throw new Error('EXPORT_PROFILE_CREATE_FAILED');
+      profile = ((await createProfileResponse.json()) as { profile: ExportProfileSummary }).profile;
+    }
+    const versionsResponse = await fetch(
+      `/api/v1/export-profiles/${encodeURIComponent(profile.id)}/versions`,
+      { credentials: 'include' },
+    );
+    if (!versionsResponse.ok) throw new Error('EXPORT_VERSIONS_LOAD_FAILED');
+    const versions =
+      ((await versionsResponse.json()) as { items?: ExportVersionSummary[] }).items ?? [];
+    const existing = versions.find((item) => item.format === format && item.rowMode === 'order');
+    if (existing) return existing;
+    const createVersionResponse = await fetch(
+      `/api/v1/export-profiles/${encodeURIComponent(profile.id)}/versions`,
+      {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        body: JSON.stringify({
+          format,
+          rowMode: 'order',
+          columns: [
+            { key: 'orderNumber', label: t.orderNumber, type: 'text' },
+            { key: 'customerName', label: t.customerName, type: 'text' },
+            { key: 'customerPhone', label: t.phone, type: 'text' },
+            { key: 'shipping.address_1', label: t.address, type: 'text' },
+            { key: 'shipping.state', label: t.governorateFilter, type: 'text' },
+            { key: 'shippingMethodTitle', label: t.shippingMethod, type: 'text' },
+            { key: 'paymentMethodTitle', label: t.payment, type: 'text' },
+            { key: 'remoteStatus', label: t.remoteStatus, type: 'text' },
+            {
+              key: 'remoteExportStatus',
+              label: locale === 'ar' ? 'حالة تصدير Woo' : 'Woo export status',
+              type: 'text',
+            },
+            { key: 'exportState', label: t.exportState, type: 'text' },
+            { key: 'grandTotalMinor', label: t.total, type: 'money' },
+            { key: 'createdAt', label: t.created, type: 'date' },
+          ],
+          filenameTemplate: `orders-{date}-${format}`,
+          config: { required: ['orderNumber', 'customerName', 'customerPhone'] },
+        }),
+      },
+    );
+    if (!createVersionResponse.ok) throw new Error('EXPORT_VERSION_CREATE_FAILED');
+    return ((await createVersionResponse.json()) as { version: ExportVersionSummary }).version;
+  };
+
+  const createSelectionExport = async (format: 'xlsx' | 'csv') => {
     const selectionId = await createSelectionSnapshot();
     if (!selectionId) return;
     try {
-      const response = await fetch('/api/v1/bulk-jobs', {
+      const version = await ensureOrderExportVersion(format);
+      const response = await fetch('/api/v1/export-batches', {
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
         body: JSON.stringify({
           selectionId,
-          action: 'mark-export-ready',
-          parameters: {},
-          idempotencyKey: `orders-export-ready:${selectionId}:${crypto.randomUUID()}`,
+          profileVersionId: version.id,
+          idempotencyKey: `orders-${format}:${selectionId}:${crypto.randomUUID()}`,
         }),
       });
-      if (!response.ok) throw new Error('BULK_EXPORT_READY_FAILED');
+      if (!response.ok) throw new Error('EXPORT_CREATE_FAILED');
       clearOrderSelection();
-      setSelectionMessage(t.exportReadyQueued);
-      await loadOrders();
+      setSelectionMessage(locale === 'ar' ? 'جاري تجهيز ملف التصدير' : 'Export is being prepared');
+      setView('exports');
     } catch {
-      setSelectionMessage('BULK_EXPORT_READY_FAILED');
+      setSelectionMessage('EXPORT_CREATE_FAILED');
+    }
+  };
+
+  const unexportSelectedOrder = async () => {
+    const orderId = [...selectedIds][0];
+    if (!orderId || selectedIds.size !== 1 || selectAllMatching) return;
+    const reason = window.prompt(
+      locale === 'ar' ? 'اكتب سبب التراجع عن حالة التصدير' : 'Reason for reversing export state',
+    );
+    if (!reason?.trim()) return;
+    try {
+      const response = await fetch(
+        `/api/v1/orders/${encodeURIComponent(orderId)}/export-state/unexport`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+          body: JSON.stringify({ reason: reason.trim() }),
+        },
+      );
+      if (!response.ok) throw new Error('EXPORT_UNEXPORT_FAILED');
+      clearOrderSelection();
+      await loadOrders();
+      setSelectionMessage(
+        locale === 'ar' ? 'تم التراجع عن حالة التصدير المحلية' : 'Local export state reversed',
+      );
+    } catch {
+      setSelectionMessage('EXPORT_UNEXPORT_FAILED');
     }
   };
 
@@ -4164,18 +4263,37 @@ export function App({
       });
       if (!templatesResponse.ok) throw new Error('DOCUMENT_TEMPLATES_LOAD_FAILED');
       const templatesBody = (await templatesResponse.json()) as { items: DocumentTemplate[] };
-      const template = templatesBody.items[0];
-      if (!template) {
-        setSelectionMessage('DOCUMENT_TEMPLATE_REQUIRED');
-        setView('documents');
-        return;
-      }
       const format =
         action === 'generate-thermal'
           ? 'thermal-80mm'
           : action === 'generate-label'
             ? 'label-100x150mm'
             : 'a4';
+      let template = templatesBody.items.find((item) => item.active && item.format === format);
+      template ??= templatesBody.items.find((item) => item.format === format);
+      if (!template) {
+        const templateResponse = await fetch('/api/v1/document-templates', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+          body: JSON.stringify({
+            name:
+              format === 'thermal-80mm'
+                ? 'فاتورة حرارية 80mm'
+                : format === 'label-100x150mm'
+                  ? 'بوليصة شحن 100x150'
+                  : 'فاتورة A4',
+            format,
+            locale: locale === 'ar' ? 'ar-EG' : 'en-US',
+            direction: locale === 'ar' ? 'rtl' : 'ltr',
+            companyName: 'Wasat Al Balad',
+            body: '{{order.number}}\n{{customer.name}}\n{{customer.phone}}\n{{shipping.address}}\n{{order.totalMinor}}',
+            footerText: locale === 'ar' ? 'شكراً لتعاملكم معنا' : 'Thank you for your order',
+          }),
+        });
+        if (!templateResponse.ok) throw new Error('DOCUMENT_TEMPLATE_CREATE_FAILED');
+        template = ((await templateResponse.json()) as { template: DocumentTemplate }).template;
+      }
       const response = await fetch('/api/v1/document-jobs', {
         method: 'POST',
         credentials: 'include',
@@ -4648,17 +4766,17 @@ export function App({
                   )}
                   <Button
                     size="small"
-                    variant="outlined"
-                    onClick={() => void createSelectionSnapshot()}
+                    variant="contained"
+                    onClick={() => void createSelectionExport('xlsx')}
                   >
-                    {t.createSelection}
+                    {locale === 'ar' ? 'تصدير Excel' : 'Export Excel'}
                   </Button>
                   <Button
                     size="small"
-                    variant="contained"
-                    onClick={() => void markSelectionExportReady()}
+                    variant="outlined"
+                    onClick={() => void createSelectionExport('csv')}
                   >
-                    {t.markExportReady}
+                    {locale === 'ar' ? 'تصدير CSV' : 'Export CSV'}
                   </Button>
                   <Button
                     size="small"
@@ -4681,6 +4799,15 @@ export function App({
                   >
                     {locale === 'ar' ? 'بوليصة شحن 100×150' : '100×150 shipping label'}
                   </Button>
+                  {!selectAllMatching && selectedIds.size === 1 && (
+                    <Button
+                      size="small"
+                      color="warning"
+                      onClick={() => void unexportSelectedOrder()}
+                    >
+                      {locale === 'ar' ? 'تراجع عن التصدير' : 'Reverse export state'}
+                    </Button>
+                  )}
                   <Button size="small" onClick={clearOrderSelection}>
                     {t.clearSelection}
                   </Button>

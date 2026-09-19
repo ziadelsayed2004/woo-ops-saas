@@ -6180,6 +6180,7 @@ export class SqliteStore {
         | 'localStatus'
         | 'exportState'
         | 'governorate'
+        | 'customer'
         | 'product'
         | 'category'
         | 'author';

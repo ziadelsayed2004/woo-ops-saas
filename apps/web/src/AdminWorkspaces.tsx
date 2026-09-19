@@ -174,6 +174,8 @@ const translations = {
     newPassword: 'كلمة المرور الجديدة',
     saved: 'تم الحفظ',
     membersTitle: 'أعضاء الحساب',
+    membersHelper:
+      'هذه الصفحة لفريق تشغيل النظام وصلاحياته. إنفاق عملاء المتجر وعدد طلباتهم يظهر في التحليلات ضمن التوزيع حسب العميل.',
     email: 'البريد الإلكتروني',
     role: 'الدور',
     invite: 'دعوة عضو',
@@ -260,6 +262,8 @@ const translations = {
     newPassword: 'New password',
     saved: 'Saved',
     membersTitle: 'Account members',
+    membersHelper:
+      'This page manages operator access. Store customer spend and order counts are available in Analytics under Customer breakdown.',
     email: 'Email',
     role: 'Role',
     invite: 'Invite member',
@@ -1395,6 +1399,7 @@ function MembersWorkspace({
       <Typography variant="h4" component="h1" fontWeight={800}>
         {copy.membersTitle}
       </Typography>
+      <Alert severity="info">{copy.membersHelper}</Alert>
       {failed && <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />}
       {message && <Alert severity="info">{message}</Alert>}
       <Paper

@@ -332,6 +332,8 @@ const lineSnapshotsFromOrder = (
 };
 const dimensionsFor = (order: AnalyticsOrder, source: OrderSource): Record<string, unknown> => {
   const normalized = normalizedOrder(order);
+  const customer = isRecord(normalized.customer) ? normalized.customer : {};
+  const billing = isRecord(normalized.billing) ? normalized.billing : {};
   const shippingMethod = isRecord(normalized.shippingMethod) ? normalized.shippingMethod : {};
   const shippingAddress = isRecord(normalized.shipping)
     ? normalized.shipping
@@ -353,6 +355,21 @@ const dimensionsFor = (order: AnalyticsOrder, source: OrderSource): Record<strin
     .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
   const categories = [...new Set(products.flatMap((product) => product.categories))].sort();
   const authors = [...new Set(products.flatMap((product) => product.authors))].sort();
+  const customerName =
+    text(customer.name) ??
+    ([
+      text(customer.first_name ?? billing.first_name),
+      text(customer.last_name ?? billing.last_name),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim() ||
+      null);
+  const customerKey =
+    text(customer.email ?? billing.email) ??
+    text(customer.phone ?? billing.phone) ??
+    customerName ??
+    null;
   return {
     source,
     store: order.connectionId ?? normalized.connectionId ?? null,
@@ -366,6 +383,7 @@ const dimensionsFor = (order: AnalyticsOrder, source: OrderSource): Record<strin
       shippingAddress.state ?? shippingAddress.governorate ?? shippingAddress.region ?? null,
     shippingMethod: shippingMethod.methodId ?? shippingMethod.title ?? null,
     paymentMethod: payment.methodId ?? payment.method ?? null,
+    customer: customerKey,
     categories,
     authors,
     products,

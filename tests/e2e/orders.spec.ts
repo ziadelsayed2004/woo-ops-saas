@@ -134,6 +134,14 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
   );
   await expect(page.getByText('لم يُصدّر', { exact: true })).toBeVisible();
 
+  await page.getByTestId('order-row-order-1').getByRole('checkbox').check();
+  await expect(page.getByRole('button', { name: 'تصدير Excel' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'تصدير CSV' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'فاتورة A4' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'إيصال حراري' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'بوليصة شحن' })).toBeVisible();
+  await page.getByTestId('order-row-order-1').getByRole('checkbox').uncheck();
+
   await page.getByRole('button', { name: 'فلاتر متقدمة' }).click();
   const filterGrid = page.getByTestId('advanced-order-filters');
   await expect(filterGrid).toBeVisible();

@@ -95,6 +95,7 @@ test('cost rules are effective-dated and analytics facts rebuild deterministical
 
   const order = store.createManualOrder(context, {
     currency: 'EGP',
+    customer: { name: 'Customer One', email: 'customer@example.com' },
     shipping: { state: 'Cairo' },
     payment: { methodId: 'cod' },
     shippingMethod: { methodId: 'courier' },
@@ -134,6 +135,10 @@ test('cost rules are effective-dated and analytics facts rebuild deterministical
   assert.equal(
     store.getAnalyticsBreakdown(context, { dimension: 'governorate' }).items[0].key,
     'Cairo',
+  );
+  assert.equal(
+    store.getAnalyticsBreakdown(context, { dimension: 'customer' }).items[0].key,
+    'customer@example.com',
   );
   assert.equal(store.getAnalyticsTimeseries(context, { source: 'manual' }).items.length, 1);
   const firstOverride = store.createCostOverride(context, order.id, {
