@@ -107,3 +107,62 @@ test('numeric Woo variation references are resolved read-only with price and sto
   assert.equal(JSON.parse(items[1].sourceJson).price, '499.50');
   assert.deepEqual(methods, ['GET', 'GET']);
 });
+
+test('Woo shipping zones expose only explicit Egyptian state flat rates', async () => {
+  const connector = new WooCommerceConnector(
+    'secret',
+    new URL('https://shop.example.com'),
+    { key: 'k', secret: 's' },
+    async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith('/shipping/zones'))
+        return new Response(JSON.stringify([{ id: 2, name: 'Cairo zone' }]));
+      if (path.endsWith('/shipping/zones/2/locations'))
+        return new Response(
+          JSON.stringify([
+            { code: 'EG:C', type: 'state' },
+            { code: 'EG:SHR', type: 'state' },
+            { code: 'EG', type: 'country' },
+          ]),
+        );
+      return new Response(
+        JSON.stringify([
+          {
+            instance_id: 9,
+            method_id: 'flat_rate',
+            title: 'Standard delivery',
+            enabled: true,
+            settings: { cost: { value: '65.50' } },
+          },
+          {
+            instance_id: 10,
+            method_id: 'free_shipping',
+            title: 'Free',
+            enabled: true,
+            settings: {},
+          },
+        ]),
+      );
+    },
+    async () => [{ address: '93.184.216.34' }],
+  );
+
+  assert.deepEqual(await connector.readEgyptShippingRates(), [
+    {
+      zoneId: '2',
+      methodId: '9',
+      title: 'Standard delivery',
+      stateCode: 'EGC',
+      amountMinor: '6550',
+      currency: 'EGP',
+    },
+    {
+      zoneId: '2',
+      methodId: '9',
+      title: 'Standard delivery',
+      stateCode: 'EGSHR',
+      amountMinor: '6550',
+      currency: 'EGP',
+    },
+  ]);
+});

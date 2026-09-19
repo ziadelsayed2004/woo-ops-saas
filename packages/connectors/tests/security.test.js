@@ -103,6 +103,34 @@ test('connector requests are GET-only, do not follow redirects, and reject origi
   );
 });
 
+test('connector retries Woo authentication for shared hosts that strip Authorization', async () => {
+  const calls = [];
+  const connector = new WooCommerceConnector(
+    'secret',
+    new URL('https://shop.example.test'),
+    { key: 'ck_read', secret: 'cs_read' },
+    async (url, init) => {
+      calls.push({ url: new URL(String(url)), init });
+      if (calls.length === 1) return new Response('{}', { status: 401 });
+      return new Response(JSON.stringify([orderFixture]), {
+        status: 200,
+        headers: { 'x-wp-totalpages': '1' },
+      });
+    },
+    publicResolver,
+  );
+
+  for await (const _page of connector.pullRemote('orders')) break;
+
+  assert.equal(calls.length, 2);
+  assert.match(String(calls[0].init.headers.authorization), /^Basic /u);
+  assert.equal(calls[0].url.searchParams.has('consumer_key'), false);
+  assert.equal(calls[1].init.headers.authorization, undefined);
+  assert.equal(calls[1].url.searchParams.get('consumer_key'), 'ck_read');
+  assert.equal(calls[1].url.searchParams.get('consumer_secret'), 'cs_read');
+  assert.equal(calls[1].init.redirect, 'manual');
+});
+
 test('schema drift is quarantined and webhook signatures require strict base64', () => {
   assert.deepEqual(validateWooOrder(orderFixture).status, 'accepted');
   assert.deepEqual(validateWooOrder({ id: 42, number: '10042' }), {

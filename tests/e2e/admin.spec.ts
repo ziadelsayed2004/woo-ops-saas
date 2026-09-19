@@ -55,7 +55,7 @@ async function mockAdminApi(page: Page, session: 'authenticated' | 'expired' = '
       json: {
         health: {
           database: 'connected',
-          schemaVersion: 21,
+          schemaVersion: 22,
           queue: { queued: 1, running: 0, deadLettered: 0 },
         },
         runner: {

@@ -70,6 +70,15 @@ export type ConnectionWorkerRecord = ConnectionSummary &
     encryptedCredentials: string | null;
     encryptedWebhookSecret: string | null;
   }>;
+export type WooShippingRateRecord = Readonly<{
+  connectionId: string;
+  zoneId: string;
+  methodId: string;
+  title: string;
+  stateCode: string;
+  amountMinor: string;
+  currency: string;
+}>;
 export type SyncRunRecord = Readonly<{
   id: string;
   accountId: string;
@@ -1793,7 +1802,7 @@ const compileFilter = (
   };
 };
 
-export const schemaVersion = 21;
+export const schemaVersion = 22;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -2409,6 +2418,23 @@ const migrations: readonly Migration[] = [
         FOREIGN KEY(account_id, order_id) REFERENCES orders(account_id, id)
       );
       CREATE INDEX manual_payment_proofs_account_order ON manual_payment_proofs(account_id, order_id);
+    `,
+  },
+  {
+    version: 22,
+    name: 'woo-shipping-rates',
+    sql: `
+      CREATE TABLE woo_shipping_rates (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id),
+        connection_id TEXT NOT NULL REFERENCES connections(id), zone_id TEXT NOT NULL,
+        method_id TEXT NOT NULL, title TEXT NOT NULL, state_code TEXT NOT NULL,
+        amount_minor TEXT NOT NULL
+          CHECK(length(amount_minor) BETWEEN 1 AND 18 AND amount_minor NOT GLOB '*[^0-9]*'),
+        currency TEXT NOT NULL CHECK(length(currency) = 3), updated_at TEXT NOT NULL,
+        UNIQUE(account_id, connection_id, zone_id, method_id, state_code)
+      );
+      CREATE INDEX woo_shipping_rates_account_state
+        ON woo_shipping_rates(account_id, state_code, connection_id);
     `,
   },
 ];
@@ -9659,6 +9685,91 @@ export class SqliteStore {
         };
       }),
     };
+  }
+
+  replaceWooShippingRates(
+    context: AccountContext,
+    connectionId: string,
+    rates: readonly Omit<WooShippingRateRecord, 'connectionId'>[],
+  ): void {
+    this.assertContext(context);
+    this.assertConnection(context, connectionId);
+    if (rates.length > 500) throw new Error('SHIPPING_RATES_INVALID');
+    const now = new Date().toISOString();
+    this.db.transaction(() => {
+      this.db
+        .prepare('DELETE FROM woo_shipping_rates WHERE account_id = ? AND connection_id = ?')
+        .run(context.accountId, connectionId);
+      const insert = this.db.prepare(
+        `INSERT INTO woo_shipping_rates
+          (id, account_id, connection_id, zone_id, method_id, title, state_code, amount_minor, currency, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const rate of rates) {
+        if (
+          !/^\d{1,18}$/u.test(rate.zoneId) ||
+          rate.methodId.length < 1 ||
+          rate.methodId.length > 120 ||
+          rate.title.length < 1 ||
+          rate.title.length > 120 ||
+          !/^EG[A-Z]{1,4}$/u.test(rate.stateCode) ||
+          !/^\d{1,18}$/u.test(rate.amountMinor) ||
+          rate.currency !== 'EGP'
+        )
+          throw new Error('SHIPPING_RATES_INVALID');
+        const id = createHash('sha256')
+          .update(
+            `${context.accountId}:${connectionId}:${rate.zoneId}:${rate.methodId}:${rate.stateCode}`,
+          )
+          .digest('hex');
+        insert.run(
+          id,
+          context.accountId,
+          connectionId,
+          rate.zoneId,
+          rate.methodId,
+          rate.title,
+          rate.stateCode,
+          rate.amountMinor,
+          rate.currency,
+          now,
+        );
+      }
+    })();
+  }
+
+  listWooShippingRates(context: AccountContext): WooShippingRateRecord[] {
+    this.assertMember(context);
+    return this.db
+      .prepare(
+        `SELECT r.connection_id, r.zone_id, r.method_id, r.title, r.state_code,
+          r.amount_minor, r.currency
+         FROM woo_shipping_rates r
+         JOIN connections c ON c.id = r.connection_id AND c.account_id = r.account_id
+         WHERE r.account_id = ? AND c.status <> 'disabled'
+         ORDER BY r.state_code, r.title, r.amount_minor, r.id`,
+      )
+      .all(context.accountId)
+      .map((row) => {
+        const value = row as {
+          connection_id: string;
+          zone_id: string;
+          method_id: string;
+          title: string;
+          state_code: string;
+          amount_minor: string;
+          currency: string;
+        };
+        return {
+          connectionId: value.connection_id,
+          zoneId: value.zone_id,
+          methodId: value.method_id,
+          title: value.title,
+          stateCode: value.state_code,
+          amountMinor: value.amount_minor,
+          currency: value.currency,
+        };
+      });
   }
 
   createManualPaymentProof(

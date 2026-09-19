@@ -350,6 +350,15 @@ export const createWooSyncEffect =
       }
       if (type === 'initial' && cursor.phase !== 'orders' && cursor.phase !== 'complete')
         cursor = await syncCatalog(syncContext, cursor);
+      if (type === 'initial') {
+        try {
+          const shippingRates = await syncContext.connector.readEgyptShippingRates();
+          store.replaceWooShippingRates(account, connectionId, shippingRates);
+        } catch {
+          // Shipping zones are optional for read-only keys and must never block catalog/orders.
+          // Keep the last successful snapshot on permission, plugin, or transient failures.
+        }
+      }
       if (cursor.phase !== 'complete') await syncOrders(syncContext, cursor);
     } catch (error) {
       const category = classifyWooError(error) as SyncErrorCategory;

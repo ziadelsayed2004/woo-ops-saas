@@ -70,7 +70,7 @@ const orderInput = (externalOrderId, reconcileToken) => ({
 });
 
 test('authorization is one-time, account scoped, encrypted, and credential-safe in summaries', () => {
-  assert.equal(schemaVersion, 21);
+  assert.equal(schemaVersion, 22);
   const stateNonce = randomUUID();
   const stateHash = createHash('sha256').update(stateNonce).digest('hex');
   store.createAuthorizationState(context, {
@@ -160,6 +160,36 @@ test('health, rotation, webhook-secret and disable transitions are local and aud
     () => store.markConnectionSyncQueued(context, connection.id),
     /CONNECTION_DISABLED/,
   );
+});
+
+test('Woo shipping rates are replaced atomically and remain account scoped', () => {
+  const connection = store.listConnections(context)[0];
+  assert.ok(connection);
+  store.db
+    .prepare("UPDATE connections SET status = 'active' WHERE account_id = ? AND id = ?")
+    .run(accountId, connection.id);
+  store.replaceWooShippingRates(context, connection.id, [
+    {
+      zoneId: '2',
+      methodId: '9',
+      title: 'Standard delivery',
+      stateCode: 'EGSHR',
+      amountMinor: '6550',
+      currency: 'EGP',
+    },
+  ]);
+  assert.deepEqual(store.listWooShippingRates(context), [
+    {
+      connectionId: connection.id,
+      zoneId: '2',
+      methodId: '9',
+      title: 'Standard delivery',
+      stateCode: 'EGSHR',
+      amountMinor: '6550',
+      currency: 'EGP',
+    },
+  ]);
+  assert.deepEqual(store.listWooShippingRates(otherContext), []);
 });
 
 test('sync runs checkpoint counters, classify failures, resume idempotently, and reconcile deletions', () => {

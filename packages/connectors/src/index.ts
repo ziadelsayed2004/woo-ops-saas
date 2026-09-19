@@ -65,4 +65,5 @@ export type {
   CredentialEnvelope,
   WooPullOptions,
   WooOrderPage,
+  WooShippingRate,
 } from './woocommerce.js';

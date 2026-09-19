@@ -125,7 +125,16 @@ try {
   const config = await request('/api/v1/manual-orders/config', {
     headers: { cookie: headers.cookie },
   });
-  assert.deepEqual(config.body.rates, [{ governorate: 'Cairo', amountMinor: '1500' }]);
+  assert.deepEqual(config.body.rates, [
+    {
+      governorate: 'Cairo',
+      amountMinor: '1500',
+      title: 'Configured rate',
+      methodId: 'configured-rate',
+      source: 'environment',
+    },
+  ]);
+  assert.equal(config.body.ratesSource, 'environment');
 
   const proofBytes = Buffer.from('private transfer proof');
   const proof = await request(`/api/v1/manual-orders/${created.body.order.id}/payment-proof`, {

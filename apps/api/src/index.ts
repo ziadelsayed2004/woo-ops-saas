@@ -783,19 +783,41 @@ app.get('/api/v1/manual-orders/config', (request, response) => {
   const user = authenticatedUser(request, response);
   if (!user) return;
   try {
+    const context = operationContext(user, response);
+    const wooRates = store.listWooShippingRates(context);
     const raw = process.env.WOO_OPS_EGYPT_SHIPPING_RATES_JSON ?? '{}';
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
       throw new Error('SHIPPING_RATES_INVALID');
-    const rates = Object.entries(parsed as Record<string, unknown>).flatMap(
+    const fallbackRates = Object.entries(parsed as Record<string, unknown>).flatMap(
       ([governorate, value]) =>
         typeof value === 'string' && /^\d+$/u.test(value) && value.length <= 18
-          ? [{ governorate: governorate.slice(0, 120), amountMinor: value }]
+          ? [
+              {
+                governorate: governorate.slice(0, 120),
+                amountMinor: value,
+                title: 'Configured rate',
+                methodId: 'configured-rate',
+                source: 'environment' as const,
+              },
+            ]
           : [],
     );
+    const rates =
+      wooRates.length > 0
+        ? wooRates.map((rate) => ({
+            governorate: rate.stateCode,
+            amountMinor: rate.amountMinor,
+            title: rate.title,
+            methodId: rate.methodId,
+            source: 'woocommerce' as const,
+          }))
+        : fallbackRates;
     response.json({
       currency: 'EGP',
       rates,
+      ratesSource:
+        wooRates.length > 0 ? 'woocommerce' : fallbackRates.length > 0 ? 'environment' : 'none',
       requiredFields: ['customerName', 'customerPhone', 'address1', 'governorate'],
       proofTypes: ['image/jpeg', 'image/png', 'application/pdf'],
       proofMaxBytes: 5 * 1024 * 1024,
@@ -1036,13 +1058,26 @@ app.post('/api/v1/connections/woocommerce/return', (request, response) => {
     return;
   }
   try {
-    store.completeAuthorization({
+    const connection = store.completeAuthorization({
       stateHash: stateHash(nonce),
       encryptedCredentials: JSON.stringify(
         encryptCredentialEnvelope({ key, secret }, encryptionKey),
       ),
     });
-    response.json({ connected: true });
+    store.enqueueJob(
+      {
+        accountId: connection.accountId,
+        correlationId: String(response.getHeader('x-correlation-id')),
+      },
+      {
+        id: randomUUID(),
+        type: 'sync.initial',
+        idempotencyKey: `initial-after-authorization:${connection.id}:${stateHash(nonce)}`,
+        payload: { connectionId: connection.id },
+        maxAttempts: 5,
+      },
+    );
+    response.json({ connected: true, syncQueued: true });
     return;
   } catch (error) {
     const code = error instanceof Error ? error.message : 'CONNECTOR_CALLBACK_INVALID';

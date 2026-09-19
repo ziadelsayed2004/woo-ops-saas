@@ -31,6 +31,14 @@ export type WooCatalogPage = {
   totalPages: number;
   items: readonly unknown[];
 };
+export type WooShippingRate = Readonly<{
+  zoneId: string;
+  methodId: string;
+  title: string;
+  stateCode: string;
+  amountMinor: string;
+  currency: 'EGP';
+}>;
 export type NormalizedCatalogItem = {
   identity: string;
   kind: 'product' | 'variation' | 'category' | 'tag' | 'shipping_class';
@@ -816,7 +824,7 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
   private async requestPage(url: URL): Promise<Response> {
     if (!this.storeUrl || !this.credentials) throw new Error('WOO_CONNECTION_NOT_CONFIGURED');
     await assertPublicStoreUrl(this.storeUrl, this.resolveHost);
-    const response = await this.request(url, {
+    const requestOptions: RequestInit = {
       method: 'GET',
       headers: {
         authorization: `Basic ${Buffer.from(`${this.credentials?.key ?? ''}:${this.credentials?.secret ?? ''}`).toString('base64')}`,
@@ -824,7 +832,26 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
       },
       cache: 'no-store',
       redirect: 'manual',
-    });
+    };
+    let response = await this.request(url, requestOptions);
+    // Some shared hosts strip the Authorization header before PHP sees it. WooCommerce
+    // explicitly supports HTTPS query-string authentication for that environment. Retry
+    // only official Woo REST paths, on the same origin, and only after an auth-like failure.
+    if (
+      [401, 403, 404].includes(response.status) &&
+      url.origin === this.storeUrl.origin &&
+      url.pathname.startsWith('/wp-json/wc/v3/')
+    ) {
+      const fallbackUrl = new URL(url);
+      fallbackUrl.searchParams.set('consumer_key', this.credentials.key);
+      fallbackUrl.searchParams.set('consumer_secret', this.credentials.secret);
+      response = await this.request(fallbackUrl, {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+        cache: 'no-store',
+        redirect: 'manual',
+      });
+    }
     if (response.status >= 300 && response.status < 400) throw new Error('WOO_REDIRECT_BLOCKED');
     if (response.url) {
       const responseUrl = new URL(response.url);
@@ -957,6 +984,67 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
     for (const kind of ['categories', 'tags', 'shipping_classes', 'products'] as const) {
       for await (const page of this.pullCatalog(kind)) await onPage(page, toCatalogItems(page));
     }
+  }
+
+  async readEgyptShippingRates(): Promise<readonly WooShippingRate[]> {
+    if (!this.storeUrl || !this.credentials) throw new Error('WOO_CONNECTION_NOT_CONFIGURED');
+    const zonesResponse = await this.requestPage(
+      new URL('/wp-json/wc/v3/shipping/zones', this.storeUrl),
+    );
+    if (zonesResponse.status === 429) throw new Error('WOO_RATE_LIMITED');
+    if (zonesResponse.status === 404) return [];
+    if (!zonesResponse.ok) throw new Error(`WOO_HTTP_${zonesResponse.status}`);
+    const zones: unknown = await zonesResponse.json();
+    if (!Array.isArray(zones)) throw new Error('WOO_SCHEMA_INVALID:shipping_zones');
+    const rates: WooShippingRate[] = [];
+    for (const rawZone of zones) {
+      const zone = asRecord(rawZone);
+      if (!zone || !Number.isInteger(zone.id)) continue;
+      const zoneId = String(zone.id);
+      const [locationsResponse, methodsResponse] = await Promise.all([
+        this.requestPage(
+          new URL(`/wp-json/wc/v3/shipping/zones/${zoneId}/locations`, this.storeUrl),
+        ),
+        this.requestPage(new URL(`/wp-json/wc/v3/shipping/zones/${zoneId}/methods`, this.storeUrl)),
+      ]);
+      if (!locationsResponse.ok || !methodsResponse.ok) continue;
+      const locations: unknown = await locationsResponse.json();
+      const methods: unknown = await methodsResponse.json();
+      if (!Array.isArray(locations) || !Array.isArray(methods)) continue;
+      const stateCodes = locations.flatMap((rawLocation) => {
+        const location = asRecord(rawLocation);
+        if (location?.type !== 'state' || typeof location.code !== 'string') return [];
+        const match = /^EG:([A-Z]{1,4})$/u.exec(location.code.toUpperCase());
+        return match?.[1] ? [`EG${match[1]}`] : [];
+      });
+      for (const rawMethod of methods) {
+        const method = asRecord(rawMethod);
+        const settings = asRecord(method?.settings);
+        const cost = asRecord(settings?.cost);
+        if (
+          method?.enabled !== true ||
+          method.method_id !== 'flat_rate' ||
+          typeof cost?.value !== 'string' ||
+          !/^\d+(?:\.\d{1,2})?$/u.test(cost.value)
+        )
+          continue;
+        const methodId = String(method.instance_id ?? method.id ?? `${zoneId}:flat_rate`);
+        const title =
+          typeof method.title === 'string' && method.title.trim()
+            ? method.title.trim().slice(0, 120)
+            : 'Flat rate';
+        for (const stateCode of stateCodes)
+          rates.push({
+            zoneId,
+            methodId,
+            title,
+            stateCode,
+            amountMinor: decimalToMinorUnits(cost.value),
+            currency: 'EGP',
+          });
+      }
+    }
+    return rates;
   }
   async *pullOrderPages(
     kind: WooOrderKind,

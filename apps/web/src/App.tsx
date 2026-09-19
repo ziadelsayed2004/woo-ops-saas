@@ -85,7 +85,14 @@ type CatalogItemView = {
 };
 type ManualOrderConfig = {
   currency: string;
-  rates: readonly { governorate: string; amountMinor: string }[];
+  rates: readonly {
+    governorate: string;
+    amountMinor: string;
+    title: string;
+    methodId: string;
+    source: 'woocommerce' | 'environment';
+  }[];
+  ratesSource: 'woocommerce' | 'environment' | 'none';
   proofTypes: readonly string[];
   proofMaxBytes: number;
 };
@@ -2276,6 +2283,7 @@ function ManualOrderForm({
   const [customerPhone, setCustomerPhone] = useState('');
   const [address, setAddress] = useState('');
   const [governorate, setGovernorate] = useState('');
+  const [shippingRateKey, setShippingRateKey] = useState('');
   const [currency, setCurrency] = useState('EGP');
   const [catalog, setCatalog] = useState<CatalogItemView[]>([]);
   const [selectedCatalogId, setSelectedCatalogId] = useState('');
@@ -2336,10 +2344,17 @@ function ManualOrderForm({
   };
   const selectGovernorate = (value: string) => {
     setGovernorate(value);
-    setShippingMinor(
-      config?.rates.find((candidate) => candidate.governorate === value)?.amountMinor ?? '0',
-    );
+    const rate = config?.rates.find((candidate) => candidate.governorate === value);
+    setShippingRateKey(rate ? `${rate.governorate}:${rate.methodId}:${rate.amountMinor}` : '');
+    setShippingMinor(rate?.amountMinor ?? '0');
   };
+  const selectedShippingRate =
+    config?.rates.find(
+      (rate) => `${rate.governorate}:${rate.methodId}:${rate.amountMinor}` === shippingRateKey,
+    ) ?? null;
+  const governorateRates = Array.from(
+    new Map((config?.rates ?? []).map((rate) => [rate.governorate, rate])).values(),
+  );
   const totalMinor = useMemo(() => {
     try {
       const subtotal = BigInt(unitPriceMinor || '0') * BigInt(quantity || '0');
@@ -2377,7 +2392,10 @@ function ManualOrderForm({
           billing: { first_name: customerName, email: customerEmail, phone: customerPhone },
           shipping: { first_name: customerName, address_1: address, state: governorate },
           payment: { method: 'bank-transfer', title: 'Bank transfer' },
-          shippingMethod: { methodId: 'configured-rate', title: governorate },
+          shippingMethod: {
+            methodId: selectedShippingRate?.methodId ?? 'configured-rate',
+            title: selectedShippingRate?.title ?? governorate,
+          },
           lines: [
             {
               name: productName,
@@ -2512,7 +2530,7 @@ function ManualOrderForm({
                 value={governorate}
                 onChange={(event) => selectGovernorate(event.target.value)}
               >
-                {(config?.rates ?? []).map((rate) => (
+                {governorateRates.map((rate) => (
                   <MenuItem key={rate.governorate} value={rate.governorate}>
                     <Stack
                       direction="row"
@@ -2532,8 +2550,8 @@ function ManualOrderForm({
           {config && !shippingRatesConfigured && (
             <Alert severity="warning" sx={{ mt: 2 }} data-testid="shipping-rates-empty">
               {locale === 'ar'
-                ? 'أسعار شحن المحافظات غير مضبوطة. أضف WOO_OPS_EGYPT_SHIPPING_RATES_JSON في متغيرات بيئة Hostinger ثم أعد تشغيل التطبيق.'
-                : 'Governorate shipping rates are not configured. Add WOO_OPS_EGYPT_SHIPPING_RATES_JSON to Hostinger environment variables, then restart the app.'}
+                ? 'لم يعثر النظام على أسعار شحن مربوطة بمحافظات مصر. راجع مناطق الشحن في WooCommerce ثم شغّل المزامنة الأولية.'
+                : 'No WooCommerce shipping rates mapped to Egyptian governorates were found. Review Woo shipping zones, then run initial sync.'}
             </Alert>
           )}
         </Section>
