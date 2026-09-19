@@ -124,7 +124,7 @@ const translations = {
   ar: {
     overview: 'نظرة عامة',
     connections: 'الربط والمتاجر',
-    mappings: 'خرائط الحقول',
+    mappings: 'تخصيص بيانات المتجر',
     settings: 'الإعدادات',
     members: 'الأعضاء',
     operations: 'العمليات',
@@ -209,7 +209,7 @@ const translations = {
   en: {
     overview: 'Overview',
     connections: 'Connections',
-    mappings: 'Field mappings',
+    mappings: 'Store data setup',
     settings: 'Settings',
     members: 'Members',
     operations: 'Operations',

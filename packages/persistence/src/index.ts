@@ -286,6 +286,7 @@ export type OrderFilterField =
   | 'shipping.methodId'
   | 'shippingCarrier'
   | 'shipping.carrier'
+  | 'governorate'
   | 'tracking'
   | 'shippingAmount'
   | 'shipping.amount'
@@ -1521,6 +1522,9 @@ const filterDefinitions: Record<OrderFilterField, FilterDefinition> = {
   'shipping.methodId': textDefinition('o.shipping_method_id'),
   shippingCarrier: textDefinition('o.shipping_carrier'),
   'shipping.carrier': textDefinition('o.shipping_carrier'),
+  governorate: textDefinition(
+    "COALESCE(json_extract(o.normalized_json, '$.shipping.state'), json_extract(o.normalized_json, '$.shipping.city'), json_extract(o.normalized_json, '$.billing.state'), json_extract(o.normalized_json, '$.billing.city'), '')",
+  ),
   tracking: textDefinition('o.search_text'),
   shippingAmount: numberDefinition('o.shipping_collected_minor'),
   'shipping.amount': numberDefinition('o.shipping_collected_minor'),

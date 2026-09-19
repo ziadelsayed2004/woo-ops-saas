@@ -149,6 +149,7 @@ export function WorkspaceShell({
                   <ListItem key={item.id} disablePadding>
                     <Tooltip title={collapsed && !mobile ? item.label : ''} placement="left">
                       <ListItemButton
+                        data-testid={`navigation-${item.id}`}
                         aria-label={collapsed && !mobile ? item.label : undefined}
                         selected={active === item.id}
                         onClick={() => {
@@ -161,11 +162,20 @@ export function WorkspaceShell({
                           my: 0.4,
                           px: collapsed && !mobile ? 1.5 : 1.75,
                           justifyContent: collapsed && !mobile ? 'center' : 'initial',
+                          direction,
+                          ...(!collapsed || mobile
+                            ? { display: 'grid', gridTemplateColumns: '42px minmax(0, 1fr)' }
+                            : {}),
                           '&.Mui-selected': { bgcolor: '#e8f0fe', color: 'primary.dark' },
                         }}
                       >
                         <ListItemIcon
-                          sx={{ minWidth: collapsed && !mobile ? 0 : 42, color: 'inherit' }}
+                          data-testid={`navigation-${item.id}-icon`}
+                          sx={{
+                            minWidth: collapsed && !mobile ? 0 : 42,
+                            color: 'inherit',
+                            justifyContent: 'flex-start',
+                          }}
                         >
                           {iconFor(item.id)}
                         </ListItemIcon>

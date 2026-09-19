@@ -176,7 +176,7 @@ test('admin navigation exposes authenticated operational workspaces and route st
   await expect(page.getByTestId('admin-overview')).toBeVisible();
   await page.getByRole('button', { name: 'Connections' }).click();
   await expect(page.getByTestId('connections-workspace')).toBeVisible();
-  await page.getByRole('button', { name: 'Field mappings' }).click();
+  await page.getByRole('button', { name: 'Store data setup' }).click();
   await expect(page.getByTestId('field-mappings-workspace')).toBeVisible();
   await expect(page.getByText('pos_location')).toBeVisible();
   await page.getByRole('button', { name: 'Settings' }).click();

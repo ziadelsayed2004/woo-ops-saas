@@ -208,6 +208,12 @@ const copy = {
     all: 'الكل',
     processing: 'قيد التجهيز',
     completed: 'مكتمل',
+    pending: 'في انتظار الدفع',
+    onHold: 'قيد الانتظار',
+    cancelled: 'ملغي',
+    refunded: 'مسترجع',
+    failed: 'فشل',
+    checkoutDraft: 'مسودة الدفع',
     refresh: 'تحديث',
     columns: 'الأعمدة',
     details: 'تفاصيل الطلب',
@@ -230,6 +236,9 @@ const copy = {
     hideFilters: '\u0625\u062e\u0641\u0627\u0621 \u0627\u0644\u0641\u0644\u0627\u062a\u0631',
     sourceFilter: '\u0627\u0644\u0645\u0635\u062f\u0631',
     exportFilter: '\u062d\u0627\u0644\u0629 \u0627\u0644\u062a\u0635\u062f\u064a\u0631',
+    exported: 'تم تصديره',
+    changedAfterExport: 'تغيّر بعد التصدير',
+    governorateFilter: 'المحافظة / المنطقة',
     paymentFilter: '\u0637\u0631\u064a\u0642\u0629 \u0627\u0644\u062f\u0641\u0639',
     shippingFilterOrders: '\u0637\u0631\u064a\u0642\u0629 \u0627\u0644\u0634\u062d\u0646',
     posFilter: '\u0646\u0642\u0637\u0629 \u0627\u0644\u0628\u064a\u0639',
@@ -459,6 +468,12 @@ const copy = {
     all: 'All',
     processing: 'Processing',
     completed: 'Completed',
+    pending: 'Pending payment',
+    onHold: 'On hold',
+    cancelled: 'Cancelled',
+    refunded: 'Refunded',
+    failed: 'Failed',
+    checkoutDraft: 'Checkout draft',
     refresh: 'Refresh',
     columns: 'Columns',
     details: 'Order details',
@@ -481,6 +496,9 @@ const copy = {
     hideFilters: 'Hide filters',
     sourceFilter: 'Source',
     exportFilter: 'Export state',
+    exported: 'Exported',
+    changedAfterExport: 'Changed after export',
+    governorateFilter: 'Governorate / region',
     paymentFilter: 'Payment method',
     shippingFilterOrders: 'Shipping method',
     posFilter: 'POS location',
@@ -692,6 +710,7 @@ type OrderFilters = {
   localStatus: string;
   paymentMethod: string;
   shippingMethod: string;
+  governorate: string;
   posLocation: string;
   product: string;
   category: string;
@@ -706,6 +725,7 @@ const emptyOrderFilters = (): OrderFilters => ({
   localStatus: '',
   paymentMethod: '',
   shippingMethod: '',
+  governorate: '',
   posLocation: '',
   product: '',
   category: '',
@@ -3062,6 +3082,8 @@ export function App({
       leaves.push({ field: 'paymentMethod', operator: 'contains', value: filters.paymentMethod });
     if (filters.shippingMethod)
       leaves.push({ field: 'shippingMethod', operator: 'contains', value: filters.shippingMethod });
+    if (filters.governorate)
+      leaves.push({ field: 'governorate', operator: 'contains', value: filters.governorate });
     if (filters.posLocation)
       leaves.push({ field: 'posLocation', operator: 'contains', value: filters.posLocation });
     if (filters.product)
@@ -3091,7 +3113,7 @@ export function App({
         body: JSON.stringify({
           search: search || undefined,
           filter: orderFilter,
-          includeFacets: false,
+          includeFacets: true,
           cursor: append ? cursor : null,
           limit: 50,
           sort: { field: 'remoteCreatedAt', direction: 'desc' },
@@ -3291,8 +3313,14 @@ export function App({
                         ? dateText(order.createdAt ?? order.remoteCreatedAt, locale)
                         : column === 'updatedAt'
                           ? dateText(order.updatedAt, locale)
-                          : column === 'exportState' && order.exportState === 'never-exported'
-                            ? t.never
+                          : column === 'exportState'
+                            ? order.exportState === 'never-exported'
+                              ? t.never
+                              : order.exportState === 'exported'
+                                ? t.exported
+                                : order.exportState === 'changed-after-export'
+                                  ? t.changedAfterExport
+                                  : valueText(order.exportState)
                             : valueText(order[column]);
 
   if (authStatus === 'checking')
@@ -3463,8 +3491,14 @@ export function App({
                     onChange={(event) => setStatus(event.target.value)}
                   >
                     <MenuItem value="">{t.all}</MenuItem>
+                    <MenuItem value="pending">{t.pending}</MenuItem>
                     <MenuItem value="processing">{t.processing}</MenuItem>
+                    <MenuItem value="on-hold">{t.onHold}</MenuItem>
                     <MenuItem value="completed">{t.completed}</MenuItem>
+                    <MenuItem value="cancelled">{t.cancelled}</MenuItem>
+                    <MenuItem value="refunded">{t.refunded}</MenuItem>
+                    <MenuItem value="failed">{t.failed}</MenuItem>
+                    <MenuItem value="checkout-draft">{t.checkoutDraft}</MenuItem>
                   </Select>
                 </FormControl>
                 <Button type="submit" variant="contained">
@@ -3512,8 +3546,22 @@ export function App({
                 </Button>
               </Stack>
               {advancedOpen && (
-                <Stack direction={{ xs: 'column', md: 'row' }} gap={2} mt={2} flexWrap="wrap">
-                  <FormControl size="small" sx={{ minWidth: 150 }}>
+                <Box
+                  data-testid="advanced-order-filters"
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: 'minmax(0, 1fr)',
+                      sm: 'repeat(2, minmax(0, 1fr))',
+                      lg: 'repeat(4, minmax(180px, 1fr))',
+                    },
+                    gap: 2,
+                    mt: 2,
+                    alignItems: 'start',
+                    '& .MuiFormControl-root': { minWidth: 0, width: '100%' },
+                  }}
+                >
+                  <FormControl size="small">
                     <InputLabel id="orders-source-label">{t.sourceFilter}</InputLabel>
                     <Select
                       value={filters.source}
@@ -3528,7 +3576,7 @@ export function App({
                       <MenuItem value="manual">{t.originManual}</MenuItem>
                     </Select>
                   </FormControl>
-                  <FormControl size="small" sx={{ minWidth: 180 }}>
+                  <FormControl size="small">
                     <InputLabel id="orders-export-label">{t.exportFilter}</InputLabel>
                     <Select
                       value={filters.exportState}
@@ -3540,8 +3588,8 @@ export function App({
                     >
                       <MenuItem value="">{t.all}</MenuItem>
                       <MenuItem value="never-exported">{t.never}</MenuItem>
-                      <MenuItem value="exported">exported</MenuItem>
-                      <MenuItem value="changed-after-export">changed-after-export</MenuItem>
+                      <MenuItem value="exported">{t.exported}</MenuItem>
+                      <MenuItem value="changed-after-export">{t.changedAfterExport}</MenuItem>
                     </Select>
                   </FormControl>
                   <TextField
@@ -3566,6 +3614,14 @@ export function App({
                     value={filters.shippingMethod}
                     onChange={(event) =>
                       setFilters((current) => ({ ...current, shippingMethod: event.target.value }))
+                    }
+                  />
+                  <TextField
+                    size="small"
+                    label={t.governorateFilter}
+                    value={filters.governorate}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, governorate: event.target.value }))
                     }
                   />
                   <TextField
@@ -3623,7 +3679,7 @@ export function App({
                   <Button type="button" onClick={() => setFilters(emptyOrderFilters())}>
                     {t.clearFilters}
                   </Button>
-                </Stack>
+                </Box>
               )}
             </Paper>
             {(selectedIds.size > 0 || selectAllMatching) && (
@@ -3678,92 +3734,148 @@ export function App({
               </Alert>
             )}
             <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
-              <Table size="small" aria-label={t.orders} data-testid="orders-table">
-                <caption
-                  style={{
-                    position: 'absolute',
-                    width: 1,
-                    height: 1,
-                    overflow: 'hidden',
-                    clip: 'rect(0 0 0 0)',
-                  }}
+              <TableContainer
+                data-testid="orders-table-scroll"
+                tabIndex={0}
+                aria-label={`${t.orders} — ${locale === 'ar' ? 'مرر أفقيا لعرض كل الأعمدة' : 'scroll horizontally to view all columns'}`}
+                sx={{
+                  maxWidth: '100%',
+                  overflowX: 'auto',
+                  overscrollBehaviorInline: 'contain',
+                  WebkitOverflowScrolling: 'touch',
+                  '&:focus-visible': {
+                    outline: '3px solid',
+                    outlineColor: 'primary.main',
+                    outlineOffset: -3,
+                  },
+                }}
+              >
+                <Table
+                  stickyHeader
+                  size="small"
+                  aria-label={t.orders}
+                  data-testid="orders-table"
+                  sx={{ minWidth: 1420, '& td, & th': { whiteSpace: 'nowrap' } }}
                 >
-                  {t.orders}
-                </caption>
-                <TableHead>
-                  <TableRow>
-                    <TableCell padding="checkbox">
-                      <Checkbox
-                        inputProps={{ 'aria-label': t.selectAllMatching }}
-                        checked={
-                          selectAllMatching ||
-                          (orders.length > 0 && orders.every((order) => selectedIds.has(order.id)))
-                        }
-                        indeterminate={
-                          !selectAllMatching &&
-                          selectedIds.size > 0 &&
-                          selectedIds.size < orders.length
-                        }
-                        onChange={toggleVisibleSelection}
-                      />
-                    </TableCell>
-                    {renderedColumns.map((column) => (
-                      <TableCell key={column} sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
-                        {labelFor(column)}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {orders.map((order) => (
-                    <TableRow
-                      key={order.id}
-                      hover
-                      selected={selectedIds.has(order.id)}
-                      tabIndex={0}
-                      data-testid={`order-row-${order.id}`}
-                      onClick={() => void openOrder(order)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          void openOrder(order);
-                        }
-                      }}
-                      sx={{ cursor: 'pointer' }}
-                    >
-                      <TableCell padding="checkbox" onClick={(event) => event.stopPropagation()}>
+                  <caption
+                    style={{
+                      position: 'absolute',
+                      width: 1,
+                      height: 1,
+                      overflow: 'hidden',
+                      clip: 'rect(0 0 0 0)',
+                    }}
+                  >
+                    {t.orders}
+                  </caption>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell
+                        padding="checkbox"
+                        sx={{
+                          position: 'sticky',
+                          insetInlineStart: 0,
+                          zIndex: 4,
+                          bgcolor: 'background.paper',
+                        }}
+                      >
                         <Checkbox
-                          checked={selectedIds.has(order.id) || selectAllMatching}
-                          onChange={() => toggleOrderSelection(order.id)}
-                          inputProps={{
-                            'aria-label': `${t.orderNumber} ${valueText(order.orderNumber)}`,
-                          }}
+                          inputProps={{ 'aria-label': t.selectAllMatching }}
+                          checked={
+                            selectAllMatching ||
+                            (orders.length > 0 &&
+                              orders.every((order) => selectedIds.has(order.id)))
+                          }
+                          indeterminate={
+                            !selectAllMatching &&
+                            selectedIds.size > 0 &&
+                            selectedIds.size < orders.length
+                          }
+                          onChange={toggleVisibleSelection}
                         />
                       </TableCell>
                       {renderedColumns.map((column) => (
-                        <TableCell key={column}>
-                          {column === 'remoteStatus' ? (
-                            <Chip
-                              size="small"
-                              label={display(order, column)}
-                              variant="outlined"
-                              sx={
-                                order.remoteStatus === 'completed'
-                                  ? { color: '#1b5e20', borderColor: '#1b5e20' }
-                                  : { color: '#8a4b00', borderColor: '#8a4b00' }
-                              }
-                            />
-                          ) : (
-                            <span dir={column === 'orderNumber' ? 'ltr' : undefined}>
-                              {display(order, column)}
-                            </span>
-                          )}
+                        <TableCell key={column} sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
+                          {labelFor(column)}
                         </TableCell>
                       ))}
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHead>
+                  <TableBody>
+                    {orders.map((order) => (
+                      <TableRow
+                        key={order.id}
+                        hover
+                        selected={selectedIds.has(order.id)}
+                        tabIndex={0}
+                        data-testid={`order-row-${order.id}`}
+                        onClick={() => void openOrder(order)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            void openOrder(order);
+                          }
+                        }}
+                        sx={{ cursor: 'pointer' }}
+                      >
+                        <TableCell
+                          padding="checkbox"
+                          onClick={(event) => event.stopPropagation()}
+                          sx={{
+                            position: 'sticky',
+                            insetInlineStart: 0,
+                            zIndex: 2,
+                            bgcolor: 'background.paper',
+                          }}
+                        >
+                          <Checkbox
+                            checked={selectedIds.has(order.id) || selectAllMatching}
+                            onChange={() => toggleOrderSelection(order.id)}
+                            inputProps={{
+                              'aria-label': `${t.orderNumber} ${valueText(order.orderNumber)}`,
+                            }}
+                          />
+                        </TableCell>
+                        {renderedColumns.map((column) => (
+                          <TableCell key={column}>
+                            {column === 'remoteStatus' ? (
+                              <Chip
+                                size="small"
+                                label={display(order, column)}
+                                variant="outlined"
+                                sx={
+                                  order.remoteStatus === 'completed'
+                                    ? { color: '#1b5e20', borderColor: '#1b5e20' }
+                                    : { color: '#8a4b00', borderColor: '#8a4b00' }
+                                }
+                              />
+                            ) : column === 'exportState' ? (
+                              <Chip
+                                size="small"
+                                label={display(order, column)}
+                                color={
+                                  order.exportState === 'exported'
+                                    ? 'success'
+                                    : order.exportState === 'changed-after-export'
+                                      ? 'warning'
+                                      : 'default'
+                                }
+                                variant={
+                                  order.exportState === 'never-exported' ? 'outlined' : 'filled'
+                                }
+                              />
+                            ) : (
+                              <span dir={column === 'orderNumber' ? 'ltr' : undefined}>
+                                {display(order, column)}
+                              </span>
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
               {!loading && orders.length === 0 && (
                 <Box textAlign="center" py={8}>
                   <Typography color="text.secondary">

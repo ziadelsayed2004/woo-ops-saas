@@ -32,7 +32,7 @@ const makeOrder = (id, status, total) => ({
   modifiedAt: now,
   customer: { name: `Customer ${id}` },
   billing: {},
-  shipping: {},
+  shipping: { state: id === 1 ? 'Cairo' : 'Giza', city: id === 1 ? 'Nasr City' : 'Dokki' },
   lines: [],
   refunds: [],
   sourceJson: JSON.stringify({ id, status }),
@@ -98,6 +98,16 @@ test('query rejects unsafe fields/operators and cannot cross account boundaries'
   assert.throws(
     () => store.queryOrders(context, { cursor: 'not-a-cursor' }),
     /ORDER_CURSOR_INVALID/,
+  );
+});
+
+test('query filters orders by the normalized shipping governorate', () => {
+  const cairo = store.queryOrders(context, {
+    filter: { field: 'governorate', operator: 'contains', value: 'cairo' },
+  });
+  assert.deepEqual(
+    cairo.items.map((item) => item.orderNumber),
+    ['1001'],
   );
 });
 

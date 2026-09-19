@@ -102,8 +102,45 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
   const queryBodies = await mockOrderApi(page);
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'إدارة الطلبات' })).toBeVisible();
+  await expect(page.locator('[data-testid="navigation-field-mappings"]:visible')).toContainText(
+    'تخصيص بيانات المتجر',
+  );
+  await expect(page.getByText('خرائط الحقول', { exact: true })).toHaveCount(0);
+  const mappingNav = page.locator('[data-testid="navigation-field-mappings"]:visible');
+  const mappingIcon = page.locator('[data-testid="navigation-field-mappings-icon"]:visible');
+  const [navigationBox, iconBox] = await Promise.all([
+    mappingNav.boundingBox(),
+    mappingIcon.boundingBox(),
+  ]);
+  expect(navigationBox).not.toBeNull();
+  expect(iconBox).not.toBeNull();
+  expect(iconBox!.x).toBeGreaterThan(navigationBox!.x + navigationBox!.width / 2);
   await expect(page.getByTestId('orders-table')).toBeVisible();
   expect(queryBodies.some((body) => body.limit === 50)).toBe(true);
+  expect(queryBodies.some((body) => body.includeFacets === true)).toBe(true);
+
+  const scroller = page.getByTestId('orders-table-scroll');
+  await expect(scroller).toBeVisible();
+  expect(await scroller.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(
+    true,
+  );
+  await expect(page.getByText('لم يُصدّر', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'فلاتر متقدمة' }).click();
+  const filterGrid = page.getByTestId('advanced-order-filters');
+  await expect(filterGrid).toBeVisible();
+  await expect(page.getByLabel('المحافظة / المنطقة')).toBeVisible();
+  await page.getByLabel('المحافظة / المنطقة').fill('Cairo');
+  await page.getByRole('button', { name: 'بحث', exact: true }).click();
+  await expect
+    .poll(() => queryBodies.at(-1))
+    .toMatchObject({
+      filter: {
+        field: 'governorate',
+        operator: 'contains',
+        value: 'Cairo',
+      },
+    });
 
   const row = page.getByTestId('order-row-order-1');
   await expect(row).toHaveCount(1);
