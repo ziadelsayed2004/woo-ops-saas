@@ -118,7 +118,11 @@ const webDistDirectory = webDistCandidates.find((candidate) =>
 const documentFontBytes = process.env.WOO_OPS_DOCUMENT_FONT_PATH
   ? new Uint8Array(readFileSync(resolve(process.env.WOO_OPS_DOCUMENT_FONT_PATH)))
   : undefined;
+mkdirSync(dataDirectory, { recursive: true });
 mkdirSync(dirname(databasePath), { recursive: true });
+mkdirSync(documentStorageRoot, { recursive: true });
+mkdirSync(exportStorageRoot, { recursive: true });
+mkdirSync(paymentProofStorageRoot, { recursive: true });
 const store = new SqliteStore(databasePath);
 const auth = new AuthService(store.db);
 const boundedJobConfig = (
