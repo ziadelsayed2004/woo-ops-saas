@@ -6129,6 +6129,10 @@ export class SqliteStore {
         | 'shippingMethod'
         | 'paymentMethod'
         | 'status'
+        | 'remoteStatus'
+        | 'localStatus'
+        | 'exportState'
+        | 'governorate'
         | 'product'
         | 'category'
         | 'author';
@@ -6157,13 +6161,19 @@ export class SqliteStore {
             ? [row.currency]
             : dimension === 'status'
               ? [String(dimensions.remoteStatus ?? dimensions.localStatus ?? 'unknown')]
-              : dimension === 'product'
-                ? productValues
-                : dimension === 'category' || dimension === 'author'
-                  ? Array.isArray(listDimension)
-                    ? listDimension.map(String)
-                    : []
-                  : [String(dimensions[dimension] ?? 'unknown')];
+              : dimension === 'remoteStatus'
+                ? [String(dimensions.remoteStatus ?? 'unknown')]
+                : dimension === 'localStatus'
+                  ? [String(dimensions.localStatus ?? 'unknown')]
+                  : dimension === 'exportState'
+                    ? [String(dimensions.exportState ?? 'never-exported')]
+                    : dimension === 'product'
+                      ? productValues
+                      : dimension === 'category' || dimension === 'author'
+                        ? Array.isArray(listDimension)
+                          ? listDimension.map(String)
+                          : []
+                        : [String(dimensions[dimension] ?? 'unknown')];
       for (const value of dimensionValues.length > 0 ? dimensionValues : ['unknown']) {
         const mapKey = `${row.currency}|${value}`;
         const current = values.get(mapKey) ?? {

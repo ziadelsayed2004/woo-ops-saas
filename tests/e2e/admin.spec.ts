@@ -176,14 +176,11 @@ test('admin navigation exposes authenticated operational workspaces and route st
   await expect(page.getByTestId('admin-overview')).toBeVisible();
   await page.getByRole('button', { name: 'Connections' }).click();
   await expect(page.getByTestId('connections-workspace')).toBeVisible();
-  await page.getByRole('button', { name: 'Store data setup' }).click();
-  await expect(page.getByTestId('field-mappings-workspace')).toBeVisible();
-  await expect(page.getByText('pos_location')).toBeVisible();
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.getByTestId('settings-workspace')).toBeVisible();
   await page.getByRole('button', { name: 'Members' }).click();
   await expect(page.getByTestId('members-workspace')).toBeVisible();
-  await page.getByRole('button', { name: 'Operations' }).click();
+  await page.getByRole('button', { name: 'System health' }).click();
   await expect(page.getByTestId('operations-workspace')).toBeVisible();
   await expect(page.getByText('analytics.rebuild')).toBeVisible();
   await page.getByRole('button', { name: 'Run system maintenance' }).click();

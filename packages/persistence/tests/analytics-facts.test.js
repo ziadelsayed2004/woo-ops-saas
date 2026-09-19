@@ -95,6 +95,7 @@ test('cost rules are effective-dated and analytics facts rebuild deterministical
 
   const order = store.createManualOrder(context, {
     currency: 'EGP',
+    shipping: { state: 'Cairo' },
     payment: { methodId: 'cod' },
     shippingMethod: { methodId: 'courier' },
     lines: [{ productId: 'p1', name: 'Tracked product', quantity: 2, unitPriceMinor: '1500' }],
@@ -122,6 +123,18 @@ test('cost rules are effective-dated and analytics facts rebuild deterministical
   assert.equal(store.getAnalyticsSummary(context, { product: 'p1' }).currencies.length, 1);
   assert.equal(store.getAnalyticsSummary(context, { status: 'new' }).currencies.length, 1);
   assert.equal(store.getAnalyticsBreakdown(context, { dimension: 'product' }).items[0].key, 'p1');
+  assert.equal(
+    store.getAnalyticsBreakdown(context, { dimension: 'localStatus' }).items[0].key,
+    'new',
+  );
+  assert.equal(
+    store.getAnalyticsBreakdown(context, { dimension: 'exportState' }).items[0].key,
+    'never-exported',
+  );
+  assert.equal(
+    store.getAnalyticsBreakdown(context, { dimension: 'governorate' }).items[0].key,
+    'Cairo',
+  );
   assert.equal(store.getAnalyticsTimeseries(context, { source: 'manual' }).items.length, 1);
   const firstOverride = store.createCostOverride(context, order.id, {
     lineId: 'manual-line-1',

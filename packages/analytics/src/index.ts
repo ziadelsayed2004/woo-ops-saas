@@ -333,6 +333,11 @@ const lineSnapshotsFromOrder = (
 const dimensionsFor = (order: AnalyticsOrder, source: OrderSource): Record<string, unknown> => {
   const normalized = normalizedOrder(order);
   const shippingMethod = isRecord(normalized.shippingMethod) ? normalized.shippingMethod : {};
+  const shippingAddress = isRecord(normalized.shipping)
+    ? normalized.shipping
+    : isRecord(normalized.shippingAddress)
+      ? normalized.shippingAddress
+      : {};
   const payment = isRecord(normalized.payment) ? normalized.payment : {};
   const lines = Array.isArray(normalized.lines) ? normalized.lines : [];
   const products = lines
@@ -357,6 +362,8 @@ const dimensionsFor = (order: AnalyticsOrder, source: OrderSource): Record<strin
     remoteStatus: order.remoteStatus ?? normalized.remoteStatus ?? null,
     localStatus: order.localStatus ?? normalized.localStatus ?? null,
     exportState: order.exportState ?? null,
+    governorate:
+      shippingAddress.state ?? shippingAddress.governorate ?? shippingAddress.region ?? null,
     shippingMethod: shippingMethod.methodId ?? shippingMethod.title ?? null,
     paymentMethod: payment.methodId ?? payment.method ?? null,
     categories,

@@ -137,6 +137,12 @@ test('renders revenue, profit, sources and explainable analytics in English layo
   await expect(page.getByText('80% (8/10)')).toBeVisible();
   await expect(page.getByTestId('analytics-trend')).toBeVisible();
   await expect(page.getByTestId('analytics-breakdown')).toBeVisible();
+  await page.getByLabel('Break down by').click();
+  await expect(page.getByRole('option', { name: 'WooCommerce status' })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Manual order lifecycle' })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Export state' })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Governorate / region' })).toBeVisible();
+  await page.keyboard.press('Escape');
 
   await page.getByLabel('Store / connection ID').fill('store-egypt');
   await page.getByLabel('Shipping method').fill('courier');

@@ -451,6 +451,11 @@ const copy = {
     dimensionSource: '\u0627\u0644\u0645\u0635\u062f\u0631',
     dimensionStore: '\u0627\u0644\u0645\u062a\u062c\u0631',
     dimensionStatus: '\u0627\u0644\u062d\u0627\u0644\u0629',
+    dimensionRemoteStatus: '\u062d\u0627\u0644\u0629 WooCommerce',
+    dimensionLocalStatus:
+      '\u062f\u0648\u0631\u0629 \u0627\u0644\u0637\u0644\u0628 \u0627\u0644\u064a\u062f\u0648\u064a',
+    dimensionExportState: '\u062d\u0627\u0644\u0629 \u0627\u0644\u062a\u0635\u062f\u064a\u0631',
+    dimensionGovernorate: '\u0627\u0644\u0645\u062d\u0627\u0641\u0638\u0629',
     dimensionShipping: '\u0627\u0644\u0634\u062d\u0646',
     dimensionProduct: '\u0627\u0644\u0645\u0646\u062a\u062c',
     dimensionCategory: '\u0627\u0644\u062a\u0635\u0646\u064a\u0641',
@@ -463,6 +468,8 @@ const copy = {
       '\u0627\u0644\u062d\u0627\u0644\u0627\u062a \u0627\u0644\u0645\u0633\u062a\u0628\u0639\u062f\u0629',
     currencySeparated:
       '\u0627\u0644\u0639\u0645\u0644\u0627\u062a \u0645\u0639\u0631\u0648\u0636\u0629 \u0643\u0644 \u0645\u0646\u0647\u0627 \u0628\u0645\u0641\u0631\u062f\u0647\u0627',
+    metricScopeNote:
+      '\u0627\u0644\u0645\u0628\u064a\u0639\u0627\u062a \u0648\u0627\u0644\u0634\u062d\u0646 \u0648\u0627\u0644\u0636\u0631\u0627\u0626\u0628 \u0648\u0627\u0644\u0645\u0631\u062a\u062c\u0639\u0627\u062a \u0645\u0646 \u0644\u0642\u0637\u0627\u062a \u0627\u0644\u0637\u0644\u0628\u0627\u062a \u0627\u0644\u0645\u0633\u062a\u0648\u0631\u062f\u0629 \u0623\u0648 \u0627\u0644\u064a\u062f\u0648\u064a\u0629. \u0627\u0644\u062a\u0643\u0644\u0641\u0629 \u0648\u0627\u0644\u0631\u0633\u0648\u0645 \u0645\u0646 \u0644\u0642\u0637\u0627\u062a \u0648\u0642\u0648\u0627\u0639\u062f \u0645\u062d\u0644\u064a\u0629 \u063a\u064a\u0631 \u0642\u0627\u0628\u0644\u0629 \u0644\u0644\u062a\u063a\u064a\u064a\u0631. \u0627\u0644\u0645\u0644\u063a\u064a \u0648\u0627\u0644\u0641\u0627\u0634\u0644 \u0648\u0627\u0644\u0645\u062d\u0630\u0648\u0641 \u0645\u0633\u062a\u0628\u0639\u062f.',
     noAnalytics:
       '\u0644\u0627 \u062a\u0648\u062c\u062f \u0628\u064a\u0627\u0646\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629 \u0644\u0647\u0630\u0647 \u0627\u0644\u0641\u0644\u0627\u062a\u0631',
     analyticsError:
@@ -687,6 +694,10 @@ const copy = {
     dimensionSource: 'Source',
     dimensionStore: 'Store',
     dimensionStatus: 'Status',
+    dimensionRemoteStatus: 'WooCommerce status',
+    dimensionLocalStatus: 'Manual order lifecycle',
+    dimensionExportState: 'Export state',
+    dimensionGovernorate: 'Governorate / region',
     dimensionShipping: 'Shipping',
     dimensionProduct: 'Product',
     dimensionCategory: 'Category',
@@ -696,6 +707,8 @@ const copy = {
     formula: 'Formula',
     excludedStatuses: 'Excluded statuses',
     currencySeparated: 'Currencies are shown separately and are never combined silently.',
+    metricScopeNote:
+      'Sales, shipping, tax and refunds come from normalized imported or manual order snapshots. COGS and fees come from immutable local snapshots and effective cost rules. Cancelled, failed and trashed orders are excluded.',
     noAnalytics: 'No analytics facts match these filters',
     analyticsError: 'Could not load analytics. Try again',
     rebuildState: 'Rebuild state',
@@ -834,7 +847,16 @@ const emptyAnalyticsFilters = (): AnalyticsFilterState => ({
 });
 
 type AnalyticsDimension =
-  'source' | 'store' | 'status' | 'shippingMethod' | 'product' | 'category' | 'author';
+  | 'source'
+  | 'store'
+  | 'remoteStatus'
+  | 'localStatus'
+  | 'exportState'
+  | 'governorate'
+  | 'shippingMethod'
+  | 'product'
+  | 'category'
+  | 'author';
 
 const analyticsMetricLabel = (key: AnalyticsMetricKey, t: (typeof copy)[Locale]): string =>
   ({
@@ -1348,7 +1370,10 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                 >
                   <MenuItem value="source">{t.dimensionSource}</MenuItem>
                   <MenuItem value="store">{t.dimensionStore}</MenuItem>
-                  <MenuItem value="status">{t.dimensionStatus}</MenuItem>
+                  <MenuItem value="remoteStatus">{t.dimensionRemoteStatus}</MenuItem>
+                  <MenuItem value="localStatus">{t.dimensionLocalStatus}</MenuItem>
+                  <MenuItem value="exportState">{t.dimensionExportState}</MenuItem>
+                  <MenuItem value="governorate">{t.dimensionGovernorate}</MenuItem>
                   <MenuItem value="shippingMethod">{t.dimensionShipping}</MenuItem>
                   <MenuItem value="product">{t.dimensionProduct}</MenuItem>
                   <MenuItem value="category">{t.dimensionCategory}</MenuItem>
@@ -1392,6 +1417,9 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
               {t.excludedStatuses}: {summary.excludedStatuses.join(', ')} · v
               {summary.metricsVersion}
             </Typography>
+            <Alert severity="info" sx={{ mb: 2 }} data-testid="analytics-metric-sources">
+              {t.metricScopeNote}
+            </Alert>
             <Table size="small" aria-label={t.formulas}>
               <TableHead>
                 <TableRow>
@@ -3735,7 +3763,6 @@ export function App({
     { view: 'documents', label: t.documentsNav },
     { view: 'analytics', label: t.analyticsNav },
     { view: 'connections', label: adminLabel('connections', locale) },
-    { view: 'field-mappings', label: adminLabel('field-mappings', locale) },
     { view: 'settings', label: adminLabel('settings', locale) },
     { view: 'members', label: adminLabel('members', locale) },
     { view: 'operations', label: adminLabel('operations', locale) },
