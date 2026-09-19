@@ -1194,6 +1194,79 @@
         "A developer can open a local demo account with non-production data and instructions without exposing a fixed production login"
       ],
       "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "git diff --check"]
+    },
+    {
+      "id": "T0901",
+      "epic": "E09",
+      "title": "Repair orders workspace filters export visibility and Arabic navigation",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "L",
+      "parallelGroup": "orders-operator-ux",
+      "dependencies": ["T0821"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/API.md", ".agentpack/architecture/TESTING.md", "apps/web/src/App.tsx", "apps/web/src/WorkspaceShell.tsx", "apps/web/src/AdminWorkspaces.tsx", "apps/api/src/index.ts", "packages/persistence/src/index.ts", "tests/e2e/orders.spec.ts"],
+      "scope": [
+        "Make the orders table horizontally scrollable and usable on narrow viewports with stable column sizing and sticky operator context",
+        "Replace the unstructured filter row with responsive advanced filters for Woo/manual source, exact Woo remote statuses, local workflow, exported state, governorate/location, product, category, payment, shipping and date",
+        "Expose exported, never exported and changed-after-export states clearly in list and details using localized labels",
+        "Correct Arabic sidebar icon/text order and replace internal field-mapping terminology with operator-friendly copy while retaining the feature"
+      ],
+      "acceptance": [
+        "Wide order tables scroll horizontally by pointer, touch and keyboard without clipping columns or the page shell",
+        "Filters have consistent widths and apply bounded server-owned filters for origin, Woo status, export state, governorate, product, category and dates",
+        "Woo order statuses match WooCommerce core status identifiers and exported state is visible and filterable in Arabic and English",
+        "Arabic navigation renders the icon on the visual right of its text and no primary label says field maps"
+      ],
+      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "git diff --check"]
+    },
+    {
+      "id": "T0902",
+      "epic": "E09",
+      "title": "Build read-only catalog and production manual-order intake",
+      "type": "feat",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "XL",
+      "parallelGroup": "catalog-manual-orders",
+      "dependencies": ["T0901"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/API.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/TESTING.md", "apps/web/src/App.tsx", "apps/api/src/index.ts", "packages/contracts/src/index.ts", "packages/persistence/src/index.ts", "packages/connectors/src/woocommerce.ts"],
+      "scope": [
+        "Expose an account-scoped read-only product/category/variation catalog including imported price and stock facts without any remote mutation",
+        "Create a dedicated manual-order operations workspace using catalog snapshots, quantities, Woo-derived checkout field definitions where safely discoverable, Egyptian governorate selection and configured shipping quotes",
+        "Store private payment-transfer proof files outside SQLite with authorization, checksum, size/type limits and immutable order association",
+        "Separate manual order queue and lifecycle from Woo orders while preserving local-only syncPolicy never and inventoryPolicy ignore"
+      ],
+      "acceptance": [
+        "Operators can browse/search products by category and see source prices and stock read-only",
+        "Manual order lines can be selected from synchronized catalog snapshots and totals use integer minor units",
+        "Required customer/shipping fields, governorate and shipping quote are validated before confirmation",
+        "Payment proof upload is private and account-scoped and confirming a manual order performs no Woo request"
+      ],
+      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run build", "git diff --check"]
+    },
+    {
+      "id": "T0903",
+      "epic": "E09",
+      "title": "Reconcile Woo and manual financial analytics and remove redundant UI",
+      "type": "feat",
+      "phase": 9,
+      "priority": "P1",
+      "estimate": "L",
+      "parallelGroup": "analytics-cleanup",
+      "dependencies": ["T0902"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/TESTING.md", "apps/web/src/App.tsx", "apps/web/src/AdminWorkspaces.tsx", "apps/api/src/index.ts", "packages/analytics/src/index.ts", "packages/persistence/src/index.ts"],
+      "scope": [
+        "Present Woo-only, manual-only and combined financial analytics with explicit formulas, exclusions and currency boundaries from normalized imported facts",
+        "Add operational summaries for remote statuses, local manual lifecycle, export state, governorate, product and category",
+        "Remove or rename redundant technical administration surfaces while preserving required settings, observability and audit capabilities"
+      ],
+      "acceptance": [
+        "Analytics can switch between Woo, manual and combined sources and never silently combine currencies",
+        "Revenue, refunds, shipping collected, tax, fees, COGS and contribution profit explain their source and exclusions",
+        "Redundant navigation is removed or renamed without deleting supported backend capabilities"
+      ],
+      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "git diff --check"]
     }
   ]
 }
