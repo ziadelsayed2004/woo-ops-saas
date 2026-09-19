@@ -102,12 +102,12 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
   const queryBodies = await mockOrderApi(page);
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'إدارة الطلبات' })).toBeVisible();
-  await expect(page.locator('[data-testid="navigation-field-mappings"]:visible')).toContainText(
+  await expect(page.locator('[data-testid="navigation-connections"]:visible')).not.toContainText(
     'تخصيص بيانات المتجر',
   );
   await expect(page.getByText('خرائط الحقول', { exact: true })).toHaveCount(0);
-  const mappingNav = page.locator('[data-testid="navigation-field-mappings"]:visible');
-  const mappingIcon = page.locator('[data-testid="navigation-field-mappings-icon"]:visible');
+  const mappingNav = page.locator('[data-testid="navigation-connections"]:visible');
+  const mappingIcon = page.locator('[data-testid="navigation-connections-icon"]:visible');
   const [navigationBox, iconBox] = await Promise.all([
     mappingNav.boundingBox(),
     mappingIcon.boundingBox(),

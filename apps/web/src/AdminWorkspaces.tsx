@@ -212,7 +212,7 @@ const translations = {
     mappings: 'Store data setup',
     settings: 'Settings',
     members: 'Members',
-    operations: 'Operations',
+    operations: 'System health',
     loading: 'Loading',
     retry: 'Retry',
     forbidden: 'You do not have permission to view this section.',
