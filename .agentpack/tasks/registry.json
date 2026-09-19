@@ -1293,6 +1293,33 @@
         "Primary UI describes one store/account and retains no broken or redundant multi-store workflow"
       ],
       "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "git diff --check"]
+    },
+    {
+      "id": "T0905",
+      "epic": "E09",
+      "title": "Reconcile Egyptian locations, Woo export state, revenue semantics and bidirectional UI",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "XL",
+      "parallelGroup": "production-reconciliation",
+      "dependencies": ["T0904"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/SYNC_AND_CONNECTORS.md", ".agentpack/architecture/TESTING.md", "apps/web/src/App.tsx", "apps/web/src/WorkspaceShell.tsx", "apps/api/src/index.ts", "packages/connectors/src/woocommerce.ts", "packages/persistence/src/index.ts", "packages/exports/src/index.ts", "packages/analytics/src/index.ts"],
+      "scope": [
+        "Normalize Egyptian Woo state codes to localized governorate names across order UI, filters, analytics and XLSX/CSV exports while retaining raw source values",
+        "Correct product/category identities and labels so category facets and export columns cannot be populated from product values",
+        "Reconcile REST-visible Woo export status with immutable local export batches and make successful platform exports immediately visible in local order state/history without remote mutation",
+        "Align collected-revenue analytics with documented Woo monetary facts, statuses and refunds using integer minor units and explicit formulas",
+        "Polish Arabic RTL and English LTR spacing, sidebar icon/label order, locale control, collapse control, dropdown indicators, filters, buttons and manual-order forms"
+      ],
+      "acceptance": [
+        "EGSHR and supported Egyptian state codes render and export as localized governorate names without losing the original code",
+        "Product and category filters, tables and export fields use their correct canonical values",
+        "Woo export metadata and successful local sheet exports have distinct labeled states and completed local exports update the order list/history",
+        "Collected revenue matches the approved Woo formula for eligible statuses and refunds and is covered by deterministic tests",
+        "RTL and LTR critical screens pass responsive, accessibility and visual regression checks"
+      ],
+      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "git diff --check"]
     }
   ]
 }
