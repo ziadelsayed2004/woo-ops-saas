@@ -1117,6 +1117,30 @@
         "Woo remains read-only, manual and exported state remain local, and account isolation/security gates remain green"
       ],
       "validation": ["npm ci", "npm run agent:doctor", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:hostinger", "npm run test:performance", "npm run build", "npm run security:scan", "npm run security:audit", "git diff --check"]
+    },
+    {
+      "id": "T0819",
+      "epic": "E08",
+      "title": "Make Hostinger production-only installs buildable",
+      "type": "fix",
+      "phase": 8,
+      "priority": "P0",
+      "estimate": "M",
+      "parallelGroup": "hostinger-production-build",
+      "dependencies": ["T0818"],
+      "references": ["AGENTS.md", ".agentpack/manifest.json", ".agentpack/product/PRD.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/DEPLOYMENT.md", ".agentpack/architecture/TESTING.md", "README.md", "package.json", "package-lock.json", "apps/api/package.json", "apps/web/package.json", "packages/connectors/package.json", "packages/documents/package.json", "packages/exports/package.json", "tools/hostinger-smoke.mjs"],
+      "scope": [
+        "Make the complete production application build succeed after a production-only npm workspace install on Hostinger shared Node 22 hosting",
+        "Classify compile-time packages required by production deployment correctly while keeping test-only and developer-only tooling out of the production dependency graph",
+        "Add a repeatable production-install build validation and reconcile deployment documentation with Hostinger's automatic install behavior"
+      ],
+      "acceptance": [
+        "A clean npm ci --omit=dev followed by npm run build succeeds with TypeScript, Vite, React types and required package types available",
+        "Production installation contains no Playwright, accessibility-test or formatting tooling solely to make the application build",
+        "Hostinger deployment documentation uses Node 22.x and the actual build and entrypoint settings required by the repository",
+        "Normal development installation, checks, tests, security audit and Hostinger runtime smoke remain green"
+      ],
+      "validation": ["npm ci --omit=dev", "npm run build", "npm ci", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:hostinger", "npm run security:scan", "npm run security:audit", "git diff --check"]
     }
   ]
 }
