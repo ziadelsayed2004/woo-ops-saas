@@ -47,8 +47,9 @@ export const resolveRuntimePaths = (
     configuredDatabasePath && isAbsolute(configuredDatabasePath)
       ? resolve(workingDirectory, configuredDatabasePath)
       : join(dataDirectory, 'woo-ops.sqlite');
-  const configuredPathsAreDurable =
-    hasDurableConfiguredData && (!configuredDatabasePath || isAbsolute(configuredDatabasePath));
+  // Relative legacy database overrides are ignored above and safely placed inside the
+  // absolute data directory, so the effective path remains durable.
+  const configuredPathsAreDurable = hasDurableConfiguredData;
 
   return {
     dataDirectory,

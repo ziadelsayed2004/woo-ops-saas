@@ -50,3 +50,19 @@ test('explicit absolute data and database paths keep precedence', () => {
   assert.equal(paths.dataDirectory, resolve('fixtures', 'private-data'));
   assert.equal(paths.databasePath, resolve('fixtures', 'private-db', 'store.sqlite'));
 });
+
+test('absolute data root safely absorbs a stale relative database override', () => {
+  const cwd = resolve('fixtures', 'release');
+  const dataDirectory = resolve('fixtures', 'private-data');
+  const paths = resolveRuntimePaths(
+    {
+      NODE_ENV: 'production',
+      WOO_OPS_DATA_DIR: dataDirectory,
+      WOO_OPS_DATABASE: './data/woo-ops.sqlite',
+    },
+    cwd,
+  );
+  assert.equal(paths.persistenceMode, 'configured');
+  assert.equal(paths.durable, true);
+  assert.equal(paths.databasePath, join(dataDirectory, 'woo-ops.sqlite'));
+});
