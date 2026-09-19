@@ -146,6 +146,9 @@ const translations = {
     healthCheck: 'فحص الصحة',
     sync: 'مزامنة أولية',
     incremental: 'مزامنة جديدة',
+    webhookSetup: 'إعداد Webhook',
+    webhookInstructions:
+      'انسخ الرابط والسر الآن إلى WooCommerce ← الإعدادات ← متقدم ← Webhooks. أنشئ Webhook مفعّلًا لكل حدث: Order created وOrder updated وOrder deleted. لن يظهر السر مرة أخرى؛ إنشاء سر جديد يلغي القديم.',
     reconcile: 'مطابقة وحذف محلي',
     syncQueued: 'تم وضع المهمة في القائمة',
     selectConnection: 'اختر المتجر',
@@ -227,6 +230,9 @@ const translations = {
     healthCheck: 'Health check',
     sync: 'Initial sync',
     incremental: 'Incremental sync',
+    webhookSetup: 'Set up webhook',
+    webhookInstructions:
+      'Copy this URL and secret now into WooCommerce → Settings → Advanced → Webhooks. Create an active webhook for each of Order created, Order updated and Order deleted. The secret is shown only now; generating another replaces it.',
     reconcile: 'Reconcile locally',
     syncQueued: 'Job queued',
     selectConnection: 'Select a store',
@@ -392,16 +398,26 @@ export function LoginScreen({
 }) {
   const copy = translations[locale];
   const [register, setRegister] = useState(false);
+  const [registrationOpen, setRegistrationOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [accountName, setAccountName] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    void fetch('/api/v1/auth/setup', { credentials: 'include' })
+      .then((response) => response.json())
+      .then((body: { registrationOpen: boolean }) => {
+        setRegistrationOpen(body.registrationOpen);
+        setRegister(body.registrationOpen);
+      })
+      .catch(() => undefined);
+  }, []);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoading(true);
-    setError(false);
+    setError('');
     try {
       const response = await fetch(register ? '/api/v1/auth/register' : '/api/v1/auth/login', {
         method: 'POST',
@@ -409,11 +425,14 @@ export function LoginScreen({
         credentials: 'include',
         body: JSON.stringify(register ? { email, password, accountName } : { email, password }),
       });
-      if (!response.ok) throw new Error('AUTH_FAILED');
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { code?: string } };
+        throw new Error(body.error?.code ?? 'AUTH_FAILED');
+      }
       const body = (await response.json()) as { user: AuthenticatedUser };
       onAuthenticated(body.user);
-    } catch {
-      setError(true);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'AUTH_FAILED');
     } finally {
       setLoading(false);
     }
@@ -422,29 +441,70 @@ export function LoginScreen({
   return (
     <Box
       minHeight="100vh"
-      bgcolor="#f6f8fb"
+      bgcolor="background.default"
       dir={direction}
       display="grid"
-      sx={{ placeItems: 'center', p: 2 }}
+      sx={{
+        placeItems: 'center',
+        p: 2,
+        backgroundImage: 'radial-gradient(circle at 12% 12%, #e8f0fe, transparent 35%)',
+      }}
     >
       <Paper
         component="main"
-        variant="outlined"
-        sx={{ p: { xs: 3, sm: 5 }, width: 'min(100%, 460px)' }}
+        elevation={0}
+        sx={{
+          p: { xs: 3, sm: 5 },
+          width: 'min(100%, 480px)',
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 4,
+          boxShadow: '0 18px 55px rgba(15, 23, 42, 0.08)',
+        }}
       >
         <Stack component="form" gap={2.5} onSubmit={(event) => void submit(event)}>
-          <Box>
-            <Typography variant="h4" component="h1" fontWeight={800} color="primary">
+          <Box textAlign="center" mb={1}>
+            <Box
+              sx={{
+                width: 52,
+                height: 52,
+                mx: 'auto',
+                mb: 2,
+                borderRadius: 3,
+                bgcolor: 'primary.main',
+                color: 'white',
+                display: 'grid',
+                placeItems: 'center',
+                fontWeight: 900,
+                fontSize: 26,
+              }}
+            >
+              W
+            </Box>
+            <Typography variant="h4" component="h1" fontWeight={900} color="primary.main">
               Woo Ops
             </Typography>
-            <Typography variant="h6" component="h2">
+            <Typography variant="h6" component="h2" fontWeight={700} mt={1}>
               {register ? copy.register : copy.signIn}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" mt={0.5}>
+              {locale === 'ar'
+                ? 'مساحة عمل موحدة لإدارة الطلبات والتحليلات'
+                : 'Your unified order operations workspace'}
             </Typography>
           </Box>
           {message && <Alert severity="warning">{message}</Alert>}
           {error && (
             <Alert severity="error">
-              {copy.signIn}: {copy.retry}
+              {error === 'AUTH_REGISTRATION_CLOSED'
+                ? locale === 'ar'
+                  ? 'تم إنشاء حساب المدير بالفعل. سجّل الدخول أو اطلب دعوة.'
+                  : 'Owner account already exists. Sign in or request an invitation.'
+                : error === 'AUTH_INVALID_INPUT' && register
+                  ? locale === 'ar'
+                    ? 'تأكد من البريد وكلمة مرور لا تقل عن 12 حرفًا.'
+                    : 'Check the email and use a password of at least 12 characters.'
+                  : `${copy.signIn}: ${copy.retry}`}
             </Alert>
           )}
           {register && (
@@ -474,9 +534,11 @@ export function LoginScreen({
           <Button type="submit" variant="contained" disabled={loading}>
             {loading ? <CircularProgress size={18} aria-label={copy.loading} /> : copy.submit}
           </Button>
-          <Button type="button" onClick={() => setRegister((value) => !value)}>
-            {register ? copy.switchToLogin : copy.switchToRegister}
-          </Button>
+          {registrationOpen && (
+            <Button type="button" onClick={() => setRegister((value) => !value)}>
+              {register ? copy.switchToLogin : copy.switchToRegister}
+            </Button>
+          )}
         </Stack>
       </Paper>
     </Box>
@@ -611,6 +673,9 @@ function ConnectionsWorkspace({
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [message, setMessage] = useState('');
+  const [webhookSetup, setWebhookSetup] = useState<{ connectionId: string; secret: string } | null>(
+    null,
+  );
 
   const load = async () => {
     setLoading(true);
@@ -649,7 +714,24 @@ function ConnectionsWorkspace({
         onSessionExpired,
         writeOptions({ storeUrl }),
       );
-      setMessage(`${copy.authorizationReady} ${body.authorizationUrl}`);
+      const destination = new URL(body.authorizationUrl);
+      if (destination.protocol !== 'https:' || destination.pathname !== '/wc-auth/v1/authorize')
+        throw new Error('CONNECTOR_URL_UNSAFE');
+      window.location.assign(destination.toString());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'REQUEST_FAILED');
+    }
+  };
+  const configureWebhook = async (connectionId: string) => {
+    const secret = `${crypto.randomUUID()}${crypto.randomUUID()}`;
+    try {
+      await apiRequest(
+        `/api/v1/connections/${encodeURIComponent(connectionId)}/webhook-secret`,
+        onSessionExpired,
+        writeOptions({ secret }),
+      );
+      setWebhookSetup({ connectionId, secret });
+      setMessage('');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'REQUEST_FAILED');
     }
@@ -667,6 +749,9 @@ function ConnectionsWorkspace({
           {copy.connections}
         </Typography>
         <Typography color="text.secondary">{copy.readOnly}</Typography>
+        <Button size="small" onClick={() => void load()} sx={{ mt: 1 }}>
+          {copy.retry}
+        </Button>
       </Box>
       {failed && <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />}
       {message && <Alert severity={message === 'FORBIDDEN' ? 'warning' : 'info'}>{message}</Alert>}
@@ -755,6 +840,9 @@ function ConnectionsWorkspace({
                     >
                       {copy.incremental}
                     </Button>
+                    <Button size="small" onClick={() => void configureWebhook(connection.id)}>
+                      {copy.webhookSetup}
+                    </Button>
                     <Button
                       size="small"
                       onClick={() =>
@@ -768,6 +856,25 @@ function ConnectionsWorkspace({
                       {copy.reconcile}
                     </Button>
                   </Stack>
+                  {webhookSetup?.connectionId === connection.id && (
+                    <Alert severity="info">
+                      <Stack gap={1}>
+                        <Typography variant="body2">{copy.webhookInstructions}</Typography>
+                        <TextField
+                          label="Delivery URL"
+                          value={`${window.location.origin}/api/v1/webhooks/woocommerce/${encodeURIComponent(connection.id)}`}
+                          slotProps={{ input: { readOnly: true } }}
+                          size="small"
+                        />
+                        <TextField
+                          label="Secret"
+                          value={webhookSetup.secret}
+                          slotProps={{ input: { readOnly: true } }}
+                          size="small"
+                        />
+                      </Stack>
+                    </Alert>
+                  )}
                   <Typography variant="body2" color="text.secondary">
                     {connection.syncOrdersCount} orders · {connection.syncCatalogCount} catalog
                     items

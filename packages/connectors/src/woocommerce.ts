@@ -249,10 +249,9 @@ export const createAuthorizationUrl = (
   const url = new URL('/wc-auth/v1/authorize', storeUrl);
   url.searchParams.set('app_name', input.appName ?? 'Woo Ops');
   url.searchParams.set('scope', 'read');
-  url.searchParams.set('user_id', 'woo-ops');
+  url.searchParams.set('user_id', input.state);
   url.searchParams.set('return_url', input.returnUrl);
   url.searchParams.set('callback_url', input.callbackUrl);
-  url.searchParams.set('state', input.state);
   return url.toString();
 };
 

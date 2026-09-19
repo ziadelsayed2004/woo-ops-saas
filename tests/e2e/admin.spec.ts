@@ -208,3 +208,16 @@ test('admin workspaces have no automated accessibility violations @a11y @admin',
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
+
+test('mobile drawer navigates and Woo return shows a safe connection state @admin', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockAdminApi(page);
+  await page.goto('/connections/woocommerce/callback?success=1&user_id=opaque-state');
+  await expect(page).toHaveURL(/\/connections$/u);
+  await expect(page.getByText('تمت الموافقة في WooCommerce.')).toBeVisible();
+  await page.getByRole('button', { name: 'فتح القائمة' }).click();
+  await page.getByRole('button', { name: 'التحليلات' }).click();
+  await expect(page.getByTestId('analytics-workspace')).toBeVisible();
+});

@@ -15,6 +15,8 @@ Base path: `/api/v1`. JSON errors use stable machine codes and a correlation ID.
 ## Identity and accounts
 
 ```text
+GET    /auth/setup
+POST   /auth/register
 POST   /auth/login
 POST   /auth/logout
 POST   /auth/password/change
@@ -47,8 +49,7 @@ tokens are single-use, expire after 30 minutes, and are never returned by the AP
 ```text
 GET    /connections
 POST   /connections/woocommerce/authorize
-GET    /connections/woocommerce/return
-GET    /connections/woocommerce/return
+POST   /connections/woocommerce/return
 GET    /connections/:id
 POST   /connections/:id/health-checks
 POST   /connections/:id/sync-runs
@@ -62,8 +63,10 @@ POST   /connections/:id/field-mappings/backfill
 POST   /webhooks/woocommerce/:connectionId
 ```
 
-The authorization callback receiving Woo credentials is transport-isolated, strictly size-limited,
-state-bound, and never exposes credentials in browser responses or ordinary request logs. The
+WooCommerce posts a JSON key payload to the callback with the signed one-time state in `user_id`;
+the separate browser `return_url` only receives success status and opens the Connections UI. The
+callback requires `key_permissions=read`, is strictly size-limited and state-bound, and never exposes
+credentials in browser responses or ordinary request logs. The
 initial and incremental endpoints accept an idempotency key and enqueue durable read-only jobs;
 reconciliation uses the same job contract and records remote deletions locally. Health responses
 contain only safe version/capability and status data. Rotation and webhook-secret configuration

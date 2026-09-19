@@ -65,6 +65,14 @@ const setCookies = (response: Response, session: string, csrf: string): void => 
 export class AuthService {
   constructor(private readonly db: SqliteDatabase) {}
 
+  registrationOpen(): boolean {
+    if (process.env.NODE_ENV !== 'production') return true;
+    const row = this.db.prepare('SELECT COUNT(*) AS total FROM accounts').get() as {
+      total: number;
+    };
+    return row.total === 0;
+  }
+
   private createSession(row: { id: string; email: string; account_id: string; role: string }): {
     user: AuthUser;
     session: string;
@@ -111,6 +119,7 @@ export class AuthService {
     const accountId = randomUUID();
     const now = new Date().toISOString();
     this.db.transaction(() => {
+      if (!this.registrationOpen()) throw new Error('AUTH_REGISTRATION_CLOSED');
       this.db
         .prepare('INSERT INTO accounts (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)')
         .run(accountId, normalizedAccountName || 'Woo Ops Account', now, now);

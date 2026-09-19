@@ -1,7 +1,6 @@
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  AppBar,
   Box,
   Button,
   Card,
@@ -9,7 +8,6 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
-  Container,
   Divider,
   Drawer,
   FormControl,
@@ -29,7 +27,6 @@ import {
   TableContainer,
   Tabs,
   TextField,
-  Toolbar,
   Tooltip,
   Typography,
 } from '@mui/material';
@@ -38,10 +35,10 @@ import {
   adminLabel,
   LoginScreen,
   sessionExpiredLabel,
-  signOutLabel,
   type AdminSection,
   type AuthenticatedUser,
 } from './AdminWorkspaces';
+import { WorkspaceShell } from './WorkspaceShell';
 
 type Locale = 'ar' | 'en';
 type Direction = 'rtl' | 'ltr';
@@ -2920,6 +2917,7 @@ type AppView = 'orders' | 'manual' | 'documents' | 'analytics' | 'exports' | Adm
 type AuthStatus = 'checking' | 'authenticated' | 'unauthenticated';
 
 const viewFromPath = (path: string): AppView => {
+  if (path.startsWith('/connections/woocommerce/callback')) return 'connections';
   const value = path.replace(/^\//u, '').split('/')[0];
   const supported: AppView[] = [
     'orders',
@@ -2973,6 +2971,16 @@ export function App({
   const [error, setError] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
   const [view, setViewState] = useState<AppView>(() => viewFromPath(window.location.pathname));
+  const [connectionNotice, setConnectionNotice] = useState(() => {
+    if (!window.location.pathname.startsWith('/connections/woocommerce/callback')) return '';
+    return new URLSearchParams(window.location.search).get('success') === '1'
+      ? 'success'
+      : 'denied';
+  });
+  useEffect(() => {
+    if (window.location.pathname.startsWith('/connections/woocommerce/callback'))
+      window.history.replaceState({}, '', '/connections');
+  }, []);
 
   const setView = (next: AppView) => {
     setViewState(next);
@@ -3330,58 +3338,42 @@ export function App({
   ].includes(view);
 
   return (
-    <Box minHeight="100vh" bgcolor="#f6f8fb" dir={direction}>
-      <AppBar
-        position="sticky"
-        elevation={0}
-        color="inherit"
-        sx={{ borderBottom: '1px solid #e5e7eb' }}
+    <>
+      <WorkspaceShell
+        direction={direction}
+        locale={locale}
+        userEmail={authUser.email}
+        active={view}
+        navigation={navigation.map((item) => ({
+          id: item.view,
+          label: item.label,
+          group: ['overview', 'orders', 'manual', 'exports', 'documents', 'analytics'].includes(
+            item.view,
+          )
+            ? ('workspace' as const)
+            : ('management' as const),
+        }))}
+        onNavigate={(id) => setView(id as AppView)}
+        onToggleLocale={onToggleLocale}
+        onToggleDirection={onToggleDirection}
+        onLogout={() => void logout()}
+        onCreateManual={() => setView('manual')}
       >
-        <Toolbar sx={{ gap: 1, flexWrap: 'wrap', py: 1 }}>
-          <Typography
-            variant="h6"
-            color="primary"
-            sx={{ flexGrow: 1, fontWeight: 800, minWidth: 120 }}
+        {connectionNotice && view === 'connections' && (
+          <Alert
+            severity={connectionNotice === 'success' ? 'success' : 'warning'}
+            onClose={() => setConnectionNotice('')}
+            sx={{ mb: 2 }}
           >
-            {t.app}
-          </Typography>
-          <Box
-            component="nav"
-            aria-label={locale === 'ar' ? 'التنقل الرئيسي' : 'Primary navigation'}
-            sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', justifyContent: 'flex-end' }}
-          >
-            {navigation.map((item) => (
-              <Button
-                key={item.view}
-                size="small"
-                color={view === item.view ? 'primary' : 'inherit'}
-                variant={view === item.view ? 'contained' : 'text'}
-                onClick={() => setView(item.view)}
-              >
-                {item.label}
-              </Button>
-            ))}
-          </Box>
-          <Button variant="contained" size="small" onClick={() => setView('manual')}>
-            {t.manualOrders}
-          </Button>
-          <Button
-            onClick={onToggleDirection}
-            color="inherit"
-            size="small"
-            aria-label={direction === 'rtl' ? t.switchToLtr : t.switchToRtl}
-          >
-            {direction.toUpperCase()}
-          </Button>
-          <Button onClick={onToggleLocale} color="primary" size="small">
-            {t.language}
-          </Button>
-          <Button onClick={() => void logout()} color="inherit" size="small">
-            {signOutLabel(locale)}
-          </Button>
-        </Toolbar>
-      </AppBar>
-      <Container component="main" maxWidth="xl" sx={{ py: 4 }}>
+            {connectionNotice === 'success'
+              ? locale === 'ar'
+                ? 'تمت الموافقة في WooCommerce. انتظر ظهور المتجر ثم ابدأ المزامنة الأولية.'
+                : 'WooCommerce approved access. Wait for the store to appear, then start the initial sync.'
+              : locale === 'ar'
+                ? 'لم تتم الموافقة على الربط في WooCommerce.'
+                : 'WooCommerce authorization was not approved.'}
+          </Alert>
+        )}
         {isAdminView ? (
           <AdminWorkspace
             section={view as AdminSection}
@@ -3794,7 +3786,7 @@ export function App({
             </Paper>
           </>
         )}
-      </Container>
+      </WorkspaceShell>
       <Drawer
         anchor={direction === 'rtl' ? 'left' : 'right'}
         open={Boolean(selected)}
@@ -3817,6 +3809,6 @@ export function App({
           />
         )}
       </Drawer>
-    </Box>
+    </>
   );
 }

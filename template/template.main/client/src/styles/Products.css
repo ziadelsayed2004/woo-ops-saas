@@ -1,7 +1,0 @@
-@import './variables.css';
-/* CSS Sibling for layout separation */
-
-.product-qr-code {
-  width: 150px;
-  height: 150px;
-}

@@ -97,6 +97,35 @@ try {
   const healthBody = await health.json();
   if (healthBody.status !== 'ok' || healthBody.database !== 'connected')
     throw new Error(`HOSTINGER_SMOKE_HEALTH_INVALID ${JSON.stringify(healthBody)}`);
+  const setupBefore = await fetch(`${baseUrl}/api/v1/auth/setup`).then((response) =>
+    response.json(),
+  );
+  if (setupBefore.registrationOpen !== true) throw new Error('HOSTINGER_OWNER_SETUP_NOT_AVAILABLE');
+  const owner = await fetch(`${baseUrl}/api/v1/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      email: 'owner@example.test',
+      password: 'test-owner-password-strong',
+      accountName: 'Smoke Store',
+    }),
+  });
+  if (owner.status !== 201) throw new Error(`HOSTINGER_OWNER_SETUP_FAILED ${owner.status}`);
+  const setupAfter = await fetch(`${baseUrl}/api/v1/auth/setup`).then((response) =>
+    response.json(),
+  );
+  if (setupAfter.registrationOpen !== false) throw new Error('HOSTINGER_OWNER_SETUP_STILL_OPEN');
+  const secondOwner = await fetch(`${baseUrl}/api/v1/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      email: 'second@example.test',
+      password: 'test-owner-password-strong',
+      accountName: 'Second Store',
+    }),
+  });
+  if (secondOwner.status !== 409)
+    throw new Error(`HOSTINGER_SECOND_OWNER_ALLOWED ${secondOwner.status}`);
   const homepage = await fetch(`${baseUrl}/`);
   const homepageContentType = homepage.headers.get('content-type') ?? '';
   if (!homepage.ok || !homepageContentType.includes('text/html'))

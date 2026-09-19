@@ -20,6 +20,34 @@ npm run dev
 
 The API listens on `http://localhost:3000`; health is available at `/health`.
 
+## First owner and WooCommerce connection
+
+After Hostinger reports a healthy deployment, open `https://ops.wasatalbalad.store/`. On a fresh
+production database the first screen offers owner-account creation. Enter the account name, your
+email and a unique password of at least 12 characters. This is a Woo Ops login, separate from your
+WordPress login. Public account creation closes after the first owner; sign in with that account on
+later visits. Do not delete the private SQLite database to recover a forgotten password.
+
+In **Connections**, enter `https://wasatalbalad.store` and select **Start WooCommerce connection**.
+Sign in to WordPress as an administrator if prompted, inspect the WooCommerce grant screen, and
+approve the **read** permission. WooCommerce posts the keys directly to the application's HTTPS
+callback, then sends your browser back to Connections. If the store takes a moment to appear, use
+the refresh control. Run **Health check** and **Initial sync** to import the catalog and orders;
+check **Operations** for progress and errors. Woo Ops never writes orders, stock or products back.
+
+Set both `WEB_PUBLIC_URL` and `API_PUBLIC_URL` to `https://ops.wasatalbalad.store` in Hostinger,
+without a trailing slash. Set `SESSION_SECRET` (32+ random characters) and
+`TOKEN_ENCRYPTION_KEY` (a base64-encoded 32-byte random key) as private application variables; keep
+the latter stable across redeployments so stored Woo keys remain decryptable. The private data
+directory must survive redeployments. For near-real-time updates, click **Set up webhook** on the
+connected store. Copy the displayed Delivery URL and Secret immediately. In WordPress admin open
+WooCommerce → Settings → Advanced → Webhooks and create three active webhooks, one each for **Order
+created**, **Order updated**, and **Order deleted**, using the same URL and Secret. Changing the secret
+in Woo Ops invalidates the old one, so update all three webhooks together. Test a delivery in
+WooCommerce and inspect Operations for errors. Otherwise run incremental sync/reconciliation
+periodically. WordPress login is used only to approve the connection; Woo Ops members log in with
+their own local accounts.
+
 ## Hostinger deployment
 
 Create a Node.js 22.x application with repository root `./`, build command

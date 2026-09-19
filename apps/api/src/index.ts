@@ -842,12 +842,14 @@ app.post('/api/v1/connections/woocommerce/authorize', async (request, response) 
     });
   }
 });
-app.get('/api/v1/connections/woocommerce/return', (request, response) => {
-  const nonce = readState(String(request.query.state ?? ''));
-  const key = String(request.query.key ?? '');
-  const secret = String(request.query.secret ?? '');
+app.post('/api/v1/connections/woocommerce/return', (request, response) => {
+  const nonce = readState(String(request.body?.user_id ?? ''));
+  const key = String(request.body?.consumer_key ?? '');
+  const secret = String(request.body?.consumer_secret ?? '');
+  const permissions = String(request.body?.key_permissions ?? '');
   if (
     !nonce ||
+    permissions !== 'read' ||
     !/^ck_[A-Za-z0-9_-]{1,200}$/u.test(key) ||
     !/^cs_[A-Za-z0-9_-]{1,200}$/u.test(secret)
   ) {
@@ -872,18 +874,13 @@ app.get('/api/v1/connections/woocommerce/return', (request, response) => {
     return;
   }
   try {
-    const connection = store.completeAuthorization({
+    store.completeAuthorization({
       stateHash: stateHash(nonce),
       encryptedCredentials: JSON.stringify(
         encryptCredentialEnvelope({ key, secret }, encryptionKey),
       ),
     });
-    response.json({
-      connected: true,
-      connectionId: connection.id,
-      platform: connection.platform,
-      storeUrl: connection.storeUrl,
-    });
+    response.json({ connected: true });
     return;
   } catch (error) {
     const code = error instanceof Error ? error.message : 'CONNECTOR_CALLBACK_INVALID';
@@ -1140,6 +1137,9 @@ app.post('/api/v1/connections/:connectionId/disable', (request, response) => {
     sendOperationError(response, error);
   }
 });
+app.get('/api/v1/auth/setup', (_request, response) => {
+  response.json({ registrationOpen: auth.registrationOpen() });
+});
 app.post('/api/v1/auth/register', (request, response) => {
   try {
     const key = request.ip ?? 'unknown';
@@ -1173,10 +1173,11 @@ app.post('/api/v1/auth/register', (request, response) => {
     response.status(201).json({ user });
   } catch (error) {
     const code =
-      error instanceof Error && error.message === 'AUTH_ACCOUNT_EXISTS'
-        ? 'AUTH_ACCOUNT_EXISTS'
+      error instanceof Error &&
+      ['AUTH_ACCOUNT_EXISTS', 'AUTH_REGISTRATION_CLOSED'].includes(error.message)
+        ? error.message
         : 'AUTH_INVALID_INPUT';
-    response.status(code === 'AUTH_ACCOUNT_EXISTS' ? 409 : 400).json({
+    response.status(code === 'AUTH_INVALID_INPUT' ? 400 : 409).json({
       error: {
         code,
         message:

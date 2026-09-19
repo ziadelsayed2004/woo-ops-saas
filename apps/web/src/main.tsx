@@ -24,8 +24,22 @@ function AppShell() {
   document.documentElement.dir = direction;
   const theme = createTheme({
     direction,
-    typography: { fontFamily: 'Tahoma, Arial, sans-serif' },
-    palette: { mode: 'light', primary: { main: '#1565c0' } },
+    shape: { borderRadius: 12 },
+    typography: { fontFamily: 'Cairo, Inter, Tahoma, Arial, sans-serif' },
+    palette: {
+      mode: 'light',
+      primary: { main: '#1558b0', light: '#e8f0fe', dark: '#124b98' },
+      background: { default: '#f8fafc', paper: '#ffffff' },
+      text: { primary: '#111827', secondary: '#64748b' },
+      divider: '#e5e7eb',
+    },
+    components: {
+      MuiPaper: { styleOverrides: { root: { backgroundImage: 'none' } } },
+      MuiButton: {
+        styleOverrides: { root: { borderRadius: 10, textTransform: 'none', fontWeight: 700 } },
+      },
+      MuiCard: { styleOverrides: { root: { boxShadow: '0 1px 2px rgba(15, 23, 42, 0.08)' } } },
+    },
   });
   return (
     <ThemeProvider theme={theme}>

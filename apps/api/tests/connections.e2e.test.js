@@ -139,22 +139,55 @@ test('connection lifecycle HTTP APIs enforce admin CSRF, hide secrets, and queue
     });
     assert.equal(authorization.response.status, 200);
     const authorizationUrl = new URL(authorization.body.authorizationUrl);
-    const state = authorizationUrl.searchParams.get('state');
+    const state = authorizationUrl.searchParams.get('user_id');
     assert.ok(state);
-    const callback = await request(
-      `/api/v1/connections/woocommerce/return?state=${encodeURIComponent(state)}&key=ck_http_read&secret=cs_http_secret`,
+    assert.equal(authorizationUrl.searchParams.get('scope'), 'read');
+    assert.equal(authorizationUrl.searchParams.has('state'), false);
+    assert.equal(
+      authorizationUrl.searchParams.get('callback_url'),
+      `${baseUrl}/api/v1/connections/woocommerce/return`,
     );
+    assert.equal(
+      authorizationUrl.searchParams.get('return_url'),
+      `${baseUrl}/connections/woocommerce/callback`,
+    );
+    const invalidPermission = await request('/api/v1/connections/woocommerce/return', {
+      method: 'POST',
+      body: JSON.stringify({
+        user_id: state,
+        consumer_key: 'ck_http_read',
+        consumer_secret: 'cs_http_secret',
+        key_permissions: 'read_write',
+      }),
+    });
+    assert.equal(invalidPermission.response.status, 400);
+    const callback = await request('/api/v1/connections/woocommerce/return', {
+      method: 'POST',
+      body: JSON.stringify({
+        user_id: state,
+        consumer_key: 'ck_http_read',
+        consumer_secret: 'cs_http_secret',
+        key_permissions: 'read',
+      }),
+    });
     assert.equal(callback.response.status, 200);
     assert.equal(callback.body.connected, true);
-    const replay = await request(
-      `/api/v1/connections/woocommerce/return?state=${encodeURIComponent(state)}&key=ck_http_read&secret=cs_http_secret`,
-    );
+    assert.equal(Object.hasOwn(callback.body, 'connectionId'), false);
+    const replay = await request('/api/v1/connections/woocommerce/return', {
+      method: 'POST',
+      body: JSON.stringify({
+        user_id: state,
+        consumer_key: 'ck_http_read',
+        consumer_secret: 'cs_http_secret',
+        key_permissions: 'read',
+      }),
+    });
     assert.equal(replay.response.status, 409);
 
-    const connectionId = callback.body.connectionId;
     const listed = await request('/api/v1/connections', { headers: readHeaders });
     assert.equal(listed.response.status, 200);
     assert.equal(listed.body.items.length, 1);
+    const connectionId = listed.body.items[0].id;
     assert.equal(Object.hasOwn(listed.body.items[0], 'encryptedCredentials'), false);
     const detail = await request(`/api/v1/connections/${connectionId}`, { headers: readHeaders });
     assert.equal(detail.response.status, 200);
