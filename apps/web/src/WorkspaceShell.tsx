@@ -49,6 +49,7 @@ const iconFor = (id: string): ReactNode =>
   ({
     overview: <DashboardOutlined />,
     orders: <ShoppingBagOutlined />,
+    catalog: <ShoppingBagOutlined />,
     manual: <AddShoppingCartOutlined />,
     exports: <ReceiptLongOutlined />,
     documents: <DescriptionOutlined />,

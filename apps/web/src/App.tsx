@@ -66,6 +66,26 @@ type QueryResponse = {
   facets?: readonly { field: string; values: readonly { value: string; count: number }[] }[];
 };
 type OrderResponse = { order: Order };
+type CatalogItemView = {
+  id: string;
+  kind: 'product' | 'variation' | 'category';
+  externalId: string;
+  parentExternalId: string | null;
+  name: string;
+  sku: string | null;
+  price: string | null;
+  regularPrice: string | null;
+  salePrice: string | null;
+  stockStatus: string | null;
+  stockQuantity: number | null;
+  categories: readonly { id: string; name: string }[];
+};
+type ManualOrderConfig = {
+  currency: string;
+  rates: readonly { governorate: string; amountMinor: string }[];
+  proofTypes: readonly string[];
+  proofMaxBytes: number;
+};
 type DocumentTemplate = {
   id: string;
   name: string;
@@ -1879,6 +1899,225 @@ function csrfToken(): string {
   );
 }
 
+function CatalogWorkspace({ locale }: { locale: Locale }) {
+  const [items, setItems] = useState<CatalogItemView[]>([]);
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const load = async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const query = new URLSearchParams({ limit: '100' });
+      if (search.trim()) query.set('search', search.trim());
+      if (category.trim()) query.set('category', category.trim());
+      const response = await fetch(`/api/v1/catalog?${query}`, { credentials: 'include' });
+      if (!response.ok) throw new Error('CATALOG_FAILED');
+      const body = (await response.json()) as { items: CatalogItemView[] };
+      setItems(body.items);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, []);
+  return (
+    <Stack gap={2} data-testid="catalog-workspace">
+      <Box>
+        <Typography variant="h4" component="h1" fontWeight={800}>
+          {locale === 'ar' ? 'كتالوج المنتجات والمخزون' : 'Products & stock catalog'}
+        </Typography>
+        <Typography color="text.secondary">
+          {locale === 'ar'
+            ? 'نسخة مقروءة فقط من WooCommerce — لا يمكن تعديل السعر أو المخزون هنا.'
+            : 'A read-only WooCommerce snapshot — prices and stock cannot be edited here.'}
+        </Typography>
+      </Box>
+      <Paper
+        component="form"
+        variant="outlined"
+        sx={{ p: 2 }}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void load();
+        }}
+      >
+        <Stack direction={{ xs: 'column', sm: 'row' }} gap={2}>
+          <TextField
+            fullWidth
+            size="small"
+            label={locale === 'ar' ? 'ابحث بالاسم أو SKU' : 'Search name or SKU'}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <TextField
+            fullWidth
+            size="small"
+            label={locale === 'ar' ? 'التصنيف' : 'Category'}
+            value={category}
+            onChange={(event) => setCategory(event.target.value)}
+          />
+          <Button type="submit" variant="contained">
+            {locale === 'ar' ? 'تطبيق' : 'Apply'}
+          </Button>
+        </Stack>
+      </Paper>
+      {error && (
+        <Alert severity="error">
+          {locale === 'ar' ? 'تعذر تحميل الكتالوج' : 'Catalog could not be loaded'}
+        </Alert>
+      )}
+      <Paper variant="outlined">
+        <TableContainer>
+          <Table size="small" aria-label={locale === 'ar' ? 'كتالوج المنتجات' : 'Product catalog'}>
+            <TableHead>
+              <TableRow>
+                <TableCell>{locale === 'ar' ? 'المنتج' : 'Product'}</TableCell>
+                <TableCell>SKU</TableCell>
+                <TableCell>{locale === 'ar' ? 'التصنيفات' : 'Categories'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'السعر' : 'Price'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'المخزون' : 'Stock'}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {items.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell>{item.name}</TableCell>
+                  <TableCell>{item.sku ?? '—'}</TableCell>
+                  <TableCell>
+                    {item.categories.map((entry) => entry.name).join(', ') || '—'}
+                  </TableCell>
+                  <TableCell>{item.price ?? '—'}</TableCell>
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      color={item.stockStatus === 'instock' ? 'success' : 'default'}
+                      label={`${item.stockStatus ?? 'unknown'}${item.stockQuantity === null ? '' : ` · ${item.stockQuantity}`}`}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        {loading && <LinearProgress />}
+        {!loading && items.length === 0 && (
+          <Box p={4} textAlign="center">
+            —
+          </Box>
+        )}
+      </Paper>
+    </Stack>
+  );
+}
+
+function ManualOrdersWorkspace({ locale, onCreate }: { locale: Locale; onCreate: () => void }) {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const load = async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const response = await fetch('/api/v1/orders/query', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          filter: { field: 'origin', operator: 'equals', value: 'manual' },
+          limit: 50,
+          sort: { field: 'createdAt', direction: 'desc' },
+        }),
+      });
+      if (!response.ok) throw new Error('MANUAL_QUEUE_FAILED');
+      const body = (await response.json()) as QueryResponse;
+      setOrders(body.items);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, []);
+  return (
+    <Stack gap={2} data-testid="manual-orders-workspace">
+      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={2}>
+        <Box>
+          <Typography variant="h4" component="h1" fontWeight={800}>
+            {locale === 'ar' ? 'إدارة الطلبات اليدوية' : 'Manual order operations'}
+          </Typography>
+          <Typography color="text.secondary">
+            {locale === 'ar'
+              ? 'طلبات محلية منفصلة لا تُرسل إلى WooCommerce ولا تخصم المخزون.'
+              : 'A separate local queue that never writes to WooCommerce or inventory.'}
+          </Typography>
+        </Box>
+        <Button variant="contained" onClick={onCreate}>
+          {locale === 'ar' ? 'طلب يدوي جديد' : 'New manual order'}
+        </Button>
+      </Stack>
+      {error && (
+        <Alert severity="error">
+          {locale === 'ar' ? 'تعذر تحميل الطلبات اليدوية' : 'Manual orders could not be loaded'}
+        </Alert>
+      )}
+      <Paper variant="outlined">
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{locale === 'ar' ? 'رقم الطلب' : 'Order'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'العميل' : 'Customer'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'الحالة' : 'Status'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'الإجمالي' : 'Total'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'التصدير' : 'Export'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'إثبات التحويل' : 'Transfer proof'}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {orders.map((order) => (
+                <TableRow key={order.id}>
+                  <TableCell>{order.orderNumber}</TableCell>
+                  <TableCell>{valueText(order.customerName ?? orderCustomerName(order))}</TableCell>
+                  <TableCell>{order.localStatus}</TableCell>
+                  <TableCell>
+                    {formatMinor(order.grandTotalMinor, order.currency ?? 'EGP', locale)}
+                  </TableCell>
+                  <TableCell>{order.exportState}</TableCell>
+                  <TableCell>
+                    {order.localStatus === 'confirmed' ? (
+                      <Button
+                        size="small"
+                        href={`/api/v1/manual-orders/${encodeURIComponent(order.id)}/payment-proof`}
+                      >
+                        {locale === 'ar' ? 'تنزيل' : 'Download'}
+                      </Button>
+                    ) : (
+                      '—'
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        {loading && <LinearProgress />}
+        {!loading && orders.length === 0 && (
+          <Box p={4} textAlign="center">
+            —
+          </Box>
+        )}
+      </Paper>
+    </Stack>
+  );
+}
+
 function ManualOrderForm({
   locale,
   t,
@@ -1894,7 +2133,12 @@ function ManualOrderForm({
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [address, setAddress] = useState('');
+  const [governorate, setGovernorate] = useState('');
   const [currency, setCurrency] = useState('EGP');
+  const [catalog, setCatalog] = useState<CatalogItemView[]>([]);
+  const [selectedCatalogId, setSelectedCatalogId] = useState('');
+  const [config, setConfig] = useState<ManualOrderConfig | null>(null);
+  const [paymentProof, setPaymentProof] = useState<File | null>(null);
   const [productName, setProductName] = useState('');
   const [productSku, setProductSku] = useState('');
   const [quantity, setQuantity] = useState('1');
@@ -1903,12 +2147,50 @@ function ManualOrderForm({
   const [discountMinor, setDiscountMinor] = useState('0');
   const [taxMinor, setTaxMinor] = useState('0');
   const [feesMinor, setFeesMinor] = useState('0');
-  const [localStatus, setLocalStatus] = useState('new');
+  const [localStatus, setLocalStatus] = useState('awaiting-payment-proof');
   const [tags, setTags] = useState('manual');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(false);
   const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    void Promise.all([
+      fetch('/api/v1/catalog?limit=100', { credentials: 'include' }).then(async (response) => {
+        if (!response.ok) throw new Error('CATALOG_FAILED');
+        return (await response.json()) as { items: CatalogItemView[] };
+      }),
+      fetch('/api/v1/manual-orders/config', { credentials: 'include' }).then(async (response) => {
+        if (!response.ok) throw new Error('CONFIG_FAILED');
+        return (await response.json()) as ManualOrderConfig;
+      }),
+    ])
+      .then(([catalogResponse, configResponse]) => {
+        setCatalog(
+          catalogResponse.items.filter(
+            (item) => (item.kind === 'product' || item.kind === 'variation') && item.price !== null,
+          ),
+        );
+        setConfig(configResponse);
+        setCurrency(configResponse.currency);
+      })
+      .catch(() => setError(true));
+  }, []);
+  const selectCatalogProduct = (id: string) => {
+    setSelectedCatalogId(id);
+    const item = catalog.find((candidate) => candidate.id === id);
+    if (!item) return;
+    setProductName(item.name);
+    setProductSku(item.sku ?? '');
+    const match = /^(\d+)(?:\.(\d{1,2}))?$/u.exec(item.price ?? '');
+    if (match)
+      setUnitPriceMinor(`${match[1]}${(match[2] ?? '').padEnd(2, '0')}`.replace(/^0+(?=\d)/u, ''));
+  };
+  const selectGovernorate = (value: string) => {
+    setGovernorate(value);
+    setShippingMinor(
+      config?.rates.find((candidate) => candidate.governorate === value)?.amountMinor ?? '0',
+    );
+  };
   const total = useMemo(() => {
     try {
       const subtotal = BigInt(unitPriceMinor || '0') * BigInt(quantity || '0');
@@ -1935,6 +2217,10 @@ function ManualOrderForm({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!selectedCatalogId || !governorate || !paymentProof || !config) {
+      setError(true);
+      return;
+    }
     setSaving(true);
     setError(false);
     try {
@@ -1946,13 +2232,20 @@ function ManualOrderForm({
           currency: currency.trim().toUpperCase(),
           customer: { name: customerName, email: customerEmail, phone: customerPhone },
           billing: { first_name: customerName, email: customerEmail, phone: customerPhone },
-          shipping: { first_name: customerName, address_1: address },
-          payment: { method: 'manual', title: 'Manual payment' },
-          shippingMethod: { methodId: 'manual', title: 'Manual shipping' },
+          shipping: { first_name: customerName, address_1: address, state: governorate },
+          payment: { method: 'bank-transfer', title: 'Bank transfer' },
+          shippingMethod: { methodId: 'configured-rate', title: governorate },
           lines: [
             {
               name: productName,
               sku: productSku || undefined,
+              productId:
+                catalog.find((item) => item.id === selectedCatalogId)?.parentExternalId ??
+                catalog.find((item) => item.id === selectedCatalogId)?.externalId,
+              variationId:
+                catalog.find((item) => item.id === selectedCatalogId)?.kind === 'variation'
+                  ? catalog.find((item) => item.id === selectedCatalogId)?.externalId
+                  : undefined,
               quantity: Number(quantity),
               unitPriceMinor,
             },
@@ -1971,8 +2264,36 @@ function ManualOrderForm({
       });
       if (!response.ok) throw new Error('MANUAL_ORDER_CREATE_FAILED');
       const body = (await response.json()) as OrderResponse;
+      let savedOrder = body.order;
+      if (paymentProof) {
+        const proofResponse = await fetch(
+          `/api/v1/manual-orders/${encodeURIComponent(body.order.id)}/payment-proof`,
+          {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'content-type': paymentProof.type,
+              'x-file-name': paymentProof.name,
+              'x-csrf-token': csrfToken(),
+            },
+            body: paymentProof,
+          },
+        );
+        if (!proofResponse.ok) throw new Error('PAYMENT_PROOF_UPLOAD_FAILED');
+        const confirmResponse = await fetch(
+          `/api/v1/manual-orders/${encodeURIComponent(body.order.id)}`,
+          {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+            body: JSON.stringify({ version: 1, localStatus: 'confirmed' }),
+          },
+        );
+        if (!confirmResponse.ok) throw new Error('MANUAL_ORDER_CONFIRM_FAILED');
+        savedOrder = ((await confirmResponse.json()) as OrderResponse).order;
+      }
       setSaved(true);
-      onSaved(body.order);
+      onSaved(savedOrder);
     } catch {
       setError(true);
     } finally {
@@ -2009,6 +2330,7 @@ function ManualOrderForm({
               onChange={(event) => setCustomerEmail(event.target.value)}
             />
             <TextField
+              required
               fullWidth
               label={t.customerPhone}
               value={customerPhone}
@@ -2016,27 +2338,57 @@ function ManualOrderForm({
             />
           </Stack>
           <TextField
+            required
             fullWidth
             sx={{ mt: 2 }}
             label={t.address}
             value={address}
             onChange={(event) => setAddress(event.target.value)}
           />
+          <FormControl required fullWidth sx={{ mt: 2 }}>
+            <InputLabel id="manual-governorate-label">
+              {locale === 'ar' ? 'المحافظة' : 'Governorate'}
+            </InputLabel>
+            <Select
+              labelId="manual-governorate-label"
+              label={locale === 'ar' ? 'المحافظة' : 'Governorate'}
+              value={governorate}
+              onChange={(event) => selectGovernorate(event.target.value)}
+            >
+              {(config?.rates ?? []).map((rate) => (
+                <MenuItem key={rate.governorate} value={rate.governorate}>
+                  {rate.governorate} · {formatMinor(rate.amountMinor, currency, locale)}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </Section>
         <Section title={t.items}>
           <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
-            <TextField
-              required
-              fullWidth
-              label={t.productName}
-              value={productName}
-              onChange={(event) => setProductName(event.target.value)}
-            />
+            <FormControl required fullWidth>
+              <InputLabel id="manual-product-label">{t.productName}</InputLabel>
+              <Select
+                labelId="manual-product-label"
+                label={t.productName}
+                value={selectedCatalogId}
+                onChange={(event) => selectCatalogProduct(event.target.value)}
+              >
+                {catalog.map((item) => (
+                  <MenuItem
+                    key={item.id}
+                    value={item.id}
+                    disabled={item.stockStatus === 'outofstock'}
+                  >
+                    {item.name} · {item.price} {currency} {item.sku ? `· ${item.sku}` : ''}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <TextField
               fullWidth
               label={t.productSku}
               value={productSku}
-              onChange={(event) => setProductSku(event.target.value)}
+              InputProps={{ readOnly: true }}
             />
             <TextField
               required
@@ -2052,7 +2404,7 @@ function ManualOrderForm({
               type="number"
               inputProps={{ min: 0, step: 1 }}
               value={unitPriceMinor}
-              onChange={(event) => setUnitPriceMinor(event.target.value)}
+              InputProps={{ readOnly: true }}
             />
           </Stack>
         </Section>
@@ -2094,6 +2446,24 @@ function ManualOrderForm({
           </Stack>
           <Typography sx={{ mt: 2 }} fontWeight={800}>
             {t.total}: {total}
+          </Typography>
+          <Button component="label" variant="outlined" sx={{ mt: 2 }}>
+            {paymentProof
+              ? paymentProof.name
+              : locale === 'ar'
+                ? 'رفع إثبات التحويل'
+                : 'Upload transfer proof'}
+            <input
+              hidden
+              type="file"
+              accept="image/jpeg,image/png,application/pdf"
+              onChange={(event) => setPaymentProof(event.target.files?.[0] ?? null)}
+            />
+          </Button>
+          <Typography display="block" variant="caption" color="text.secondary">
+            {locale === 'ar'
+              ? 'JPG أو PNG أو PDF بحد أقصى 5 ميجابايت'
+              : 'JPG, PNG or PDF, up to 5 MB'}
           </Typography>
         </Section>
         <Section title={t.workflow}>
@@ -2933,7 +3303,15 @@ function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof c
   );
 }
 
-type AppView = 'orders' | 'manual' | 'documents' | 'analytics' | 'exports' | AdminSection;
+type AppView =
+  | 'orders'
+  | 'catalog'
+  | 'manual'
+  | 'manual-create'
+  | 'documents'
+  | 'analytics'
+  | 'exports'
+  | AdminSection;
 type AuthStatus = 'checking' | 'authenticated' | 'unauthenticated';
 
 const viewFromPath = (path: string): AppView => {
@@ -2941,7 +3319,9 @@ const viewFromPath = (path: string): AppView => {
   const value = path.replace(/^\//u, '').split('/')[0];
   const supported: AppView[] = [
     'orders',
+    'catalog',
     'manual',
+    'manual-create',
     'documents',
     'analytics',
     'exports',
@@ -3346,6 +3726,10 @@ export function App({
   const navigation: readonly { view: AppView; label: string }[] = [
     { view: 'overview', label: adminLabel('overview', locale) },
     { view: 'orders', label: t.orders },
+    {
+      view: 'catalog',
+      label: locale === 'ar' ? 'المنتجات والمخزون' : 'Products & stock',
+    },
     { view: 'manual', label: locale === 'ar' ? 'الطلبات اليدوية' : 'Manual orders' },
     { view: 'exports', label: t.exportsNav },
     { view: 'documents', label: t.documentsNav },
@@ -3375,16 +3759,22 @@ export function App({
         navigation={navigation.map((item) => ({
           id: item.view,
           label: item.label,
-          group: ['overview', 'orders', 'manual', 'exports', 'documents', 'analytics'].includes(
-            item.view,
-          )
+          group: [
+            'overview',
+            'orders',
+            'catalog',
+            'manual',
+            'exports',
+            'documents',
+            'analytics',
+          ].includes(item.view)
             ? ('workspace' as const)
             : ('management' as const),
         }))}
         onNavigate={(id) => setView(id as AppView)}
         onToggleLocale={onToggleLocale}
         onLogout={() => void logout()}
-        onCreateManual={() => setView('manual')}
+        onCreateManual={() => setView('manual-create')}
       >
         {connectionNotice && view === 'connections' && (
           <Alert
@@ -3414,11 +3804,15 @@ export function App({
           <ExportsWorkspace direction={direction} t={t} />
         ) : view === 'analytics' ? (
           <AnalyticsWorkspace locale={locale} t={t} />
+        ) : view === 'catalog' ? (
+          <CatalogWorkspace locale={locale} />
         ) : view === 'manual' ? (
+          <ManualOrdersWorkspace locale={locale} onCreate={() => setView('manual-create')} />
+        ) : view === 'manual-create' ? (
           <ManualOrderForm
             locale={locale}
             t={t}
-            onCancel={() => setView('orders')}
+            onCancel={() => setView('manual')}
             onSaved={(order) => {
               setOrders((previous) => [order, ...previous]);
             }}

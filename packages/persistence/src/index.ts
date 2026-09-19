@@ -113,6 +113,31 @@ export type CatalogItem = {
   sku: string | null;
   sourceJson: string;
 };
+export type CatalogListItem = Readonly<{
+  id: string;
+  connectionId: string;
+  kind: CatalogItem['kind'];
+  externalId: string;
+  parentExternalId: string | null;
+  name: string;
+  sku: string | null;
+  price: string | null;
+  regularPrice: string | null;
+  salePrice: string | null;
+  stockStatus: string | null;
+  stockQuantity: number | null;
+  categories: readonly { id: string; name: string }[];
+}>;
+export type ManualPaymentProofRecord = Readonly<{
+  id: string;
+  orderId: string;
+  filename: string;
+  mimeType: string;
+  byteSize: number;
+  checksum: string;
+  relativePath: string;
+  createdAt: string;
+}>;
 export type NormalizedOrderInput = {
   externalOrderId: string;
   orderNumber: string;
@@ -1767,7 +1792,7 @@ const compileFilter = (
   };
 };
 
-export const schemaVersion = 20;
+export const schemaVersion = 21;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -2368,6 +2393,21 @@ const migrations: readonly Migration[] = [
       );
       CREATE INDEX order_cost_overrides_account_line
         ON order_cost_overrides(account_id, order_id, line_id, created_at DESC, id DESC);
+    `,
+  },
+  {
+    version: 21,
+    name: 'manual-order-payment-proofs',
+    sql: `
+      CREATE TABLE manual_payment_proofs (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), order_id TEXT NOT NULL,
+        relative_path TEXT NOT NULL, filename TEXT NOT NULL, mime_type TEXT NOT NULL,
+        byte_size INTEGER NOT NULL CHECK(byte_size > 0), checksum TEXT NOT NULL,
+        created_by TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL,
+        UNIQUE(account_id, order_id),
+        FOREIGN KEY(account_id, order_id) REFERENCES orders(account_id, id)
+      );
+      CREATE INDEX manual_payment_proofs_account_order ON manual_payment_proofs(account_id, order_id);
     `,
   },
 ];
@@ -9531,6 +9571,146 @@ export class SqliteStore {
     return { insertedOrUpdated: run };
   }
 
+  listCatalog(
+    context: AccountContext,
+    input: { search?: string; kind?: CatalogItem['kind']; category?: string; limit?: number } = {},
+  ): { items: readonly CatalogListItem[]; totalCount: number } {
+    this.assertContext(context);
+    const limit = input.limit ?? 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error('CATALOG_LIMIT_INVALID');
+    const clauses = ['account_id = ?', 'remote_deleted_at IS NULL'];
+    const params: (string | number)[] = [context.accountId];
+    if (input.kind) {
+      if (!['product', 'variation', 'category', 'tag', 'shipping_class'].includes(input.kind))
+        throw new Error('CATALOG_KIND_INVALID');
+      clauses.push('kind = ?');
+      params.push(input.kind);
+    }
+    if (input.search) {
+      if (input.search.length > 120) throw new Error('CATALOG_SEARCH_INVALID');
+      const search = `%${escapeLike(input.search.toLowerCase())}%`;
+      clauses.push(
+        "(LOWER(name) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(sku, '')) LIKE ? ESCAPE '\\')",
+      );
+      params.push(search, search);
+    }
+    if (input.category) {
+      if (input.category.length > 120) throw new Error('CATALOG_CATEGORY_INVALID');
+      clauses.push("LOWER(source_json) LIKE ? ESCAPE '\\'");
+      params.push(`%${escapeLike(input.category.toLowerCase())}%`);
+    }
+    const where = clauses.join(' AND ');
+    const rows = this.db
+      .prepare(
+        `SELECT id, connection_id, kind, external_id, parent_external_id, name, sku, source_json
+         FROM catalog_items WHERE ${where} ORDER BY kind, name COLLATE NOCASE, id LIMIT ?`,
+      )
+      .all(...params, limit) as Array<Record<string, unknown>>;
+    const count = this.db
+      .prepare(`SELECT COUNT(*) AS count FROM catalog_items WHERE ${where}`)
+      .get(...params) as { count: number };
+    return {
+      totalCount: Number(count.count),
+      items: rows.map((row) => {
+        const normalized = parseJsonRecord(row.source_json);
+        const source = isRecord(normalized.source) ? normalized.source : normalized;
+        const categories = Array.isArray(normalized.categories)
+          ? normalized.categories.flatMap((value) => {
+              const category = isRecord(value) ? value : {};
+              const id = category.id;
+              const name = category.name;
+              return (typeof id === 'number' || typeof id === 'string') && typeof name === 'string'
+                ? [{ id: String(id), name }]
+                : [];
+            })
+          : [];
+        const optionalText = (value: unknown): string | null =>
+          typeof value === 'string' && value.trim() ? value.trim() : null;
+        return {
+          id: String(row.id),
+          connectionId: String(row.connection_id),
+          kind: row.kind as CatalogItem['kind'],
+          externalId: String(row.external_id),
+          parentExternalId:
+            typeof row.parent_external_id === 'string' ? row.parent_external_id : null,
+          name: String(row.name),
+          sku: typeof row.sku === 'string' ? row.sku : null,
+          price: optionalText(source.price),
+          regularPrice: optionalText(source.regular_price),
+          salePrice: optionalText(source.sale_price),
+          stockStatus: optionalText(source.stock_status),
+          stockQuantity:
+            typeof source.stock_quantity === 'number' && Number.isFinite(source.stock_quantity)
+              ? source.stock_quantity
+              : null,
+          categories,
+        };
+      }),
+    };
+  }
+
+  createManualPaymentProof(
+    context: AccountContext,
+    input: Omit<ManualPaymentProofRecord, 'createdAt'>,
+  ): ManualPaymentProofRecord {
+    const actorId = this.requireMutationActor(context);
+    const order = this.db
+      .prepare('SELECT origin FROM orders WHERE account_id = ? AND id = ?')
+      .get(context.accountId, input.orderId) as { origin: string } | undefined;
+    if (!order || order.origin !== 'manual') throw new Error('MANUAL_ORDER_NOT_FOUND');
+    if (!/^[a-f0-9]{64}$/u.test(input.checksum) || input.byteSize < 1 || input.byteSize > 5_242_880)
+      throw new Error('PAYMENT_PROOF_INVALID');
+    const createdAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO manual_payment_proofs
+          (id, account_id, order_id, relative_path, filename, mime_type, byte_size, checksum, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.id,
+        context.accountId,
+        input.orderId,
+        input.relativePath,
+        input.filename,
+        input.mimeType,
+        input.byteSize,
+        input.checksum,
+        actorId,
+        createdAt,
+      );
+    this.audit(context, 'manual-order.payment-proof-added', 'order', input.orderId, {
+      proofId: input.id,
+      mimeType: input.mimeType,
+      byteSize: input.byteSize,
+      checksum: input.checksum,
+    });
+    return { ...input, createdAt };
+  }
+
+  getManualPaymentProof(context: AccountContext, orderId: string): ManualPaymentProofRecord | null {
+    this.assertMember(context);
+    const row = this.db
+      .prepare(
+        `SELECT id, order_id, relative_path, filename, mime_type, byte_size, checksum, created_at
+         FROM manual_payment_proofs WHERE account_id = ? AND order_id = ?`,
+      )
+      .get(context.accountId, orderId) as Record<string, unknown> | undefined;
+    return row
+      ? {
+          id: String(row.id),
+          orderId: String(row.order_id),
+          relativePath: String(row.relative_path),
+          filename: String(row.filename),
+          mimeType: String(row.mime_type),
+          byteSize: Number(row.byte_size),
+          checksum: String(row.checksum),
+          createdAt: String(row.created_at),
+        }
+      : null;
+  }
+
   markCatalogDeleted(
     context: AccountContext,
     connectionId: string,
@@ -9600,8 +9780,38 @@ export class SqliteStore {
       .run(...canonicalProjectionValues(projection), accountId, orderId);
   }
 
+  private assertManualCatalogLines(context: AccountContext, input: ManualOrderInput): void {
+    const catalogCount = this.db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM catalog_items WHERE account_id = ? AND kind IN ('product', 'variation') AND remote_deleted_at IS NULL",
+      )
+      .get(context.accountId) as { count: number };
+    if (catalogCount.count === 0) return;
+    for (const line of input.lines) {
+      const externalId = line.variationId ?? line.productId;
+      if (!externalId) throw new Error('MANUAL_ORDER_CATALOG_ITEM_REQUIRED');
+      const row = this.db
+        .prepare(
+          `SELECT kind, source_json FROM catalog_items
+           WHERE account_id = ? AND external_id = ? AND kind = ? AND remote_deleted_at IS NULL`,
+        )
+        .get(context.accountId, externalId, line.variationId ? 'variation' : 'product') as
+        { kind: string; source_json: string } | undefined;
+      if (!row) throw new Error('MANUAL_ORDER_CATALOG_ITEM_INVALID');
+      const normalized = parseJsonRecord(row.source_json);
+      const source = isRecord(normalized.source) ? normalized.source : normalized;
+      const price = source.price;
+      if (typeof price !== 'string' || !/^\d+(?:\.\d{1,2})?$/u.test(price))
+        throw new Error('MANUAL_ORDER_CATALOG_PRICE_INVALID');
+      const [whole = '0', fraction = ''] = price.split('.');
+      const expected = `${whole}${fraction.padEnd(2, '0')}`.replace(/^0+(?=\d)/u, '');
+      if (line.unitPriceMinor !== expected) throw new Error('MANUAL_ORDER_CATALOG_PRICE_CHANGED');
+    }
+  }
+
   createManualOrder(context: AccountContext, input: ManualOrderInput): Record<string, unknown> {
     const actorId = this.requireMutationActor(context);
+    this.assertManualCatalogLines(context, input);
     const normalized = normalizeManualOrder(input);
     this.assertManualAssignee(context, normalized.assigneeId);
     const now = new Date().toISOString();

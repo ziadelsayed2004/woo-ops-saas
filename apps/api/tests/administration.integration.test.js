@@ -194,7 +194,7 @@ test('account settings validate timezone and health exposes migration and queue 
     );
     const health = store.healthSnapshot();
     assert.equal(health.database, 'connected');
-    assert.equal(health.schemaVersion, 20);
+    assert.equal(health.schemaVersion, 21);
     assert.deepEqual(health.queue, { queued: 0, running: 0, deadLettered: 0 });
   } finally {
     if (store.db.open) store.db.close();

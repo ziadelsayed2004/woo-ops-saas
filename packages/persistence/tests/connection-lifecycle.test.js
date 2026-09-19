@@ -70,7 +70,7 @@ const orderInput = (externalOrderId, reconcileToken) => ({
 });
 
 test('authorization is one-time, account scoped, encrypted, and credential-safe in summaries', () => {
-  assert.equal(schemaVersion, 20);
+  assert.equal(schemaVersion, 21);
   const stateNonce = randomUUID();
   const stateHash = createHash('sha256').update(stateNonce).digest('hex');
   store.createAuthorizationState(context, {
