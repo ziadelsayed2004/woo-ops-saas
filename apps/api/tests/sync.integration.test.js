@@ -88,7 +88,15 @@ test('Woo sync health, resumable checkpoints, retry classification, and reconcil
     if (parsed.pathname.endsWith('/system_status'))
       return response({ version: '9.8.0', environment: { wp_version: '6.7.2' } });
     if (parsed.pathname.endsWith('/products'))
-      return response([{ id: 101, name: 'Sync product', type: 'simple', variations: [] }]);
+      return response([
+        {
+          id: 101,
+          name: 'Sync product',
+          type: 'simple',
+          variations: [],
+          categories: [{ id: 7, name: 'Clothing' }],
+        },
+      ]);
     if (parsed.pathname.endsWith('/categories')) return response([{ id: 7, name: 'Clothing' }]);
     if (parsed.pathname.endsWith('/tags')) return response([{ id: 8, name: 'Featured' }]);
     if (parsed.pathname.endsWith('/shipping_classes'))
@@ -159,6 +167,12 @@ test('Woo sync health, resumable checkpoints, retry classification, and reconcil
       .count,
     2,
   );
+  assert.deepEqual(
+    store
+      .queryOrders(worker, { includeFacets: true })
+      .facets.find((facet) => facet.field === 'category')?.values,
+    [{ value: 'Clothing', count: 1 }],
+  );
 
   reconcileMode = true;
   const reconcileJob = store.enqueueJob(worker, {
@@ -182,6 +196,11 @@ test('Woo sync health, resumable checkpoints, retry classification, and reconcil
       "UPDATE jobs SET status = 'succeeded', progress = 100 WHERE account_id = ? AND id IN (?, ?)",
     )
     .run(accountId, initialJob.id, reconcileJob.id);
+  store.db
+    .prepare(
+      "UPDATE jobs SET status = 'succeeded', progress = 100 WHERE account_id = ? AND type = 'analytics.rebuild'",
+    )
+    .run(accountId);
 });
 
 test('API runner wires sync jobs to the durable effect and keeps failures observable', async () => {

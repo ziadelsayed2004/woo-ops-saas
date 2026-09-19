@@ -83,7 +83,15 @@ async function mockOrderApi(page: Page) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ items: [order], nextCursor: null, hasMore: false }),
+      body: JSON.stringify({
+        items: [order],
+        nextCursor: null,
+        hasMore: false,
+        facets: [
+          { field: 'remoteStatus', values: [{ value: 'processing', count: 1 }] },
+          { field: 'governorate', values: [{ value: 'Cairo', count: 1 }] },
+        ],
+      }),
     });
   });
   await page.route('**/api/v1/orders/order-1', async (route: Route) => {
@@ -131,6 +139,7 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
   await expect(filterGrid).toBeVisible();
   await expect(page.getByLabel('المحافظة / المنطقة')).toBeVisible();
   await page.getByLabel('المحافظة / المنطقة').fill('Cairo');
+  await page.getByRole('option', { name: 'Cairo' }).click();
   await page.getByRole('button', { name: 'بحث', exact: true }).click();
   await expect
     .poll(() => queryBodies.at(-1))

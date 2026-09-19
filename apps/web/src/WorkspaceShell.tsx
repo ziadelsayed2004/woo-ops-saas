@@ -124,7 +124,7 @@ export function WorkspaceShell({
               Woo Ops
             </Typography>
             <Typography variant="caption" color="text.secondary" noWrap>
-              Commerce operations
+              {locale === 'ar' ? 'إدارة متجر وسط البلد' : 'Wasat Al Balad operations'}
             </Typography>
           </Box>
         )}

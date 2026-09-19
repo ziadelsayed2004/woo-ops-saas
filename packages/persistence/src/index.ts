@@ -1611,6 +1611,7 @@ const orderFacetDefinitions: readonly Readonly<{
   { field: 'paymentStatus', expression: 'o.payment_status' },
   { field: 'shippingMethod', expression: 'o.shipping_method_id' },
   { field: 'shippingCarrier', expression: 'o.shipping_carrier' },
+  { field: 'governorate', expression: filterDefinitions.governorate.expression },
   { field: 'refundState', expression: 'o.refund_state' },
   { field: 'category', expression: 'o.categories_json', collectionColumn: 'o.categories_json' },
   { field: 'author', expression: 'o.authors_json', collectionColumn: 'o.authors_json' },
@@ -10073,10 +10074,45 @@ export class SqliteStore {
       (!input.reconcileToken || input.reconcileToken.length > 128)
     )
       throw new Error('SYNC_RECONCILE_TOKEN_INVALID');
+    const enrichedLines = input.lines.map((value) => {
+      if (!isRecord(value)) return value;
+      const productId = projectionFirstText(value.productId, value.product_id);
+      if (!productId) return value;
+      const catalog = this.db
+        .prepare(
+          "SELECT source_json FROM catalog_items WHERE account_id = ? AND connection_id = ? AND kind = 'product' AND external_id = ? AND remote_deleted_at IS NULL",
+        )
+        .get(context.accountId, connectionId, productId) as { source_json: string } | undefined;
+      if (!catalog) return value;
+      const product = parseJsonRecord(catalog.source_json);
+      const categories = projectionTextList(product.categories);
+      if (categories.length === 0) return value;
+      const snapshot = projectionRecord(value.productSnapshot);
+      return {
+        ...value,
+        categories,
+        productSnapshot: { ...snapshot, categories },
+      };
+    });
+    const catalogCategories = projectionTextList(
+      enrichedLines.flatMap((value) => {
+        if (!isRecord(value)) return [];
+        const snapshot = projectionRecord(value.productSnapshot);
+        return [
+          ...projectionTextList(value.categories),
+          ...projectionTextList(snapshot.categories),
+        ];
+      }),
+    );
+    const enrichedInput: NormalizedOrderInput = {
+      ...input,
+      lines: enrichedLines,
+      categories: projectionTextList([...(input.categories ?? []), ...catalogCategories]),
+    };
     const now = new Date().toISOString();
     const id = `${context.accountId}:${connectionId}:order:${input.externalOrderId}`;
-    const projection = canonicalProjection(input);
-    const normalizedJson = JSON.stringify(input);
+    const projection = canonicalProjection(enrichedInput);
+    const normalizedJson = JSON.stringify(enrichedInput);
     if (typeof normalizedJson !== 'string' || normalizedJson.length > 512 * 1024)
       throw new Error('SYNC_ORDER_TOO_LARGE');
     const projectionInsertColumns = canonicalProjectionColumns.join(', ');

@@ -298,6 +298,13 @@ const syncOrders = async (context: SyncContext, cursor: SyncCursor): Promise<Syn
     cursor: encodeCursor(completeCursor),
     deleted: totalDeleted,
   });
+  context.store.enqueueJob(context.account, {
+    id: `analytics-${context.job.id}`,
+    type: 'analytics.rebuild',
+    idempotencyKey: `analytics-after-sync:${context.job.id}`,
+    payload: {},
+    maxAttempts: 3,
+  });
   await context.execution.reportProgress(100);
   return completeCursor;
 };

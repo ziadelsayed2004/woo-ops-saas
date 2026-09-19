@@ -174,7 +174,7 @@ test('admin navigation exposes authenticated operational workspaces and route st
   await page.getByRole('button', { name: 'English' }).click();
   await page.getByRole('button', { name: 'Overview' }).click();
   await expect(page.getByTestId('admin-overview')).toBeVisible();
-  await page.getByRole('button', { name: 'Connections' }).click();
+  await page.getByRole('button', { name: 'WooCommerce connection' }).click();
   await expect(page.getByTestId('connections-workspace')).toBeVisible();
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.getByTestId('settings-workspace')).toBeVisible();

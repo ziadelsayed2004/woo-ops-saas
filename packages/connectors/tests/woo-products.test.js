@@ -59,6 +59,28 @@ test('Woo catalog schema and rate failures are classified', async () => {
   }, /WOO_RATE_LIMITED/);
 });
 
+test('Woo catalog kinds use the official nested product endpoints', async () => {
+  const calls = [];
+  const connector = new WooCommerceConnector(
+    'secret',
+    new URL('https://shop.example.com'),
+    { key: 'k', secret: 's' },
+    async (url) => {
+      calls.push(new URL(String(url)).pathname);
+      return response([], { 'x-wp-totalpages': '1' });
+    },
+    async () => [{ address: '93.184.216.34' }],
+  );
+  for (const kind of ['categories', 'tags', 'shipping_classes']) {
+    for await (const _page of connector.pullCatalog(kind)) break;
+  }
+  assert.deepEqual(calls, [
+    '/wp-json/wc/v3/products/categories',
+    '/wp-json/wc/v3/products/tags',
+    '/wp-json/wc/v3/products/shipping_classes',
+  ]);
+});
+
 test('numeric Woo variation references are resolved read-only with price and stock facts', async () => {
   const methods = [];
   const connector = new WooCommerceConnector(

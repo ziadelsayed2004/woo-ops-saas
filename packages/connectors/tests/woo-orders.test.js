@@ -34,6 +34,7 @@ const fixture = {
     },
   ],
   refunds: [{ id: 3, total: '-10.00', reason: 'returned' }],
+  meta_data: [{ id: 91, key: '_order_export_status', value: 'exported' }],
 };
 
 test('normalizes Woo order money, dates, lines, and refunds deterministically', () => {
@@ -43,6 +44,8 @@ test('normalizes Woo order money, dates, lines, and refunds deterministically', 
   assert.equal(normalized.createdAt, '2026-08-30T10:00:00.000Z');
   assert.equal(normalized.lines[0].totalMinor, '11000');
   assert.equal(normalized.refunds[0].amountMinor, '-1000');
+  assert.equal(normalized.remoteExportStatus, 'exported');
+  assert.equal(normalized.remoteExportStatusKey, '_order_export_status');
   assert.equal(normalized.sourceHash, normalizeWooOrder(fixture).sourceHash);
 });
 

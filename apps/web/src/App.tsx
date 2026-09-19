@@ -1,6 +1,7 @@
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Card,
@@ -51,6 +52,7 @@ type Order = JsonRecord & {
   remoteStatus?: string;
   localStatus?: string;
   exportState?: string;
+  remoteExportStatus?: string;
   currency?: string;
   grandTotalMinor?: string;
   billing?: JsonRecord;
@@ -278,6 +280,9 @@ const copy = {
       '\u064a\u062c\u0628 \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062f\u062e\u0648\u0644 \u0644\u0639\u0631\u0636 \u0627\u0644\u0637\u0644\u0628\u0627\u062a',
     clearFilters: '\u0645\u0633\u062d \u0627\u0644\u0641\u0644\u0627\u062a\u0631',
     createSelection: '\u062d\u0641\u0638 \u0627\u0644\u062a\u062d\u062f\u064a\u062f',
+    markExportReady: '\u062a\u062c\u0647\u064a\u0632 \u0644\u0644\u062a\u0635\u062f\u064a\u0631',
+    exportReadyQueued:
+      '\u062a\u0645 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0637\u0644\u0628\u0627\u062a \u0644\u0645\u0631\u062d\u0644\u0629 \u0627\u0644\u062a\u062c\u0647\u064a\u0632',
     updateWorkflow: '\u062d\u0641\u0638 \u0627\u0644\u062a\u0634\u063a\u064a\u0644',
     resync: '\u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629',
     workflowSaved:
@@ -543,6 +548,8 @@ const copy = {
     authenticationRequired: 'Sign in to view this account’s orders',
     clearFilters: 'Clear filters',
     createSelection: 'Save selection',
+    markExportReady: 'Mark ready for export',
+    exportReadyQueued: 'Orders queued for export preparation',
     updateWorkflow: 'Save workflow',
     resync: 'Request read-only resync',
     workflowSaved: 'Local workflow saved',
@@ -726,6 +733,7 @@ const columns = [
   'localStatus',
   'total',
   'exportState',
+  'remoteExportStatus',
   'customerName',
   'customerEmail',
   'customerPhone',
@@ -736,6 +744,17 @@ const columns = [
   'createdAt',
   'updatedAt',
 ] as const;
+const defaultOrderColumns: readonly (typeof columns)[number][] = [
+  'orderNumber',
+  'remoteStatus',
+  'remoteExportStatus',
+  'exportState',
+  'customerName',
+  'total',
+  'paymentMethod',
+  'shippingMethod',
+  'createdAt',
+];
 
 type OrderFilters = {
   source: string;
@@ -3385,6 +3404,8 @@ export function App({
   const [filters, setFilters] = useState<OrderFilters>(emptyOrderFilters);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [orderFacets, setOrderFacets] = useState<NonNullable<QueryResponse['facets']>>([]);
+  const [catalogOptions, setCatalogOptions] = useState<CatalogItemView[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
@@ -3394,7 +3415,7 @@ export function App({
   const [selectionMessage, setSelectionMessage] = useState('');
   const [viewName, setViewName] = useState('');
   const [savedViews, setSavedViews] = useState<SavedOrderView[]>([]);
-  const [visibleColumns, setVisibleColumns] = useState<string[]>([...columns]);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>([...defaultOrderColumns]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
@@ -3537,6 +3558,7 @@ export function App({
       setHasMore(body.hasMore);
       setTotalCount(body.totalCount ?? body.items.length);
       if (!append) {
+        setOrderFacets(body.facets ?? []);
         setSelectedIds(new Set());
         setSelectAllMatching(false);
         setSelectionMessage('');
@@ -3559,6 +3581,20 @@ export function App({
       // Saved views are optional and never prevent the order workspace from loading.
     }
   };
+
+  const facetValues = (field: string): string[] =>
+    orderFacets.find((facet) => facet.field === field)?.values.map((item) => item.value) ?? [];
+
+  useEffect(() => {
+    if (authStatus !== 'authenticated') return;
+    void fetch('/api/v1/catalog?limit=100', { credentials: 'include' })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const body = (await response.json()) as { items: CatalogItemView[] };
+        setCatalogOptions(body.items ?? []);
+      })
+      .catch(() => undefined);
+  }, [authStatus]);
 
   const saveCurrentView = async () => {
     if (!viewName.trim()) return;
@@ -3627,7 +3663,7 @@ export function App({
     setSelectionMessage('');
   };
 
-  const createSelectionSnapshot = async () => {
+  const createSelectionSnapshot = async (): Promise<string | null> => {
     const body = selectAllMatching
       ? {
           mode: 'query',
@@ -3646,10 +3682,38 @@ export function App({
         body: JSON.stringify(body),
       });
       if (!response.ok) throw new Error('SELECTION_FAILED');
-      const result = (await response.json()) as { selection: { estimatedCount: number } };
+      const result = (await response.json()) as {
+        selection: { id: string; estimatedCount: number };
+      };
       setSelectionMessage(String(result.selection.estimatedCount));
+      return result.selection.id;
     } catch {
       setSelectionMessage('SELECTION_FAILED');
+      return null;
+    }
+  };
+
+  const markSelectionExportReady = async () => {
+    const selectionId = await createSelectionSnapshot();
+    if (!selectionId) return;
+    try {
+      const response = await fetch('/api/v1/bulk-jobs', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        body: JSON.stringify({
+          selectionId,
+          action: 'mark-export-ready',
+          parameters: {},
+          idempotencyKey: `orders-export-ready:${selectionId}:${crypto.randomUUID()}`,
+        }),
+      });
+      if (!response.ok) throw new Error('BULK_EXPORT_READY_FAILED');
+      clearOrderSelection();
+      setSelectionMessage(t.exportReadyQueued);
+      await loadOrders();
+    } catch {
+      setSelectionMessage('BULK_EXPORT_READY_FAILED');
     }
   };
 
@@ -3686,6 +3750,10 @@ export function App({
       localStatus: t.localStatus,
       total: t.total,
       exportState: t.exportState,
+      remoteExportStatus:
+        locale === 'ar'
+          ? '\u062d\u0627\u0644\u0629 \u062a\u0635\u062f\u064a\u0631 Woo'
+          : 'Woo export status',
       customerName: t.customerName,
       customerEmail: t.email,
       customerPhone: t.phone,
@@ -3912,14 +3980,22 @@ export function App({
                     onChange={(event) => setStatus(event.target.value)}
                   >
                     <MenuItem value="">{t.all}</MenuItem>
-                    <MenuItem value="pending">{t.pending}</MenuItem>
-                    <MenuItem value="processing">{t.processing}</MenuItem>
-                    <MenuItem value="on-hold">{t.onHold}</MenuItem>
-                    <MenuItem value="completed">{t.completed}</MenuItem>
-                    <MenuItem value="cancelled">{t.cancelled}</MenuItem>
-                    <MenuItem value="refunded">{t.refunded}</MenuItem>
-                    <MenuItem value="failed">{t.failed}</MenuItem>
-                    <MenuItem value="checkout-draft">{t.checkoutDraft}</MenuItem>
+                    {facetValues('remoteStatus').map((value) => (
+                      <MenuItem key={value} value={value}>
+                        {(
+                          {
+                            pending: t.pending,
+                            processing: t.processing,
+                            'on-hold': t.onHold,
+                            completed: t.completed,
+                            cancelled: t.cancelled,
+                            refunded: t.refunded,
+                            failed: t.failed,
+                            'checkout-draft': t.checkoutDraft,
+                          } as Record<string, string>
+                        )[value] ?? value}
+                      </MenuItem>
+                    ))}
                   </Select>
                 </FormControl>
                 <Button type="submit" variant="contained">
@@ -3983,21 +4059,6 @@ export function App({
                   }}
                 >
                   <FormControl size="small">
-                    <InputLabel id="orders-source-label">{t.sourceFilter}</InputLabel>
-                    <Select
-                      value={filters.source}
-                      labelId="orders-source-label"
-                      label={t.sourceFilter}
-                      onChange={(event) =>
-                        setFilters((current) => ({ ...current, source: event.target.value }))
-                      }
-                    >
-                      <MenuItem value="">{t.all}</MenuItem>
-                      <MenuItem value="woo">WooCommerce</MenuItem>
-                      <MenuItem value="manual">{t.originManual}</MenuItem>
-                    </Select>
-                  </FormControl>
-                  <FormControl size="small">
                     <InputLabel id="orders-export-label">{t.exportFilter}</InputLabel>
                     <Select
                       value={filters.exportState}
@@ -4013,69 +4074,50 @@ export function App({
                       <MenuItem value="changed-after-export">{t.changedAfterExport}</MenuItem>
                     </Select>
                   </FormControl>
-                  <TextField
+                  {(
+                    [
+                      ['paymentMethod', t.paymentFilter],
+                      ['shippingMethod', t.shippingFilterOrders],
+                      ['governorate', t.governorateFilter],
+                    ] as const
+                  ).map(([field, label]) => (
+                    <Autocomplete
+                      key={field}
+                      size="small"
+                      options={facetValues(field)}
+                      value={filters[field] || null}
+                      onChange={(_event, value) =>
+                        setFilters((current) => ({ ...current, [field]: value ?? '' }))
+                      }
+                      renderInput={(params) => <TextField {...params} label={label} />}
+                    />
+                  ))}
+                  <Autocomplete
                     size="small"
-                    label={t.localStatus}
-                    value={filters.localStatus}
-                    onChange={(event) =>
-                      setFilters((current) => ({ ...current, localStatus: event.target.value }))
+                    options={catalogOptions
+                      .filter((item) => item.kind === 'product' || item.kind === 'variation')
+                      .map((item) => item.name)
+                      .filter((value, index, values) => values.indexOf(value) === index)}
+                    value={filters.product || null}
+                    onChange={(_event, value) =>
+                      setFilters((current) => ({ ...current, product: value ?? '' }))
                     }
+                    renderInput={(params) => (
+                      <TextField {...params} label={t.productFilterOrders} />
+                    )}
                   />
-                  <TextField
+                  <Autocomplete
                     size="small"
-                    label={t.paymentFilter}
-                    value={filters.paymentMethod}
-                    onChange={(event) =>
-                      setFilters((current) => ({ ...current, paymentMethod: event.target.value }))
+                    options={catalogOptions
+                      .flatMap((item) => item.categories.map((category) => category.name))
+                      .filter((value, index, values) => values.indexOf(value) === index)}
+                    value={filters.category || null}
+                    onChange={(_event, value) =>
+                      setFilters((current) => ({ ...current, category: value ?? '' }))
                     }
-                  />
-                  <TextField
-                    size="small"
-                    label={t.shippingFilterOrders}
-                    value={filters.shippingMethod}
-                    onChange={(event) =>
-                      setFilters((current) => ({ ...current, shippingMethod: event.target.value }))
-                    }
-                  />
-                  <TextField
-                    size="small"
-                    label={t.governorateFilter}
-                    value={filters.governorate}
-                    onChange={(event) =>
-                      setFilters((current) => ({ ...current, governorate: event.target.value }))
-                    }
-                  />
-                  <TextField
-                    size="small"
-                    label={t.posFilter}
-                    value={filters.posLocation}
-                    onChange={(event) =>
-                      setFilters((current) => ({ ...current, posLocation: event.target.value }))
-                    }
-                  />
-                  <TextField
-                    size="small"
-                    label={t.productFilterOrders}
-                    value={filters.product}
-                    onChange={(event) =>
-                      setFilters((current) => ({ ...current, product: event.target.value }))
-                    }
-                  />
-                  <TextField
-                    size="small"
-                    label={t.categoryFilterOrders}
-                    value={filters.category}
-                    onChange={(event) =>
-                      setFilters((current) => ({ ...current, category: event.target.value }))
-                    }
-                  />
-                  <TextField
-                    size="small"
-                    label={t.authorFilterOrders}
-                    value={filters.author}
-                    onChange={(event) =>
-                      setFilters((current) => ({ ...current, author: event.target.value }))
-                    }
+                    renderInput={(params) => (
+                      <TextField {...params} label={t.categoryFilterOrders} />
+                    )}
                   />
                   <TextField
                     size="small"
@@ -4124,6 +4166,13 @@ export function App({
                     onClick={() => void createSelectionSnapshot()}
                   >
                     {t.createSelection}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    onClick={() => void markSelectionExportReady()}
+                  >
+                    {t.markExportReady}
                   </Button>
                   <Button size="small" onClick={clearOrderSelection}>
                     {t.clearSelection}

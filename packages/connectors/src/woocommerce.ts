@@ -90,6 +90,8 @@ export type NormalizedOrder = {
   tags: readonly string[];
   couponCodes: readonly string[];
   metadata: readonly Record<string, unknown>[];
+  remoteExportStatus: string | null;
+  remoteExportStatusKey: string | null;
   exceptionState: string | null;
   sourceTimezone: string | null;
   sourceJson: string;
@@ -526,6 +528,18 @@ export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
     const meta = asRecord(item);
     return meta && typeof meta.key === 'string' ? [{ key: meta.key, value: meta.value }] : [];
   });
+  const remoteExportMetadata = metadata.find(
+    (item) =>
+      typeof item.key === 'string' &&
+      /(?:^|[_-])export(?:ed)?(?:[_-](?:status|state))?(?:$|[_-])/iu.test(item.key) &&
+      (typeof item.value === 'string' ||
+        typeof item.value === 'number' ||
+        typeof item.value === 'boolean'),
+  );
+  const remoteExportStatus = remoteExportMetadata
+    ? String(remoteExportMetadata.value).trim() || null
+    : null;
+  const remoteExportStatusKey = remoteExportMetadata?.key ?? null;
   const merchandiseSubtotalMinor = sumMinor(lines, 'subtotalMinor');
   const discountMinor =
     typeof record.discount_total === 'string'
@@ -641,6 +655,8 @@ export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
     tags,
     couponCodes,
     metadata,
+    remoteExportStatus,
+    remoteExportStatusKey,
     exceptionState,
     sourceTimezone,
     sourceJson: JSON.stringify(record),
@@ -855,7 +871,13 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
     if (!Number.isInteger(perPage) || perPage < 1 || perPage > 100) {
       throw new Error('WOO_PAGE_SIZE_INVALID');
     }
-    const endpoint = `/wp-json/wc/v3/${kind}`;
+    const endpointByKind: Record<WooCatalogKind, string> = {
+      products: '/wp-json/wc/v3/products',
+      categories: '/wp-json/wc/v3/products/categories',
+      tags: '/wp-json/wc/v3/products/tags',
+      shipping_classes: '/wp-json/wc/v3/products/shipping_classes',
+    };
+    const endpoint = endpointByKind[kind];
     for (let page = startPage; ; page += 1) {
       const url = new URL(endpoint, this.storeUrl);
       url.searchParams.set('page', String(page));

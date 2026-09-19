@@ -123,7 +123,7 @@ type ApiUsage = {
 const translations = {
   ar: {
     overview: 'نظرة عامة',
-    connections: 'الربط والمتاجر',
+    connections: 'ربط WooCommerce',
     mappings: 'تخصيص بيانات المتجر',
     settings: 'الإعدادات',
     members: 'الأعضاء',
@@ -208,7 +208,7 @@ const translations = {
   },
   en: {
     overview: 'Overview',
-    connections: 'Connections',
+    connections: 'WooCommerce connection',
     mappings: 'Store data setup',
     settings: 'Settings',
     members: 'Members',
