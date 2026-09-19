@@ -4,7 +4,7 @@
   "private": true,
   "description": "Woo Ops: a deployable WooCommerce order operations application",
   "engines": {
-    "node": ">=18 <23"
+    "node": ">=22.18 <23"
   },
   "workspaces": [
     "packages/*",
