@@ -61,7 +61,7 @@ the reset request API.
 - Allowlisted filter fields/operators; no raw SQL fragments or regular expressions from clients.
 - Spreadsheet strings beginning with formula control characters are escaped.
 - HTML templates use safe tokens, sanitizer, CSP, no scripts, no remote network, and restricted CSS.
-- PDF renderer runs in an isolated container/profile with time/memory limits.
+- PDF rendering runs in an isolated process/profile with time/memory limits.
 - Filenames and response headers prevent path traversal and header injection.
 
 ## PII and audit
@@ -76,7 +76,7 @@ the reset request API.
 ## Supply chain and deployment
 
 - Lockfile required; dependency updates are reviewed.
-- CI runs secret, dependency, static, and container scans.
+- CI runs secret, dependency, and static scans.
 - Production images run non-root with read-only filesystem where possible.
 - The API and in-process job runner use private application data permissions; files remain outside the public root.
 - Environment secrets never enter images, bundles, repository, or client runtime.

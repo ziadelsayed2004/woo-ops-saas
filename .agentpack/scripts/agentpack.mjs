@@ -69,7 +69,11 @@ function printTask(task, state) {
 function doctor() {
   const checks = [];
   const nodeMajor = Number(process.versions.node.split(".")[0]);
-  checks.push({ name: "Node >= 22", ok: nodeMajor >= 22, detail: process.versions.node });
+  checks.push({
+    name: "Node >= 18 and < 23",
+    ok: nodeMajor >= 18 && nodeMajor < 23,
+    detail: process.versions.node,
+  });
 
   const gitVersion = run("git", ["--version"], { check: false });
   checks.push({ name: "Git available", ok: gitVersion.status === 0, detail: gitVersion.stdout.trim() || gitVersion.stderr.trim() });

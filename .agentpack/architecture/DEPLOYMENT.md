@@ -6,19 +6,18 @@ Build the web app with Vite and run one Node/Express process. Configure a privat
 `WOO_OPS_DATA_DIR` containing the SQLite file, generated documents, exports and backups. The process
 must expose `/health`, serve the built web assets (or use `WOO_OPS_WEB_DIST_DIR` when the hosting
 working directory is different), and use environment-provided session/encryption secrets.
-No Docker, external database, Redis, or external worker is required.
+No external database, Redis, or external worker is required.
 
 ```text
-npm ci
-npm run db:migrate
 npm run build
 npm run start --workspace=@woo-ops/api
 ```
 
-Hostinger uses its Node.js application manager with `node apps/api/dist/index.js` as the start command
-from the repository root (or `node dist/index.js` when the application root is `apps/api`). Set the
-build command to `npm ci && npm run build`, and run `npm run db:migrate` once before
-the first start. Keep `WOO_OPS_DATA_DIR` outside the public web root. HTTP requests remain bounded;
+Hostinger uses Node.js 18.x and its application manager with `apps/api/dist/index.js` as the entry
+file from the repository root. Set the build command to `npm run build` and output directory to `.`;
+Hostinger installs locked dependencies before this command. The application opens SQLite and applies
+migrations during startup, so a separate build-time migration is not required. Keep
+`WOO_OPS_DATA_DIR` outside the public web root. HTTP requests remain bounded;
 long work is durable and resumed from SQLite.
 
 Required production environment:
