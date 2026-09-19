@@ -40,6 +40,7 @@ import {
   type AuthenticatedUser,
 } from './AdminWorkspaces';
 import { WorkspaceShell } from './WorkspaceShell';
+import { egyptianGovernorateName } from '@woo-ops/domain';
 
 type Locale = 'ar' | 'en';
 type Direction = 'rtl' | 'ltr';
@@ -834,7 +835,7 @@ const orderCustomerName = (order: Order): string => {
   return `${valueText(billing.first_name, '')} ${valueText(billing.last_name, '')}`.trim() || '—';
 };
 
-const addressLines = (addressValue: unknown): string[] => {
+const addressLines = (addressValue: unknown, locale: Locale = 'ar'): string[] => {
   const address = asRecord(addressValue);
   return [
     ['first_name', 'last_name']
@@ -844,7 +845,13 @@ const addressLines = (addressValue: unknown): string[] => {
     valueText(address.company, ''),
     valueText(address.address_1, ''),
     valueText(address.address_2, ''),
-    [address.city, address.state, address.postcode]
+    [
+      address.city,
+      address.governorateNameAr ??
+        address.governorateNameEn ??
+        egyptianGovernorateName(address.stateCode ?? address.state, locale),
+      address.postcode,
+    ]
       .map((value) => valueText(value, ''))
       .filter(Boolean)
       .join(', '),
@@ -1492,8 +1499,18 @@ function EmptyValue({ label }: { label: string }) {
   return <Typography color="text.secondary">{label}</Typography>;
 }
 
-function Address({ title, value, empty }: { title: string; value: unknown; empty: string }) {
-  const lines = addressLines(value);
+function Address({
+  title,
+  value,
+  empty,
+  locale,
+}: {
+  title: string;
+  value: unknown;
+  empty: string;
+  locale: Locale;
+}) {
+  const lines = addressLines(value, locale);
   return (
     <Section title={title}>
       {lines.length === 0 ? (
@@ -1767,8 +1784,13 @@ function OrderDetail({
               <Fact label={t.email} value={valueText(asRecord(order.billing).email)} />
               <Fact label={t.phone} value={valueText(asRecord(order.billing).phone)} />
             </Section>
-            <Address title={t.billing} value={order.billing} empty={t.noData} />
-            <Address title={t.shippingAddress} value={order.shipping} empty={t.noData} />
+            <Address title={t.billing} value={order.billing} empty={t.noData} locale={locale} />
+            <Address
+              title={t.shippingAddress}
+              value={order.shipping}
+              empty={t.noData}
+              locale={locale}
+            />
           </Stack>
         )}
         {tab === 3 && (
@@ -1956,7 +1978,7 @@ function CatalogWorkspace({ locale }: { locale: Locale }) {
     setLoading(true);
     setError(false);
     try {
-      const query = new URLSearchParams({ limit: '100' });
+      const query = new URLSearchParams({ limit: '100', kind: 'product' });
       if (search.trim()) query.set('search', search.trim());
       if (category.trim()) query.set('category', category.trim());
       const response = await fetch(`/api/v1/catalog?${query}`, { credentials: 'include' });
@@ -2202,10 +2224,12 @@ function ManualOrderForm({
   const [saved, setSaved] = useState(false);
   useEffect(() => {
     void Promise.all([
-      fetch('/api/v1/catalog?limit=100', { credentials: 'include' }).then(async (response) => {
-        if (!response.ok) throw new Error('CATALOG_FAILED');
-        return (await response.json()) as { items: CatalogItemView[] };
-      }),
+      fetch('/api/v1/catalog?limit=100&kind=product', { credentials: 'include' }).then(
+        async (response) => {
+          if (!response.ok) throw new Error('CATALOG_FAILED');
+          return (await response.json()) as { items: CatalogItemView[] };
+        },
+      ),
       fetch('/api/v1/manual-orders/config', { credentials: 'include' }).then(async (response) => {
         if (!response.ok) throw new Error('CONFIG_FAILED');
         return (await response.json()) as ManualOrderConfig;
@@ -2404,7 +2428,8 @@ function ManualOrderForm({
             >
               {(config?.rates ?? []).map((rate) => (
                 <MenuItem key={rate.governorate} value={rate.governorate}>
-                  {rate.governorate} · {formatMinor(rate.amountMinor, currency, locale)}
+                  {egyptianGovernorateName(rate.governorate, locale)} ·{' '}
+                  {formatMinor(rate.amountMinor, currency, locale)}
                 </MenuItem>
               ))}
             </Select>
@@ -3079,7 +3104,14 @@ function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof c
               { key: 'orderNumber', label: t.orderNumber, type: 'text' },
               { key: 'customerName', label: t.customer, type: 'text' },
               { key: 'customerPhone', label: t.phone, type: 'text' },
+              { key: 'shipping.state', label: t.governorateFilter, type: 'text' },
               { key: 'shippingMethodTitle', label: t.shippingMethod, type: 'text' },
+              {
+                key: 'remoteExportStatus',
+                label: direction === 'rtl' ? 'حالة تصدير WooCommerce' : 'WooCommerce export status',
+                type: 'text',
+              },
+              { key: 'exportState', label: t.exportState, type: 'text' },
               { key: 'grandTotalMinor', label: t.total, type: 'money' },
             ],
             filenameTemplate: 'shipping-{date}-{format}',
@@ -3587,7 +3619,7 @@ export function App({
 
   useEffect(() => {
     if (authStatus !== 'authenticated') return;
-    void fetch('/api/v1/catalog?limit=100', { credentials: 'include' })
+    void fetch('/api/v1/catalog?limit=100&kind=product', { credentials: 'include' })
       .then(async (response) => {
         if (!response.ok) return;
         const body = (await response.json()) as { items: CatalogItemView[] };
@@ -4086,6 +4118,9 @@ export function App({
                       size="small"
                       options={facetValues(field)}
                       value={filters[field] || null}
+                      getOptionLabel={(option) =>
+                        field === 'governorate' ? egyptianGovernorateName(option, locale) : option
+                      }
                       onChange={(_event, value) =>
                         setFilters((current) => ({ ...current, [field]: value ?? '' }))
                       }

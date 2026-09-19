@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import { createHash } from 'node:crypto';
+import { egyptianGovernorateName } from '@woo-ops/domain';
 
 export type ExportState = 'never-exported' | 'exported' | 'changed-after-export';
 export type ExportFormat = 'csv' | 'xlsx';
@@ -293,6 +294,9 @@ const configuredValue = (
   profile: ExportProfile,
 ): unknown => {
   let value = pathValue(row, column.key);
+  if (/(?:^|\.)(?:state|stateCode|governorate)$/iu.test(column.key)) {
+    value = egyptianGovernorateName(value, 'ar');
+  }
   const config = profile.config;
   const defaults = config && isRecord(config.defaults) ? config.defaults : undefined;
   if ((value === undefined || value === null || value === '') && defaults)

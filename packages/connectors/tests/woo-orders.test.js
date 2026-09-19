@@ -19,7 +19,7 @@ const fixture = {
   date_created_gmt: '2026-08-30T10:00:00Z',
   date_modified_gmt: '2026-08-30T10:05:00Z',
   billing: { first_name: 'Ali', email: 'ali@example.test' },
-  shipping: { city: 'Cairo' },
+  shipping: { city: 'Zagazig', state: 'EGSHR' },
   line_items: [
     {
       id: 7,
@@ -46,6 +46,9 @@ test('normalizes Woo order money, dates, lines, and refunds deterministically', 
   assert.equal(normalized.refunds[0].amountMinor, '-1000');
   assert.equal(normalized.remoteExportStatus, 'exported');
   assert.equal(normalized.remoteExportStatusKey, '_order_export_status');
+  assert.equal(normalized.shipping.stateCode, 'EGSHR');
+  assert.equal(normalized.shipping.governorateNameAr, 'الشرقية');
+  assert.equal(normalized.amounts.collectedMinor, '11345');
   assert.equal(normalized.sourceHash, normalizeWooOrder(fixture).sourceHash);
 });
 

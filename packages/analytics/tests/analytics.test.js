@@ -89,7 +89,7 @@ test('calculates explainable minor-unit metrics and immutable line costs', () =>
     shippingCollectedMinor: '300',
     taxMinor: '420',
     refundsMinor: '500',
-    collectedRevenueMinor: '3520',
+    collectedRevenueMinor: '3020',
     cogsMinor: '1000',
     actualShippingCostMinor: '150',
     paymentFeesMinor: '40',
@@ -113,6 +113,11 @@ test('calculates explainable minor-unit metrics and immutable line costs', () =>
   assert.equal(
     calculateOrderMetrics({ ...order, amounts: { ...order.amounts, collectedMinor: '0' } }, rules)
       .totals.collectedRevenueMinor,
+    '3020',
+  );
+  assert.equal(
+    calculateOrderMetrics({ ...order, remoteStatus: 'pending' }, rules).totals
+      .collectedRevenueMinor,
     '0',
   );
 });

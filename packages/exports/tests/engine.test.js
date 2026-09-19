@@ -92,6 +92,20 @@ test('XLSX export has a frozen header, text formatting, and no formula cells', a
   assert.equal(sheet.views[0]?.state, 'frozen');
 });
 
+test('Egypt governorate codes are exported as readable Arabic names', async () => {
+  const result = await generateExport({
+    profile: {
+      ...profile('xlsx'),
+      rowMode: 'order',
+      columns: [{ key: 'shipping.state', label: 'المحافظة', type: 'text' }],
+    },
+    orders: [{ ...order, shipping: { state: 'EGSHR' } }],
+  });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(result.bytes);
+  assert.equal(workbook.worksheets[0].getCell('A2').value, 'الشرقية');
+});
+
 test('row modes and chunking are bounded and resumable', async () => {
   const orderWithPackages = { ...order, packages: [{ tracking: 'A' }, { tracking: 'B' }] };
   assert.equal(materializeRows([order], { ...profile('csv'), rowMode: 'line' }).length, 2);

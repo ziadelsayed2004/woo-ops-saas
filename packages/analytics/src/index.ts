@@ -424,11 +424,19 @@ export const calculateOrderMetrics = (
         )
       : positiveMinor(amounts.refundMinor);
   const grandTotal = minor(amounts.grandTotalMinor);
+  const payment = isRecord(normalized.payment) ? normalized.payment : {};
+  const wooCollected =
+    text(payment.paidAt) !== null || ['processing', 'completed', 'refunded'].includes(status);
   const collected =
-    amounts.collectedMinor !== undefined ? minor(amounts.collectedMinor) : grandTotal - refunds;
+    source === 'woo'
+      ? wooCollected
+        ? grandTotal - refunds
+        : 0n
+      : amounts.collectedMinor !== undefined
+        ? minor(amounts.collectedMinor)
+        : grandTotal - refunds;
   const { snapshots, cogs } = lineSnapshotsFromOrder(order, rules, date, currency);
   const shippingMethod = isRecord(normalized.shippingMethod) ? normalized.shippingMethod : {};
-  const payment = isRecord(normalized.payment) ? normalized.payment : {};
   const actualShipping =
     shippingMethod.actualCostMinor !== undefined && shippingMethod.actualCostMinor !== null
       ? minor(shippingMethod.actualCostMinor)

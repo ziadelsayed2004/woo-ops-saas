@@ -49,7 +49,22 @@ function AppShell() {
       },
       MuiPaper: { styleOverrides: { root: { backgroundImage: 'none' } } },
       MuiButton: {
-        styleOverrides: { root: { borderRadius: 10, textTransform: 'none', fontWeight: 700 } },
+        styleOverrides: {
+          root: { borderRadius: 10, textTransform: 'none', fontWeight: 700, minHeight: 40 },
+          startIcon: { marginInlineStart: 0, marginInlineEnd: 8 },
+          endIcon: { marginInlineStart: 8, marginInlineEnd: 0 },
+        },
+      },
+      MuiSelect: {
+        styleOverrides: {
+          select: { paddingInlineStart: 14, paddingInlineEnd: 36 },
+          icon: { right: 'auto', insetInlineEnd: 10 },
+        },
+      },
+      MuiInputLabel: {
+        styleOverrides: {
+          root: { transformOrigin: direction === 'rtl' ? 'top right' : 'top left' },
+        },
       },
       MuiCard: { styleOverrides: { root: { boxShadow: '0 1px 2px rgba(15, 23, 42, 0.08)' } } },
     },

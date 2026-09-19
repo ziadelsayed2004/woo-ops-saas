@@ -165,7 +165,12 @@ export function WorkspaceShell({
                           justifyContent: collapsed && !mobile ? 'center' : 'initial',
                           direction,
                           ...(!collapsed || mobile
-                            ? { display: 'grid', gridTemplateColumns: '42px minmax(0, 1fr)' }
+                            ? {
+                                display: 'flex',
+                                flexDirection: direction === 'rtl' ? 'row' : 'row',
+                                gap: 1.25,
+                                textAlign: direction === 'rtl' ? 'right' : 'left',
+                              }
                             : {}),
                           '&.Mui-selected': { bgcolor: '#e8f0fe', color: 'primary.dark' },
                         }}
@@ -173,14 +178,19 @@ export function WorkspaceShell({
                         <ListItemIcon
                           data-testid={`navigation-${item.id}-icon`}
                           sx={{
-                            minWidth: collapsed && !mobile ? 0 : 42,
+                            minWidth: 0,
                             color: 'inherit',
-                            justifyContent: 'flex-start',
+                            justifyContent: 'center',
                           }}
                         >
                           {iconFor(item.id)}
                         </ListItemIcon>
-                        {(!collapsed || mobile) && <ListItemText primary={item.label} />}
+                        {(!collapsed || mobile) && (
+                          <ListItemText
+                            primary={item.label}
+                            sx={{ m: 0, textAlign: direction === 'rtl' ? 'right' : 'left' }}
+                          />
+                        )}
                       </ListItemButton>
                     </Tooltip>
                   </ListItem>
@@ -201,10 +211,17 @@ export function WorkspaceShell({
             color="inherit"
             onClick={() => setCollapsed((value) => !value)}
             aria-label={copy.collapse}
-            startIcon={direction === 'rtl' ? <ChevronRight /> : <ChevronLeft />}
-            sx={{ justifyContent: collapsed ? 'center' : 'flex-start', minWidth: 0 }}
+            startIcon={
+              collapsed ? undefined : direction === 'rtl' ? <ChevronRight /> : <ChevronLeft />
+            }
+            sx={{
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              minWidth: 0,
+              px: collapsed ? 1 : 1.5,
+              '& .MuiButton-startIcon': { m: 0, me: 1 },
+            }}
           >
-            {!collapsed && copy.collapse}
+            {collapsed ? direction === 'rtl' ? <ChevronLeft /> : <ChevronRight /> : copy.collapse}
           </Button>
         )}
       </Stack>
@@ -242,7 +259,12 @@ export function WorkspaceShell({
           >
             {locale === 'ar' ? 'إنشاء طلب يدوي' : 'Create manual order'}
           </Button>
-          <Button onClick={onToggleLocale} startIcon={<LanguageOutlined />} size="small">
+          <Button
+            onClick={onToggleLocale}
+            startIcon={<LanguageOutlined />}
+            size="small"
+            sx={{ gap: 0.75, px: 1.25, '& .MuiButton-startIcon': { m: 0 } }}
+          >
             {locale === 'ar' ? 'English' : 'العربية'}
           </Button>
           <Tooltip title={locale === 'ar' ? 'تسجيل الخروج' : 'Sign out'}>

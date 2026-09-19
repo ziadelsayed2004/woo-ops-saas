@@ -7,6 +7,7 @@ import {
 } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { egyptianGovernorate } from '@woo-ops/domain';
 import type {
   ConnectorCapabilities,
   ConnectorDiscovery,
@@ -395,7 +396,9 @@ const sumMinor = (items: readonly Record<string, unknown>[], key: string): strin
   for (const item of items) {
     const value = item[key];
     if (value === undefined || value === null || value === '') continue;
-    total += BigInt(decimalToMinorUnits(value));
+    const minorValue = typeof value === 'string' ? value : String(value);
+    if (!/^-?\d+$/u.test(minorValue)) throw new Error('WOO_MONEY_INVALID');
+    total += BigInt(minorValue);
   }
   return total.toString();
 };
@@ -528,17 +531,18 @@ export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
     const meta = asRecord(item);
     return meta && typeof meta.key === 'string' ? [{ key: meta.key, value: meta.value }] : [];
   });
-  const remoteExportMetadata = metadata.find(
-    (item) =>
-      typeof item.key === 'string' &&
-      /(?:^|[_-])export(?:ed)?(?:[_-](?:status|state))?(?:$|[_-])/iu.test(item.key) &&
-      (typeof item.value === 'string' ||
-        typeof item.value === 'number' ||
-        typeof item.value === 'boolean'),
+  const remoteExportMetadata = metadata.find((item) =>
+    /(?:^|[_-])export(?:ed)?(?:[_-](?:status|state|date|at))?(?:$|[_-])/iu.test(item.key),
   );
-  const remoteExportStatus = remoteExportMetadata
-    ? String(remoteExportMetadata.value).trim() || null
-    : null;
+  const remoteExportValue = asRecord(remoteExportMetadata?.value);
+  const remoteExportScalar =
+    remoteExportValue?.status ?? remoteExportValue?.state ?? remoteExportMetadata?.value;
+  const remoteExportStatus =
+    typeof remoteExportScalar === 'string' ||
+    typeof remoteExportScalar === 'number' ||
+    typeof remoteExportScalar === 'boolean'
+      ? String(remoteExportScalar).trim() || null
+      : null;
   const remoteExportStatusKey = remoteExportMetadata?.key ?? null;
   const merchandiseSubtotalMinor = sumMinor(lines, 'subtotalMinor');
   const discountMinor =
@@ -593,6 +597,20 @@ export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
   const channel = textOrNull(record.channel) ?? createdVia;
   const sourceTimezone = textOrNull(record.timezone) ?? textOrNull(record.source_timezone);
   const exceptionState = textOrNull(record.exception_state);
+  const normalizeAddress = (value: unknown): Record<string, unknown> => {
+    const raw = asRecord(value) ?? {};
+    const state = typeof raw.state === 'string' ? raw.state : null;
+    const governorate = egyptianGovernorate(state);
+    return {
+      ...raw,
+      stateCode: governorate?.code ?? state,
+      governorateNameAr: governorate?.ar ?? state,
+      governorateNameEn: governorate?.en ?? state,
+    };
+  };
+  const absoluteRefundMinor = BigInt(refundMinor) < 0n ? -BigInt(refundMinor) : BigInt(refundMinor);
+  const isCollected =
+    paidAt !== null || ['processing', 'completed', 'refunded'].includes(String(record.status));
   const normalized = {
     externalOrderId: String(record.id),
     orderNumber: record.number,
@@ -612,13 +630,15 @@ export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
       feesMinor,
       refundMinor,
       grandTotalMinor,
-      collectedMinor: grandTotalMinor,
+      collectedMinor: isCollected
+        ? (BigInt(grandTotalMinor) - absoluteRefundMinor).toString()
+        : '0',
     },
     createdAt: isoOrNull(record.date_created_gmt ?? record.date_created),
     modifiedAt: isoOrNull(record.date_modified_gmt ?? record.date_modified),
-    customer: asRecord(record.billing) ?? {},
-    billing: asRecord(record.billing) ?? {},
-    shipping: asRecord(record.shipping) ?? {},
+    customer: normalizeAddress(record.billing),
+    billing: normalizeAddress(record.billing),
+    shipping: normalizeAddress(record.shipping),
     payment: {
       methodId: paymentMethodId,
       title: paymentMethodTitle,

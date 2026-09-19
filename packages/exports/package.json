@@ -17,6 +17,7 @@
     "test:golden": "node --test tests/*.test.js"
   },
   "dependencies": {
+    "@woo-ops/domain": "0.1.0",
     "@types/node": "22.0.0",
     "exceljs": "4.4.0"
   }
