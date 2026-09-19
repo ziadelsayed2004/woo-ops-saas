@@ -1067,6 +1067,31 @@
         "Fresh format, lint, typecheck, unit, integration, contract, security, tenant-isolation, E2E, accessibility, visual, build and startup smoke evidence is recorded, with external Woo/Hostinger/legal inputs explicitly separated"
       ],
       "validation": ["npm ci", "npm run agent:doctor", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "npm run security:scan", "npm run security:audit", "git diff --check"]
+    },
+    {
+      "id": "T0817",
+      "epic": "E08",
+      "title": "Make production deployment compatible with Hostinger shared Node hosting",
+      "type": "fix",
+      "phase": 8,
+      "priority": "P0",
+      "estimate": "XL",
+      "parallelGroup": "hostinger-runtime-compatibility",
+      "dependencies": ["T0816"],
+      "references": ["AGENTS.md", ".agentpack/manifest.json", ".agentpack/product/PRD.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/DEPLOYMENT.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/TESTING.md", "README.md", ".gitignore", "package.json", "package-lock.json", "packages/persistence/package.json", "packages/persistence/src/index.ts", "apps/api/package.json", "apps/api/src/index.ts", "tools/hostinger-smoke.mjs"],
+      "scope": [
+        "Remove the native better-sqlite3 installation blocker or replace it with a production-safe persistence runtime that installs on Hostinger shared Node without node-gyp, newer Python or GLIBC 2.29",
+        "Preserve account isolation, migrations, durable jobs, transactional behavior, backups and the read-only Woo/local-manual-order invariants while adding compatibility and regression coverage",
+        "Remove Docker-only or obsolete deployment artifacts and generated repository debris only when proven unused, and document exact Hostinger build, output, entrypoint, environment, migration and health-check settings",
+        "Verify clean npm installation, build, database startup and representative repository/API tests without exposing or modifying local secrets"
+      ],
+      "acceptance": [
+        "A clean production dependency installation no longer invokes the failing better-sqlite3 native prebuild/node-gyp path on the documented Hostinger shared environment",
+        "Existing persistence, migrations, jobs, exports, documents, analytics, backups and account isolation retain their tested behavior with no remote Woo mutation capability added",
+        "No required source, evidence, fixture or user-owned file is deleted; Docker references and generated debris are absent or explicitly justified",
+        "README and environment documentation provide exact deploy settings and a repeatable health/startup verification path for ops.wasatalbalad.store"
+      ],
+      "validation": ["npm ci", "npm run agent:doctor", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:hostinger", "npm run build", "npm run security:scan", "npm run security:audit", "git diff --check"]
     }
   ]
 }
