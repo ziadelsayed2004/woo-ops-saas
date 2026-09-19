@@ -1167,6 +1167,29 @@
         "Only demonstrably unused template/application debris is removed; Agentpack references, production source, fixtures and evidence remain valid"
       ],
       "validation": ["npm ci", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run test:hostinger", "npm run build", "npm run security:scan", "npm run security:audit", "git diff --check"]
+    },
+    {
+      "id": "T0821",
+      "epic": "E08",
+      "title": "Align Arabic form fields and provide safe local demo access",
+      "type": "fix",
+      "phase": 8,
+      "priority": "P1",
+      "estimate": "M",
+      "parallelGroup": "rtl-demo-polish",
+      "dependencies": ["T0820"],
+      "references": ["AGENTS.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/TESTING.md", "README.md", "apps/web/src/main.tsx", "apps/web/src/AdminWorkspaces.tsx", "tests/e2e/admin.spec.ts"],
+      "scope": [
+        "Align text, field labels and outlined notches to the right in Arabic RTL across Material UI forms while keeping LTR usable",
+        "Keep login branding and headings visually centered at desktop and mobile sizes",
+        "Provide a safe, explicitly local-only way to preview authenticated screens without publishing shared test credentials or touching the production account"
+      ],
+      "acceptance": [
+        "Arabic text fields and outlined select labels/notches align on the right, including login fields; English LTR remains correct",
+        "Login title, subtitle and brand remain centered in both locales",
+        "A developer can open a local demo account with non-production data and instructions without exposing a fixed production login"
+      ],
+      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "git diff --check"]
     }
   ]
 }
