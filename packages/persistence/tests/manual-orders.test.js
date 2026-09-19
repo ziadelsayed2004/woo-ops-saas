@@ -12,6 +12,7 @@ const accountId = randomUUID();
 const otherAccountId = randomUUID();
 const actorId = randomUUID();
 const assigneeId = randomUUID();
+const otherActorId = randomUUID();
 const now = new Date().toISOString();
 for (const [id, name] of [
   [accountId, 'Manual account'],
@@ -23,6 +24,7 @@ for (const [id, name] of [
 for (const [id, email, account] of [
   [actorId, 'manual@example.test', accountId],
   [assigneeId, 'operator@example.test', accountId],
+  [otherActorId, 'other@example.test', otherAccountId],
 ]) {
   store.db
     .prepare(
@@ -33,7 +35,7 @@ for (const [id, email, account] of [
     .prepare(
       'INSERT INTO account_memberships (account_id, user_id, role, created_at) VALUES (?, ?, ?, ?)',
     )
-    .run(account, id, id === actorId ? 'admin' : 'operator', now);
+    .run(account, id, id === actorId || id === otherActorId ? 'admin' : 'operator', now);
 }
 const context = { accountId, actorId, correlationId: randomUUID(), role: 'admin' };
 const input = {
@@ -108,6 +110,37 @@ test('manual updates remain local and mark an exported/documented order stale', 
   );
 });
 
+test('payment proofs are immutable, account scoped, and manual-order only', () => {
+  const orderId = store.queryOrders(context).items[0].id;
+  const proof = store.createManualPaymentProof(context, {
+    id: randomUUID(),
+    orderId,
+    relativePath: `${accountId}/${orderId}/proof.png`,
+    filename: 'transfer.png',
+    mimeType: 'image/png',
+    byteSize: 42,
+    checksum: 'a'.repeat(64),
+  });
+  assert.equal(proof.orderId, orderId);
+  assert.equal(store.getManualPaymentProof(context, orderId)?.checksum, 'a'.repeat(64));
+  assert.equal(
+    store.getManualPaymentProof(
+      {
+        accountId: otherAccountId,
+        actorId: otherActorId,
+        correlationId: randomUUID(),
+        role: 'admin',
+      },
+      orderId,
+    ),
+    null,
+  );
+  assert.throws(
+    () => store.createManualPaymentProof(context, { ...proof, id: randomUUID() }),
+    /UNIQUE/,
+  );
+});
+
 test('manual order writes validate account membership and never cross account boundaries', () => {
   assert.equal(
     store.getOrder({ accountId: otherAccountId, actorId, correlationId: randomUUID() }, 'missing'),
@@ -124,6 +157,44 @@ test('manual order writes validate account membership and never cross account bo
   assert.throws(
     () => store.createManualOrder(context, { ...input, assigneeId: randomUUID() }),
     /MANUAL_ORDER_ASSIGNEE_INVALID/,
+  );
+});
+
+test('a synchronized catalog pins manual order identity and source price', () => {
+  const connectionId = randomUUID();
+  store.db
+    .prepare(
+      'INSERT INTO connections (id, account_id, platform, store_url, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
+    .run(connectionId, accountId, 'woocommerce', 'https://manual.test', 'active', now, now);
+  store.upsertCatalogPage(context, {
+    connectionId,
+    cursor: 'products:1',
+    pages: 1,
+    items: [
+      {
+        identity: 'product:50:variation:base',
+        kind: 'product',
+        externalId: '50',
+        parentExternalId: null,
+        name: 'Catalog product',
+        sku: 'CAT-50',
+        sourceJson: JSON.stringify({ source: { price: '125.00', stock_status: 'instock' } }),
+      },
+    ],
+  });
+  const catalogOrder = store.createManualOrder(context, {
+    ...input,
+    lines: [{ ...input.lines[0], productId: '50' }],
+  });
+  assert.equal(catalogOrder.syncPolicy, 'never');
+  assert.throws(
+    () =>
+      store.createManualOrder(context, {
+        ...input,
+        lines: [{ ...input.lines[0], productId: '50', unitPriceMinor: '1' }],
+      }),
+    /MANUAL_ORDER_CATALOG_PRICE_CHANGED/,
   );
 });
 

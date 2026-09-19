@@ -688,9 +688,10 @@ export const normalizeCatalogRecord = (
       tags: Array.isArray(record.tags) ? record.tags : [],
       shippingClass: typeof record.shipping_class === 'string' ? record.shipping_class : null,
       attributes: Array.isArray(record.attributes) ? record.attributes : [],
-      variations: variations.filter((item) => {
+      variations: variations.flatMap((item) => {
+        if (Number.isInteger(item)) return [{ id: Number(item) }];
         const variation = asRecord(item);
-        return variation !== null && Number.isInteger(variation.id);
+        return variation !== null && Number.isInteger(variation.id) ? [variation] : [];
       }),
       remoteCreatedAt: typeof record.date_created_gmt === 'string' ? record.date_created_gmt : null,
       remoteModifiedAt:
@@ -867,11 +868,42 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
       const totalPages = Number(response.headers.get('x-wp-totalpages') ?? page);
       if (!Number.isInteger(totalPages) || totalPages < page)
         throw new Error('WOO_SCHEMA_INVALID:pagination');
+      const items = body.map((item) => normalizeCatalogRecord(kind, item));
+      if (kind === 'products') {
+        for (const [index, raw] of body.entries()) {
+          const product = asRecord(raw);
+          const normalized = items[index];
+          if (!product || !normalized) continue;
+          const variationRefs = Array.isArray(product.variations) ? product.variations : [];
+          if (!variationRefs.some((value) => Number.isInteger(value))) continue;
+          const productId = requiredInteger(product, 'id');
+          const variations: unknown[] = [];
+          for (let variationPage = 1; ; variationPage += 1) {
+            const variationUrl = new URL(
+              `/wp-json/wc/v3/products/${productId}/variations`,
+              this.storeUrl,
+            );
+            variationUrl.searchParams.set('page', String(variationPage));
+            variationUrl.searchParams.set('per_page', '100');
+            const variationResponse = await this.requestPage(variationUrl);
+            if (variationResponse.status === 429) throw new Error('WOO_RATE_LIMITED');
+            if (!variationResponse.ok) throw new Error(`WOO_HTTP_${variationResponse.status}`);
+            const variationBody: unknown = await variationResponse.json();
+            if (!Array.isArray(variationBody)) throw new Error('WOO_SCHEMA_INVALID:variations');
+            variations.push(...variationBody);
+            const variationPages = Number(
+              variationResponse.headers.get('x-wp-totalpages') ?? variationPage,
+            );
+            if (variationPage >= variationPages || variationBody.length === 0) break;
+          }
+          normalized.variations = variations;
+        }
+      }
       yield {
         kind,
         page,
         totalPages,
-        items: body.map((item) => normalizeCatalogRecord(kind, item)),
+        items,
       };
       if (page >= totalPages || body.length === 0) return;
     }

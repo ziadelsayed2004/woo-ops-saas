@@ -21,8 +21,21 @@ store.db
   .run(connectionId, accountId, 'woocommerce', 'https://shop.example.com', 'active', now, now);
 const context = { accountId, correlationId: randomUUID() };
 
-test('catalog pages upsert idempotently, persist cursor, and mark remote deletion', () => {
-  const sourceJson = JSON.stringify({ id: 10, name: 'Shoe' });
+test('catalog pages upsert idempotently, expose safe read-only facts, and mark remote deletion', () => {
+  const sourceJson = JSON.stringify({
+    externalProductId: 10,
+    name: 'Shoe',
+    categories: [{ id: 4, name: 'Footwear' }],
+    source: {
+      id: 10,
+      name: 'Shoe',
+      price: '499.50',
+      regular_price: '599.50',
+      sale_price: '499.50',
+      stock_status: 'instock',
+      stock_quantity: 12,
+    },
+  });
   const item = {
     identity: 'product:10:variation:base',
     kind: 'product',
@@ -56,6 +69,23 @@ test('catalog pages upsert idempotently, persist cursor, and mark remote deletio
       .catalog_cursor,
     'products:2',
   );
+  const listed = store.listCatalog(context, { kind: 'product', category: 'Footwear' });
+  assert.equal(listed.totalCount, 1);
+  assert.deepEqual(listed.items[0], {
+    id: `${accountId}:${connectionId}:${item.identity}`,
+    connectionId,
+    kind: 'product',
+    externalId: '10',
+    parentExternalId: null,
+    name: 'Shoe',
+    sku: 'S-10',
+    price: '499.50',
+    regularPrice: '599.50',
+    salePrice: '499.50',
+    stockStatus: 'instock',
+    stockQuantity: 12,
+    categories: [{ id: '4', name: 'Footwear' }],
+  });
   assert.equal(
     store.markCatalogDeleted(context, connectionId, [
       `${accountId}:${connectionId}:${item.identity}`,

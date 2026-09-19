@@ -68,7 +68,7 @@ const worker = { accountId, correlationId: randomUUID() };
 const checksum = (value) => createHash('sha256').update(value).digest('hex');
 
 test('document batches snapshot orders/templates, isolate items, and support partial retry', () => {
-  assert.equal(schemaVersion, 20);
+  assert.equal(schemaVersion, 21);
   const batch = store.createDocumentBatch(context, {
     selectionId: selection.id,
     action: 'generate-invoice',

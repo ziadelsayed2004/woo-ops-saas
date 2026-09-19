@@ -97,12 +97,14 @@ import { createDocumentEffect } from './document-effect.js';
 import { readPrivateDocumentArtifact } from './document-artifacts.js';
 import { createApiJobRunner } from './job-runner.js';
 import { createWooSyncEffect, healthCheckWooConnection } from './woo-sync.js';
+import { readPaymentProof, writePaymentProof } from './payment-proof-files.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const dataDirectory = resolve(process.env.WOO_OPS_DATA_DIR ?? './data');
 const databasePath = resolve(process.env.WOO_OPS_DATABASE ?? `${dataDirectory}/woo-ops.sqlite`);
 const documentStorageRoot = resolve(dataDirectory, 'private-documents');
 const exportStorageRoot = resolve(dataDirectory, 'private-exports');
+const paymentProofStorageRoot = resolve(dataDirectory, 'private-payment-proofs');
 const webDistCandidates = [
   process.env.WOO_OPS_WEB_DIST_DIR ? resolve(process.env.WOO_OPS_WEB_DIST_DIR) : undefined,
   resolve(process.cwd(), 'apps/web/dist'),
@@ -348,7 +350,13 @@ app.use((request, response, next) => {
     ['POST', 'PATCH', 'PUT', 'DELETE'].includes(request.method) &&
     !String(request.headers['content-type'] ?? '')
       .toLowerCase()
-      .includes('application/json')
+      .includes('application/json') &&
+    !(
+      request.path.endsWith('/payment-proof') &&
+      ['image/jpeg', 'image/png', 'application/pdf'].includes(
+        String(request.headers['content-type'] ?? '').toLowerCase(),
+      )
+    )
   ) {
     sendApiError(response, 415, 'CONTENT_TYPE_NOT_SUPPORTED', 'JSON request body required');
     return;
@@ -730,11 +738,59 @@ app.post('/api/v1/manual-orders', (request, response) => {
     return;
   }
   try {
-    const order = store.createManualOrder(
-      operationContext(user, response),
-      parsed.data as ManualOrderInput,
-    );
+    const order = store.createManualOrder(operationContext(user, response), {
+      ...(parsed.data as ManualOrderInput),
+      localStatus: 'awaiting-payment-proof',
+    });
     response.status(201).json({ order });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/catalog', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json(
+      store.listCatalog(operationContext(user, response), {
+        ...(request.query.search === undefined ? {} : { search: String(request.query.search) }),
+        ...(request.query.kind === undefined
+          ? {}
+          : {
+              kind: String(request.query.kind) as
+                'product' | 'variation' | 'category' | 'tag' | 'shipping_class',
+            }),
+        ...(request.query.category === undefined
+          ? {}
+          : { category: String(request.query.category) }),
+        ...(request.query.limit === undefined ? {} : { limit: Number(request.query.limit) }),
+      }),
+    );
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/manual-orders/config', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    const raw = process.env.WOO_OPS_EGYPT_SHIPPING_RATES_JSON ?? '{}';
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+      throw new Error('SHIPPING_RATES_INVALID');
+    const rates = Object.entries(parsed as Record<string, unknown>).flatMap(
+      ([governorate, value]) =>
+        typeof value === 'string' && /^\d+$/u.test(value) && value.length <= 18
+          ? [{ governorate: governorate.slice(0, 120), amountMinor: value }]
+          : [],
+    );
+    response.json({
+      currency: 'EGP',
+      rates,
+      requiredFields: ['customerName', 'customerPhone', 'address1', 'governorate'],
+      proofTypes: ['image/jpeg', 'image/png', 'application/pdf'],
+      proofMaxBytes: 5 * 1024 * 1024,
+    });
   } catch (error) {
     sendOperationError(response, error);
   }
@@ -748,12 +804,81 @@ app.patch('/api/v1/manual-orders/:orderId', (request, response) => {
     return;
   }
   try {
+    const context = operationContext(user, response);
+    if (
+      parsed.data.localStatus === 'confirmed' &&
+      !store.getManualPaymentProof(context, request.params.orderId)
+    )
+      throw new Error('PAYMENT_PROOF_REQUIRED');
     const order = store.updateManualOrder(
-      operationContext(user, response),
+      context,
       request.params.orderId,
       parsed.data as ManualOrderPatch,
     );
     response.json({ order });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post(
+  '/api/v1/manual-orders/:orderId/payment-proof',
+  express.raw({ type: ['image/jpeg', 'image/png', 'application/pdf'], limit: '5mb' }),
+  (request, response) => {
+    const user = requireOperationWrite(request, response);
+    if (!user) return;
+    try {
+      const bytes = request.body;
+      if (!Buffer.isBuffer(bytes)) throw new Error('PAYMENT_PROOF_INVALID');
+      const context = operationContext(user, response);
+      const order = store.getOrder(context, request.params.orderId);
+      if (!order || order.origin !== 'manual') throw new Error('MANUAL_ORDER_NOT_FOUND');
+      if (store.getManualPaymentProof(context, request.params.orderId))
+        throw new Error('PAYMENT_PROOF_CONFLICT');
+      const mimeType = String(request.headers['content-type'] ?? '').toLowerCase();
+      const proofId = randomUUID();
+      const stored = writePaymentProof(
+        paymentProofStorageRoot,
+        user.accountId,
+        request.params.orderId,
+        proofId,
+        mimeType,
+        bytes,
+      );
+      const requestedFilename = String(request.header('x-file-name') ?? 'payment-proof').slice(
+        0,
+        180,
+      );
+      const filename = requestedFilename.replace(/[^\p{L}\p{N}._ -]/gu, '_');
+      const proof = store.createManualPaymentProof(context, {
+        id: proofId,
+        orderId: request.params.orderId,
+        filename,
+        mimeType,
+        ...stored,
+      });
+      response.status(201).json({ proof });
+    } catch (error) {
+      sendOperationError(response, error);
+    }
+  },
+);
+app.get('/api/v1/manual-orders/:orderId/payment-proof', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    const proof = store.getManualPaymentProof(
+      operationContext(user, response),
+      request.params.orderId,
+    );
+    if (!proof) {
+      sendApiError(response, 404, 'PAYMENT_PROOF_NOT_FOUND', 'Payment proof not found');
+      return;
+    }
+    const bytes = readPaymentProof(paymentProofStorageRoot, proof.relativePath, proof.checksum);
+    response.setHeader('Content-Type', proof.mimeType);
+    response.setHeader('Content-Disposition', `attachment; filename="payment-proof-${proof.id}"`);
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.send(bytes);
   } catch (error) {
     sendOperationError(response, error);
   }

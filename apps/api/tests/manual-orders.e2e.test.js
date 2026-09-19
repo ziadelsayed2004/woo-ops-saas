@@ -29,6 +29,7 @@ const child = spawn(process.execPath, ['dist/index.js'], {
     WOO_OPS_DATA_DIR: directory,
     WOO_OPS_DATABASE: databasePath,
     SESSION_SECRET: 'manual-e2e-session-secret',
+    WOO_OPS_EGYPT_SHIPPING_RATES_JSON: '{"Cairo":"1500"}',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -120,6 +121,30 @@ try {
   assert.equal(created.body.order.connectionId, null);
   assert.equal(created.body.order.externalOrderId, null);
   assert.equal(created.body.order.grandTotalMinor, '26500');
+
+  const config = await request('/api/v1/manual-orders/config', {
+    headers: { cookie: headers.cookie },
+  });
+  assert.deepEqual(config.body.rates, [{ governorate: 'Cairo', amountMinor: '1500' }]);
+
+  const proofBytes = Buffer.from('private transfer proof');
+  const proof = await request(`/api/v1/manual-orders/${created.body.order.id}/payment-proof`, {
+    method: 'POST',
+    headers: {
+      ...headers,
+      'content-type': 'image/png',
+      'x-file-name': 'transfer.png',
+    },
+    body: proofBytes,
+  });
+  assert.equal(proof.response.status, 201);
+  assert.equal(proof.body.proof.mimeType, 'image/png');
+  const proofDownload = await fetch(
+    `${baseUrl}/api/v1/manual-orders/${created.body.order.id}/payment-proof`,
+    { headers: { cookie: headers.cookie } },
+  );
+  assert.equal(proofDownload.status, 200);
+  assert.deepEqual(Buffer.from(await proofDownload.arrayBuffer()), proofBytes);
 
   const database = new Database(databasePath);
   database
