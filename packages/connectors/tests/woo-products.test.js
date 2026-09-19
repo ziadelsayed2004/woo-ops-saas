@@ -81,6 +81,25 @@ test('Woo catalog kinds use the official nested product endpoints', async () => 
   ]);
 });
 
+test('empty Woo catalog collections accept a zero-page header', async () => {
+  let calls = 0;
+  const connector = new WooCommerceConnector(
+    'secret',
+    new URL('https://shop.example.com'),
+    { key: 'k', secret: 's' },
+    async () => {
+      calls += 1;
+      return response([], { 'x-wp-totalpages': '0' });
+    },
+    async () => [{ address: '93.184.216.34' }],
+  );
+  const pages = [];
+  for await (const page of connector.pullCatalog('categories')) pages.push(page);
+  assert.equal(calls, 1);
+  assert.equal(pages[0].totalPages, 0);
+  assert.deepEqual(pages[0].items, []);
+});
+
 test('numeric Woo variation references are resolved read-only with price and stock facts', async () => {
   const methods = [];
   const connector = new WooCommerceConnector(
@@ -106,6 +125,26 @@ test('numeric Woo variation references are resolved read-only with price and sto
   const items = toCatalogItems(pages[0]);
   assert.equal(JSON.parse(items[1].sourceJson).price, '499.50');
   assert.deepEqual(methods, ['GET', 'GET']);
+});
+
+test('variable products tolerate an empty zero-page variations collection', async () => {
+  const connector = new WooCommerceConnector(
+    'secret',
+    new URL('https://shop.example.com'),
+    { key: 'k', secret: 's' },
+    async (url) => {
+      if (String(url).includes('/products/10/variations'))
+        return response([], { 'x-wp-totalpages': '0' });
+      return response([{ id: 10, name: 'Shoe', type: 'variable', variations: [11] }], {
+        'x-wp-totalpages': '1',
+      });
+    },
+    async () => [{ address: '93.184.216.34' }],
+  );
+  const pages = [];
+  for await (const page of connector.pullCatalog('products')) pages.push(page);
+  assert.equal(pages.length, 1);
+  assert.equal(toCatalogItems(pages[0]).length, 1);
 });
 
 test('Woo shipping zones expose only explicit Egyptian state flat rates', async () => {

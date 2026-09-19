@@ -373,6 +373,29 @@ const requiredInteger = (record: Record<string, unknown>, key: string): number =
   return Number(value);
 };
 
+const MAX_WOO_TOTAL_PAGES = 100_000;
+
+/**
+ * WordPress returns `X-WP-TotalPages: 0` for an empty collection. A missing
+ * header can also be caused by a proxy, so only the current response is then
+ * considered known instead of guessing another page.
+ */
+const wooTotalPages = (response: Response, page: number, itemCount: number): number => {
+  const raw = response.headers.get('x-wp-totalpages');
+  if (raw === null) return page;
+  const value = raw.trim();
+  if (!/^\d+$/u.test(value)) throw new Error('WOO_SCHEMA_INVALID:pagination');
+  const totalPages = Number(value);
+  if (!Number.isSafeInteger(totalPages) || totalPages > MAX_WOO_TOTAL_PAGES)
+    throw new Error('WOO_SCHEMA_INVALID:pagination');
+  if (totalPages === 0) {
+    if (page !== 1 || itemCount !== 0) throw new Error('WOO_SCHEMA_INVALID:pagination');
+    return 0;
+  }
+  if (totalPages < page) throw new Error('WOO_SCHEMA_INVALID:pagination');
+  return totalPages;
+};
+
 export const decimalToMinorUnits = (value: unknown, fractionDigits = 2): string => {
   if (typeof value !== 'string' || !/^-?\d+(?:\.\d+)?$/.test(value))
     throw new Error('WOO_MONEY_INVALID');
@@ -934,9 +957,7 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
       if (!response.ok) throw new Error(`WOO_HTTP_${response.status}`);
       const body: unknown = await response.json();
       if (!Array.isArray(body)) throw new Error('WOO_SCHEMA_INVALID:page');
-      const totalPages = Number(response.headers.get('x-wp-totalpages') ?? page);
-      if (!Number.isInteger(totalPages) || totalPages < page)
-        throw new Error('WOO_SCHEMA_INVALID:pagination');
+      const totalPages = wooTotalPages(response, page, body.length);
       const items = body.map((item) => normalizeCatalogRecord(kind, item));
       if (kind === 'products') {
         for (const [index, raw] of body.entries()) {
@@ -960,8 +981,10 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
             const variationBody: unknown = await variationResponse.json();
             if (!Array.isArray(variationBody)) throw new Error('WOO_SCHEMA_INVALID:variations');
             variations.push(...variationBody);
-            const variationPages = Number(
-              variationResponse.headers.get('x-wp-totalpages') ?? variationPage,
+            const variationPages = wooTotalPages(
+              variationResponse,
+              variationPage,
+              variationBody.length,
             );
             if (variationPage >= variationPages || variationBody.length === 0) break;
           }
@@ -1072,9 +1095,7 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
       if (!response.ok) throw new Error(`WOO_HTTP_${response.status}`);
       const body: unknown = await response.json();
       if (!Array.isArray(body)) throw new Error('WOO_SCHEMA_INVALID:page');
-      const totalPages = Number(response.headers.get('x-wp-totalpages') ?? page);
-      if (!Number.isInteger(totalPages) || totalPages < page)
-        throw new Error('WOO_SCHEMA_INVALID:pagination');
+      const totalPages = wooTotalPages(response, page, body.length);
       yield { kind, page, totalPages, items: body };
       if (page >= totalPages || body.length === 0) return;
     }

@@ -150,3 +150,57 @@ test('paged order pulls retain total-page metadata and send bounded incremental 
   assert.match(calls[0], /orderby=modified/u);
   assert.match(calls[0], /order=asc/u);
 });
+
+test('empty Woo order collections accept the official zero-page header', async () => {
+  let calls = 0;
+  const connector = new WooCommerceConnector(
+    '',
+    new URL('https://shop.example.test'),
+    { key: 'ck_read_only', secret: 'cs_read_only' },
+    async () => {
+      calls += 1;
+      return new Response('[]', { headers: { 'x-wp-totalpages': '0' } });
+    },
+    async () => [{ address: '93.184.216.34' }],
+  );
+  const pages = [];
+  for await (const page of connector.pullOrderPages('orders')) pages.push(page);
+  assert.equal(calls, 1);
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0].totalPages, 0);
+  assert.deepEqual(pages[0].items, []);
+});
+
+test('missing pagination headers stop safely at the current order response', async () => {
+  let calls = 0;
+  const connector = new WooCommerceConnector(
+    '',
+    new URL('https://shop.example.test'),
+    { key: 'ck_read_only', secret: 'cs_read_only' },
+    async () => {
+      calls += 1;
+      return new Response(JSON.stringify([fixture]));
+    },
+    async () => [{ address: '93.184.216.34' }],
+  );
+  const pages = [];
+  for await (const page of connector.pullOrderPages('orders', 100, 3)) pages.push(page);
+  assert.equal(calls, 1);
+  assert.equal(pages[0].totalPages, 3);
+});
+
+test('malformed and contradictory Woo pagination headers fail visibly', async () => {
+  for (const header of ['not-a-number', '1.5', '-1', '1']) {
+    const connector = new WooCommerceConnector(
+      '',
+      new URL('https://shop.example.test'),
+      { key: 'ck_read_only', secret: 'cs_read_only' },
+      async () =>
+        new Response(JSON.stringify([fixture]), { headers: { 'x-wp-totalpages': header } }),
+      async () => [{ address: '93.184.216.34' }],
+    );
+    await assert.rejects(async () => {
+      for await (const _page of connector.pullOrderPages('orders', 100, 2)) break;
+    }, /WOO_SCHEMA_INVALID:pagination/u);
+  }
+});

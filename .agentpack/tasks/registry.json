@@ -115,7 +115,10 @@
         "SQLite constraints and indexes are tested",
         "Repository calls cannot use client account authority"
       ],
-      "validation": ["npm run test:unit -- --filter persistence", "npm run test:integration -- --filter sqlite"]
+      "validation": [
+        "npm run test:unit -- --filter persistence",
+        "npm run test:integration -- --filter sqlite"
+      ]
     },
     {
       "id": "T0102",
@@ -534,7 +537,10 @@
         "Downloads require authenticated authorization",
         "Templates cannot execute scripts or fetch arbitrary URLs"
       ],
-      "validation": ["npm run test:e2e -- --filter documents", "npm run test:security -- --filter templates"]
+      "validation": [
+        "npm run test:e2e -- --filter documents",
+        "npm run test:security -- --filter templates"
+      ]
     },
     {
       "id": "T0701",
@@ -836,7 +842,13 @@
       "estimate": "XL",
       "parallelGroup": "identity",
       "dependencies": ["T0806"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/architecture/API.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/DATA_MODEL.md"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/API.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/DATA_MODEL.md"
+      ],
       "scope": [
         "Implement account-scoped member listing, invitations, role changes, membership revocation and session administration with capability checks",
         "Add password change/reset primitives, session rotation/revocation, strict account-settings schemas, security headers, request limits and truthful readiness checks",
@@ -848,7 +860,17 @@
         "Mutating requests have CSRF/origin protection, production-safe headers and bounded validated bodies; health/readiness does not claim unavailable dependencies are connected",
         "Migration and security evidence records indexes, retention, audit behavior, negative tests and exact validation results"
       ],
-      "validation": ["npm run test:unit -- --filter auth", "npm run test:integration -- --filter administration", "npm run test:security", "npm run test:tenant-isolation", "npm run typecheck", "npm run lint", "npm run format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+      "validation": [
+        "npm run test:unit -- --filter auth",
+        "npm run test:integration -- --filter administration",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run typecheck",
+        "npm run lint",
+        "npm run format:check",
+        "node .agentpack/scripts/agentpack.mjs validate",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0807",
@@ -860,7 +882,14 @@
       "estimate": "XL",
       "parallelGroup": "jobs-runtime",
       "dependencies": ["T0806", "T0812"],
-      "references": ["AGENTS.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/TESTING.md", ".agentpack/workflows/release.md"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/API.md",
+        ".agentpack/architecture/DATA_MODEL.md",
+        ".agentpack/architecture/TESTING.md",
+        ".agentpack/workflows/release.md"
+      ],
       "scope": [
         "Create a typed in-process worker registry with bounded concurrency, start/stop/drain controls, cron-safe processing and deterministic job handlers",
         "Execute webhook, sync, bulk, export, document and analytics jobs through lease-safe account contexts with retries, backoff, progress, cancellation and dead-letter replay",
@@ -872,7 +901,18 @@
         "Viewer/admin/operator permissions and account predicates apply to operations reads, replay, cancel and worker execution; poison jobs retain bounded redacted errors and become inspectable dead letters",
         "Worker, retry, shutdown and failure-path tests include exact counts, timings, audit events and migration/index impact"
       ],
-      "validation": ["npm run test:unit -- --filter jobs", "npm run test:integration -- --filter job-runner", "npm run test:chaos -- --filter restart", "npm run test:security -- --filter jobs", "npm run test:tenant-isolation", "npm run typecheck", "npm run lint", "npm run format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+      "validation": [
+        "npm run test:unit -- --filter jobs",
+        "npm run test:integration -- --filter job-runner",
+        "npm run test:chaos -- --filter restart",
+        "npm run test:security -- --filter jobs",
+        "npm run test:tenant-isolation",
+        "npm run typecheck",
+        "npm run lint",
+        "npm run format:check",
+        "node .agentpack/scripts/agentpack.mjs validate",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0808",
@@ -884,7 +924,15 @@
       "estimate": "XL",
       "parallelGroup": "woocommerce-runtime",
       "dependencies": ["T0807"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/SYNC_AND_CONNECTORS.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/adr/ADR-002-read-only-connectors.md"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/API.md",
+        ".agentpack/architecture/DATA_MODEL.md",
+        ".agentpack/architecture/SYNC_AND_CONNECTORS.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/adr/ADR-002-read-only-connectors.md"
+      ],
       "scope": [
         "Add account-scoped connection repositories and lifecycle APIs for list/detail/health-check/sync/reconcile/disable/rotate, encrypted credential decryption and credential-safe health summaries",
         "Run initial catalog/order/refund sync, incremental overlap polling, verified webhook processing and deletion reconciliation as durable resumable jobs with cursors, counters, retry-after/backoff and failure taxonomy",
@@ -896,7 +944,19 @@
         "Webhook processing validates HMAC/raw checksum/topic/connection ownership before one idempotent normalized effect; invalid/schema-drift/rate/auth/network failures are observable and bounded",
         "Connection data and credentials are account-isolated, credential-safe in logs/responses/jobs, and migration/index plus exact connector certification evidence is recorded"
       ],
-      "validation": ["npm run test:unit -- --filter connectors", "npm run test:contract -- --filter woocommerce", "npm run test:integration -- --filter sync", "npm run test:chaos -- --filter webhook-replay", "npm run test:security", "npm run test:tenant-isolation", "npm run typecheck", "npm run lint", "npm run format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+      "validation": [
+        "npm run test:unit -- --filter connectors",
+        "npm run test:contract -- --filter woocommerce",
+        "npm run test:integration -- --filter sync",
+        "npm run test:chaos -- --filter webhook-replay",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run typecheck",
+        "npm run lint",
+        "npm run format:check",
+        "node .agentpack/scripts/agentpack.mjs validate",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0809",
@@ -908,7 +968,14 @@
       "estimate": "XL",
       "parallelGroup": "orders-runtime",
       "dependencies": ["T0808"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/SECURITY.md"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/API.md",
+        ".agentpack/architecture/DATA_MODEL.md",
+        ".agentpack/architecture/SECURITY.md"
+      ],
       "scope": [
         "Complete the canonical order schema and immutable line/product/payment/shipping/tax/fee/coupon/refund snapshots with account-first indexes and approved FTS/mapped-field search",
         "Expand the typed filter catalog, facets, search and order timeline to cover store, source, POS, statuses, export, payment, shipping, price, tax, refund, product, variation, SKU, category, author, tag, coupon, dates, quantity and exceptions",
@@ -920,7 +987,21 @@
         "Operators can update only local workflow through audited optimistic commands, while resync is read-only; saved views and selections survive page changes and exclude post-watermark arrivals",
         "UI includes auth/loading/empty/error/partial/retry/accessibility states and tests prove no manual or local operation invokes a Woo mutation"
       ],
-      "validation": ["npm run test:unit -- --filter order-query", "npm run test:integration -- --filter order-repository", "npm run test:security -- --filter query-input", "npm run test:tenant-isolation", "npm run test:e2e -- --filter orders", "npm run test:a11y -- --filter orders", "npm run test:visual -- --filter orders", "npm run test:performance", "npm run typecheck", "npm run lint", "npm run format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+      "validation": [
+        "npm run test:unit -- --filter order-query",
+        "npm run test:integration -- --filter order-repository",
+        "npm run test:security -- --filter query-input",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e -- --filter orders",
+        "npm run test:a11y -- --filter orders",
+        "npm run test:visual -- --filter orders",
+        "npm run test:performance",
+        "npm run typecheck",
+        "npm run lint",
+        "npm run format:check",
+        "node .agentpack/scripts/agentpack.mjs validate",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0810",
@@ -932,7 +1013,14 @@
       "estimate": "XL",
       "parallelGroup": "exports-runtime",
       "dependencies": ["T0809"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/SECURITY.md"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/API.md",
+        ".agentpack/architecture/DATA_MODEL.md",
+        ".agentpack/architecture/SECURITY.md"
+      ],
       "scope": [
         "Connect export batches to durable jobs and the XLSX/CSV engine, materialize immutable order snapshots in bounded chunks and store private checksum-bound files",
         "Add profile/version list/update/preview, carrier validation, batch status/download/retry/error APIs and local exported-state marking only after a completed artifact",
@@ -944,7 +1032,19 @@
         "Exported/changed-after-export state is derived only from successful local batches, re-export preserves history and unexport remains permissioned/audited without any remote write",
         "XLSX/CSV semantic golden, injection, Arabic, account-isolation, retry and browser progress evidence plus migration/index/retention notes are current"
       ],
-      "validation": ["npm run test:unit -- --filter export-engine", "npm run test:integration -- --filter exports", "npm run test:golden -- --filter spreadsheets", "npm run test:security -- --filter exports", "npm run test:tenant-isolation", "npm run test:e2e -- --filter exports", "npm run typecheck", "npm run lint", "npm run format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+      "validation": [
+        "npm run test:unit -- --filter export-engine",
+        "npm run test:integration -- --filter exports",
+        "npm run test:golden -- --filter spreadsheets",
+        "npm run test:security -- --filter exports",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e -- --filter exports",
+        "npm run typecheck",
+        "npm run lint",
+        "npm run format:check",
+        "node .agentpack/scripts/agentpack.mjs validate",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0811",
@@ -956,7 +1056,14 @@
       "estimate": "XL",
       "parallelGroup": "documents-runtime",
       "dependencies": ["T0810"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/API.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/TESTING.md"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/API.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/TESTING.md"
+      ],
       "scope": [
         "Generate invoice/thermal/label documents from authenticated canonical order snapshots through durable bounded jobs, preserving template versions, checksums and per-order failures",
         "Add batch merged-PDF/ZIP manifests, document lists/downloads/retries, print preview and exact A4/A5/80mm/100x150mm output without browser headers or public file exposure",
@@ -968,7 +1075,21 @@
         "Document files are authorized through authenticated account-scoped routes with checksum/path validation; templates cannot execute code or fetch network resources",
         "No legal invoice claim is enabled without configured policy; the task records the exact external approval still required"
       ],
-      "validation": ["npm run test:unit -- --filter documents", "npm run test:golden -- --filter thermal", "npm run test:visual -- --filter documents", "npm run test:integration -- --filter document-jobs", "npm run test:security -- --filter documents", "npm run test:tenant-isolation", "npm run test:e2e -- --filter documents", "npm run test:a11y -- --filter documents", "npm run typecheck", "npm run lint", "npm run format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+      "validation": [
+        "npm run test:unit -- --filter documents",
+        "npm run test:golden -- --filter thermal",
+        "npm run test:visual -- --filter documents",
+        "npm run test:integration -- --filter document-jobs",
+        "npm run test:security -- --filter documents",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e -- --filter documents",
+        "npm run test:a11y -- --filter documents",
+        "npm run typecheck",
+        "npm run lint",
+        "npm run format:check",
+        "node .agentpack/scripts/agentpack.mjs validate",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0813",
@@ -980,7 +1101,14 @@
       "estimate": "XL",
       "parallelGroup": "analytics-admin-ui",
       "dependencies": ["T0811"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/DEPLOYMENT.md"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/API.md",
+        ".agentpack/architecture/DATA_MODEL.md",
+        ".agentpack/architecture/DEPLOYMENT.md"
+      ],
       "scope": [
         "Move analytics rebuilds, mapping backfills and maintenance into durable jobs with freshness/coverage/error progress and bounded date/currency scopes; add append-only cost overrides with reasons",
         "Build authenticated Connections, Exports, Documents, Settings, Members, Operations and field-mapping workspaces, including login/session expiry and default Arabic RTL/LTR switch",
@@ -992,7 +1120,20 @@
         "Administration and operations views respect roles, account scope, PII redaction and local-only connector direction; Arabic is default and direction preference persists safely",
         "E2E, accessibility, visual, security, tenant and job-recovery evidence covers the critical operator journey and documents any external legal/live credentials"
       ],
-      "validation": ["npm run test:unit -- --filter analytics", "npm run test:integration -- --filter analytics-facts", "npm run test:e2e -- --filter admin", "npm run test:a11y", "npm run test:visual", "npm run test:security", "npm run test:tenant-isolation", "npm run typecheck", "npm run lint", "npm run format:check", "node .agentpack/scripts/agentpack.mjs validate", "git diff --check"]
+      "validation": [
+        "npm run test:unit -- --filter analytics",
+        "npm run test:integration -- --filter analytics-facts",
+        "npm run test:e2e -- --filter admin",
+        "npm run test:a11y",
+        "npm run test:visual",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run typecheck",
+        "npm run lint",
+        "npm run format:check",
+        "node .agentpack/scripts/agentpack.mjs validate",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0814",
@@ -1004,7 +1145,19 @@
       "estimate": "XL",
       "parallelGroup": "release",
       "dependencies": ["T0813", "T0801", "T0802", "T0803", "T0804", "T0805"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/SYNC_AND_CONNECTORS.md", ".agentpack/architecture/DEPLOYMENT.md", ".agentpack/architecture/TESTING.md", ".agentpack/workflows/release.md"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/API.md",
+        ".agentpack/architecture/DATA_MODEL.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/SYNC_AND_CONNECTORS.md",
+        ".agentpack/architecture/DEPLOYMENT.md",
+        ".agentpack/architecture/TESTING.md",
+        ".agentpack/workflows/release.md"
+      ],
       "scope": [
         "Run fresh and repeated migration, security, isolation, connector certification, job restart, backup/restore, performance and complete critical E2E acceptance against the actual current implementation",
         "Reconcile all audits, API/data/deployment docs, scripts and CI with delivered behavior; remove critical placeholders and record bounded follow-up or external launch checks",
@@ -1016,7 +1169,30 @@
         "Only genuine external launch inputs remain explicitly pending: live Woo authorization/store, Hostinger/DNS/TLS credentials, carrier/legal/tax policy and owner product decisions",
         "The final report states code-complete status, validation matrix, risks, external inputs, backup/restore status and exact commit/worktree state"
       ],
-      "validation": ["npm ci", "npm run agent:doctor", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run test:golden", "npm run test:performance", "npm run test:hostinger", "npm run security:scan", "npm run security:audit", "npm run build", "git diff --check"]
+      "validation": [
+        "npm ci",
+        "npm run agent:doctor",
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e:critical",
+        "npm run test:e2e",
+        "npm run test:a11y",
+        "npm run test:visual",
+        "npm run test:golden",
+        "npm run test:performance",
+        "npm run test:hostinger",
+        "npm run security:scan",
+        "npm run security:audit",
+        "npm run build",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0815",
@@ -1028,7 +1204,22 @@
       "estimate": "XL",
       "parallelGroup": "tooling-migration",
       "dependencies": ["T0814"],
-      "references": ["AGENTS.md", ".agentpack/manifest.json", ".agentpack/tasks/README.md", ".agentpack/architecture/DEPLOYMENT.md", ".agentpack/architecture/TESTING.md", ".agentpack/architecture/SECURITY.md", ".agentpack/scripts/agentpack.mjs", ".github/workflows/ci.yml", ".gitignore", "package.json", "tools/run-tests.mjs", "tools/run-ui-tests.mjs", "tools/run-critical-e2e.mjs", "playwright.config.ts"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/manifest.json",
+        ".agentpack/tasks/README.md",
+        ".agentpack/architecture/DEPLOYMENT.md",
+        ".agentpack/architecture/TESTING.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/scripts/agentpack.mjs",
+        ".github/workflows/ci.yml",
+        ".gitignore",
+        "package.json",
+        "tools/run-tests.mjs",
+        "tools/run-ui-tests.mjs",
+        "tools/run-critical-e2e.mjs",
+        "playwright.config.ts"
+      ],
       "scope": [
         "Replace pnpm workspace metadata, lockfile, workspace dependency protocol, scripts and CI with npm workspaces, package-lock and portable npm commands",
         "Add a deterministic npm workspace runner that preserves dependency-first builds, optional workspace selection and test-name filters without relying on pnpm recursive or filter flags",
@@ -1041,7 +1232,31 @@
         "Agentpack validation/doctor and active deployment/testing/security/task documentation describe npm accurately; no source, product invariant, account boundary or read-only connector behavior is changed",
         "Tracked repository state contains no pnpm lock/workspace files or generated dist/artifact/test-result files, while user-owned unrelated worktrees remain untouched"
       ],
-      "validation": ["npm ci", "npm run agent:doctor", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:chaos", "npm run test:golden", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run test:performance", "npm run test:hostinger", "npm run security:scan", "npm run security:audit", "npm run build", "git diff --check"]
+      "validation": [
+        "npm ci",
+        "npm run agent:doctor",
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run test:chaos",
+        "npm run test:golden",
+        "npm run test:e2e:critical",
+        "npm run test:e2e",
+        "npm run test:a11y",
+        "npm run test:visual",
+        "npm run test:performance",
+        "npm run test:hostinger",
+        "npm run security:scan",
+        "npm run security:audit",
+        "npm run build",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0816",
@@ -1053,7 +1268,18 @@
       "estimate": "XL",
       "parallelGroup": "production-design-audit",
       "dependencies": ["T0815"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/TESTING.md", ".agentpack/architecture/DEPLOYMENT.md", "README.md"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/API.md",
+        ".agentpack/architecture/DATA_MODEL.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/TESTING.md",
+        ".agentpack/architecture/DEPLOYMENT.md",
+        "README.md"
+      ],
       "scope": [
         "Audit the shipped web and API implementation against the PRD, architecture, tests and actual runtime behavior, fixing reproducible locally actionable defects without weakening account isolation or read-only Woo connector direction",
         "Extract the visual language, theme tokens, responsive top bar, collapsible sidebar, RTL/LTR behavior, navigation grouping and content distribution from the supplied template and implement them as typed reusable Material UI primitives for Woo Ops",
@@ -1066,7 +1292,27 @@
         "All reproducible backend, contract, security, account-isolation and runtime defects found by the audit are fixed and covered by tests; Woo connectors remain read-only and manual/local data invariants remain intact",
         "Fresh format, lint, typecheck, unit, integration, contract, security, tenant-isolation, E2E, accessibility, visual, build and startup smoke evidence is recorded, with external Woo/Hostinger/legal inputs explicitly separated"
       ],
-      "validation": ["npm ci", "npm run agent:doctor", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "npm run security:scan", "npm run security:audit", "git diff --check"]
+      "validation": [
+        "npm ci",
+        "npm run agent:doctor",
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e:critical",
+        "npm run test:e2e",
+        "npm run test:a11y",
+        "npm run test:visual",
+        "npm run build",
+        "npm run security:scan",
+        "npm run security:audit",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0817",
@@ -1078,7 +1324,24 @@
       "estimate": "XL",
       "parallelGroup": "hostinger-runtime-compatibility",
       "dependencies": ["T0816"],
-      "references": ["AGENTS.md", ".agentpack/manifest.json", ".agentpack/product/PRD.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/DEPLOYMENT.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/TESTING.md", "README.md", ".gitignore", "package.json", "package-lock.json", "packages/persistence/package.json", "packages/persistence/src/index.ts", "apps/api/package.json", "apps/api/src/index.ts", "tools/hostinger-smoke.mjs"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/manifest.json",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/DEPLOYMENT.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/TESTING.md",
+        "README.md",
+        ".gitignore",
+        "package.json",
+        "package-lock.json",
+        "packages/persistence/package.json",
+        "packages/persistence/src/index.ts",
+        "apps/api/package.json",
+        "apps/api/src/index.ts",
+        "tools/hostinger-smoke.mjs"
+      ],
       "scope": [
         "Remove the native better-sqlite3 installation blocker or replace it with a production-safe persistence runtime that installs on Hostinger shared Node without node-gyp, newer Python or GLIBC 2.29",
         "Preserve account isolation, migrations, durable jobs, transactional behavior, backups and the read-only Woo/local-manual-order invariants while adding compatibility and regression coverage",
@@ -1091,7 +1354,24 @@
         "No required source, evidence, fixture or user-owned file is deleted; Docker references and generated debris are absent or explicitly justified",
         "README and environment documentation provide exact deploy settings and a repeatable health/startup verification path for ops.wasatalbalad.store"
       ],
-      "validation": ["npm ci", "npm run agent:doctor", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:hostinger", "npm run build", "npm run security:scan", "npm run security:audit", "git diff --check"]
+      "validation": [
+        "npm ci",
+        "npm run agent:doctor",
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e:critical",
+        "npm run test:hostinger",
+        "npm run build",
+        "npm run security:scan",
+        "npm run security:audit",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0818",
@@ -1103,7 +1383,25 @@
       "estimate": "XL",
       "parallelGroup": "node22-native-sqlite",
       "dependencies": ["T0817"],
-      "references": ["AGENTS.md", ".agentpack/manifest.json", ".agentpack/product/PRD.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/DEPLOYMENT.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/TESTING.md", "README.md", "package.json", "package-lock.json", "packages/persistence/src/index.ts", "packages/persistence/package.json", "apps/api/src/auth.ts", "apps/api/src/backup.ts", "apps/api/package.json", "tools/hostinger-smoke.mjs", "tools/performance-test.mjs"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/manifest.json",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/DEPLOYMENT.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/TESTING.md",
+        "README.md",
+        "package.json",
+        "package-lock.json",
+        "packages/persistence/src/index.ts",
+        "packages/persistence/package.json",
+        "apps/api/src/auth.ts",
+        "apps/api/src/backup.ts",
+        "apps/api/package.json",
+        "tools/hostinger-smoke.mjs",
+        "tools/performance-test.mjs"
+      ],
       "scope": [
         "Replace better-sqlite3 and node-gyp-dependent packages with Node 22.18 built-in node:sqlite while preserving the synchronous repository contract and existing SQLite files",
         "Adapt transactions, prepared statements, result metadata, backup integrity checks and test helpers without weakening account scoping, durable jobs or local-only data rules",
@@ -1116,7 +1414,26 @@
         "Hostinger configuration uses Node 22.x, builds with development tooling, starts the production entrypoint and reports a connected schema-current database",
         "Woo remains read-only, manual and exported state remain local, and account isolation/security gates remain green"
       ],
-      "validation": ["npm ci", "npm run agent:doctor", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:hostinger", "npm run test:performance", "npm run build", "npm run security:scan", "npm run security:audit", "git diff --check"]
+      "validation": [
+        "npm ci",
+        "npm run agent:doctor",
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e:critical",
+        "npm run test:hostinger",
+        "npm run test:performance",
+        "npm run build",
+        "npm run security:scan",
+        "npm run security:audit",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0819",
@@ -1128,7 +1445,23 @@
       "estimate": "M",
       "parallelGroup": "hostinger-production-build",
       "dependencies": ["T0818"],
-      "references": ["AGENTS.md", ".agentpack/manifest.json", ".agentpack/product/PRD.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/DEPLOYMENT.md", ".agentpack/architecture/TESTING.md", "README.md", "package.json", "package-lock.json", "apps/api/package.json", "apps/web/package.json", "packages/connectors/package.json", "packages/documents/package.json", "packages/exports/package.json", "tools/hostinger-smoke.mjs"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/manifest.json",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/DEPLOYMENT.md",
+        ".agentpack/architecture/TESTING.md",
+        "README.md",
+        "package.json",
+        "package-lock.json",
+        "apps/api/package.json",
+        "apps/web/package.json",
+        "packages/connectors/package.json",
+        "packages/documents/package.json",
+        "packages/exports/package.json",
+        "tools/hostinger-smoke.mjs"
+      ],
       "scope": [
         "Make the complete production application build succeed after a production-only npm workspace install on Hostinger shared Node 22 hosting",
         "Classify compile-time packages required by production deployment correctly while keeping test-only and developer-only tooling out of the production dependency graph",
@@ -1140,7 +1473,24 @@
         "Hostinger deployment documentation uses Node 22.x and the actual build and entrypoint settings required by the repository",
         "Normal development installation, checks, tests, security audit and Hostinger runtime smoke remain green"
       ],
-      "validation": ["npm ci --omit=dev", "npm run build", "npm ci", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:hostinger", "npm run security:scan", "npm run security:audit", "git diff --check"]
+      "validation": [
+        "npm ci --omit=dev",
+        "npm run build",
+        "npm ci",
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e:critical",
+        "npm run test:hostinger",
+        "npm run security:scan",
+        "npm run security:audit",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0820",
@@ -1152,7 +1502,23 @@
       "estimate": "XL",
       "parallelGroup": "onboarding-shell-cleanup",
       "dependencies": ["T0819"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DEPLOYMENT.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/TESTING.md", "README.md", ".env.example", "apps/web/src/App.tsx", "apps/web/src/AdminWorkspaces.tsx", "apps/web/src/main.tsx", "apps/api/src/index.ts", "apps/api/src/auth.ts"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/API.md",
+        ".agentpack/architecture/DEPLOYMENT.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/TESTING.md",
+        "README.md",
+        ".env.example",
+        "apps/web/src/App.tsx",
+        "apps/web/src/AdminWorkspaces.tsx",
+        "apps/web/src/main.tsx",
+        "apps/api/src/index.ts",
+        "apps/api/src/auth.ts"
+      ],
       "scope": [
         "Make first-owner registration, login, session recovery and WooCommerce authorization a clear production onboarding journey with successful callback redirect and actionable errors",
         "Replace the crowded top navigation with a professional responsive Material UI shell derived from the supplied template, including desktop sidebar, mobile drawer, grouped navigation, RTL/LTR and polished login/connect states",
@@ -1166,7 +1532,27 @@
         "No mojibake is visible in primary Arabic navigation/login/order copy, and automated accessibility/critical journey coverage protects onboarding and navigation",
         "Only demonstrably unused template/application debris is removed; Agentpack references, production source, fixtures and evidence remain valid"
       ],
-      "validation": ["npm ci", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run test:hostinger", "npm run build", "npm run security:scan", "npm run security:audit", "git diff --check"]
+      "validation": [
+        "npm ci",
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e:critical",
+        "npm run test:e2e",
+        "npm run test:a11y",
+        "npm run test:visual",
+        "npm run test:hostinger",
+        "npm run build",
+        "npm run security:scan",
+        "npm run security:audit",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0821",
@@ -1178,7 +1564,15 @@
       "estimate": "M",
       "parallelGroup": "rtl-demo-polish",
       "dependencies": ["T0820"],
-      "references": ["AGENTS.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/TESTING.md", "README.md", "apps/web/src/main.tsx", "apps/web/src/AdminWorkspaces.tsx", "tests/e2e/admin.spec.ts"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/TESTING.md",
+        "README.md",
+        "apps/web/src/main.tsx",
+        "apps/web/src/AdminWorkspaces.tsx",
+        "tests/e2e/admin.spec.ts"
+      ],
       "scope": [
         "Align text, field labels and outlined notches to the right in Arabic RTL across Material UI forms while keeping LTR usable",
         "Make Arabic always RTL and English always LTR across the shell and account settings; normalize form spacing and dimensions across core views and mobile",
@@ -1193,7 +1587,17 @@
         "Login title, subtitle and brand remain centered in both locales",
         "A developer can open a local demo account with non-production data and instructions without exposing a fixed production login"
       ],
-      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "git diff --check"]
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:e2e",
+        "npm run test:a11y",
+        "npm run test:visual",
+        "npm run build",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0901",
@@ -1205,7 +1609,20 @@
       "estimate": "L",
       "parallelGroup": "orders-operator-ux",
       "dependencies": ["T0821"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/API.md", ".agentpack/architecture/TESTING.md", "apps/web/src/App.tsx", "apps/web/src/WorkspaceShell.tsx", "apps/web/src/AdminWorkspaces.tsx", "apps/api/src/index.ts", "packages/persistence/src/index.ts", "tests/e2e/orders.spec.ts"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/API.md",
+        ".agentpack/architecture/TESTING.md",
+        "apps/web/src/App.tsx",
+        "apps/web/src/WorkspaceShell.tsx",
+        "apps/web/src/AdminWorkspaces.tsx",
+        "apps/api/src/index.ts",
+        "packages/persistence/src/index.ts",
+        "tests/e2e/orders.spec.ts"
+      ],
       "scope": [
         "Make the orders table horizontally scrollable and usable on narrow viewports with stable column sizing and sticky operator context",
         "Replace the unstructured filter row with responsive advanced filters for Woo/manual source, exact Woo remote statuses, local workflow, exported state, governorate/location, product, category, payment, shipping and date",
@@ -1218,7 +1635,19 @@
         "Woo order statuses match WooCommerce core status identifiers and exported state is visible and filterable in Arabic and English",
         "Arabic navigation renders the icon on the visual right of its text and no primary label says field maps"
       ],
-      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "git diff --check"]
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:e2e",
+        "npm run test:a11y",
+        "npm run test:visual",
+        "npm run build",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0902",
@@ -1230,7 +1659,19 @@
       "estimate": "XL",
       "parallelGroup": "catalog-manual-orders",
       "dependencies": ["T0901"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/API.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/TESTING.md", "apps/web/src/App.tsx", "apps/api/src/index.ts", "packages/contracts/src/index.ts", "packages/persistence/src/index.ts", "packages/connectors/src/woocommerce.ts"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/API.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/TESTING.md",
+        "apps/web/src/App.tsx",
+        "apps/api/src/index.ts",
+        "packages/contracts/src/index.ts",
+        "packages/persistence/src/index.ts",
+        "packages/connectors/src/woocommerce.ts"
+      ],
       "scope": [
         "Expose an account-scoped read-only product/category/variation catalog including imported price and stock facts without any remote mutation",
         "Create a dedicated manual-order operations workspace using catalog snapshots, quantities, Woo-derived checkout field definitions where safely discoverable, Egyptian governorate selection and configured shipping quotes",
@@ -1243,7 +1684,22 @@
         "Required customer/shipping fields, governorate and shipping quote are validated before confirmation",
         "Payment proof upload is private and account-scoped and confirming a manual order performs no Woo request"
       ],
-      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run build", "git diff --check"]
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e:critical",
+        "npm run test:e2e",
+        "npm run test:a11y",
+        "npm run build",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0903",
@@ -1255,7 +1711,18 @@
       "estimate": "L",
       "parallelGroup": "analytics-cleanup",
       "dependencies": ["T0902"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/TESTING.md", "apps/web/src/App.tsx", "apps/web/src/AdminWorkspaces.tsx", "apps/api/src/index.ts", "packages/analytics/src/index.ts", "packages/persistence/src/index.ts"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/TESTING.md",
+        "apps/web/src/App.tsx",
+        "apps/web/src/AdminWorkspaces.tsx",
+        "apps/api/src/index.ts",
+        "packages/analytics/src/index.ts",
+        "packages/persistence/src/index.ts"
+      ],
       "scope": [
         "Present Woo-only, manual-only and combined financial analytics with explicit formulas, exclusions and currency boundaries from normalized imported facts",
         "Add operational summaries for remote statuses, local manual lifecycle, export state, governorate, product and category",
@@ -1266,7 +1733,21 @@
         "Revenue, refunds, shipping collected, tax, fees, COGS and contribution profit explain their source and exclusions",
         "Redundant navigation is removed or renamed without deleting supported backend capabilities"
       ],
-      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "git diff --check"]
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e",
+        "npm run test:a11y",
+        "npm run test:visual",
+        "npm run build",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0904",
@@ -1278,7 +1759,20 @@
       "estimate": "XL",
       "parallelGroup": "single-store-production",
       "dependencies": ["T0903"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/SYNC_AND_CONNECTORS.md", ".agentpack/architecture/TESTING.md", "apps/web/src/App.tsx", "apps/web/src/AdminWorkspaces.tsx", "apps/api/src/index.ts", "apps/api/src/woo-sync.ts", "packages/connectors/src/woocommerce.ts", "packages/persistence/src/index.ts"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/SYNC_AND_CONNECTORS.md",
+        ".agentpack/architecture/TESTING.md",
+        "apps/web/src/App.tsx",
+        "apps/web/src/AdminWorkspaces.tsx",
+        "apps/api/src/index.ts",
+        "apps/api/src/woo-sync.ts",
+        "packages/connectors/src/woocommerce.ts",
+        "packages/persistence/src/index.ts"
+      ],
       "scope": [
         "Repair real Woo catalog synchronization endpoints and resumable initial sync for products, variations, categories, tags and shipping classes",
         "Replace free-text order and analytics facets with searchable selections populated from account-scoped Woo-derived data, emphasizing status, governorate, product, category, payment and shipping",
@@ -1292,7 +1786,23 @@
         "Woo-only analytics rebuild from synchronized orders and present non-empty per-currency financial facts when eligible orders exist",
         "Primary UI describes one store/account and retains no broken or redundant multi-store workflow"
       ],
-      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "git diff --check"]
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e:critical",
+        "npm run test:e2e",
+        "npm run test:a11y",
+        "npm run test:visual",
+        "npm run build",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0905",
@@ -1304,7 +1814,21 @@
       "estimate": "XL",
       "parallelGroup": "production-reconciliation",
       "dependencies": ["T0904"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/SYNC_AND_CONNECTORS.md", ".agentpack/architecture/TESTING.md", "apps/web/src/App.tsx", "apps/web/src/WorkspaceShell.tsx", "apps/api/src/index.ts", "packages/connectors/src/woocommerce.ts", "packages/persistence/src/index.ts", "packages/exports/src/index.ts", "packages/analytics/src/index.ts"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/SYNC_AND_CONNECTORS.md",
+        ".agentpack/architecture/TESTING.md",
+        "apps/web/src/App.tsx",
+        "apps/web/src/WorkspaceShell.tsx",
+        "apps/api/src/index.ts",
+        "packages/connectors/src/woocommerce.ts",
+        "packages/persistence/src/index.ts",
+        "packages/exports/src/index.ts",
+        "packages/analytics/src/index.ts"
+      ],
       "scope": [
         "Normalize Egyptian Woo state codes to localized governorate names across order UI, filters, analytics and XLSX/CSV exports while retaining raw source values",
         "Correct product/category identities and labels so category facets and export columns cannot be populated from product values",
@@ -1319,7 +1843,23 @@
         "Collected revenue matches the approved Woo formula for eligible statuses and refunds and is covered by deterministic tests",
         "RTL and LTR critical screens pass responsive, accessibility and visual regression checks"
       ],
-      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "git diff --check"]
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e:critical",
+        "npm run test:e2e",
+        "npm run test:a11y",
+        "npm run test:visual",
+        "npm run build",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0906",
@@ -1331,7 +1871,18 @@
       "estimate": "L",
       "parallelGroup": "production-ui-repair",
       "dependencies": ["T0905"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/TESTING.md", "apps/web/src/App.tsx", "apps/web/src/main.tsx", "packages/analytics/src/index.ts", "tests/e2e/analytics.spec.ts", "tests/e2e/manual-orders.spec.ts"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/TESTING.md",
+        "apps/web/src/App.tsx",
+        "apps/web/src/main.tsx",
+        "packages/analytics/src/index.ts",
+        "tests/e2e/analytics.spec.ts",
+        "tests/e2e/manual-orders.spec.ts"
+      ],
       "scope": [
         "Recompose the manual-order form into balanced responsive sections with a real searchable catalog selector, readable governorate/shipping state, stable amount inputs and clear payment-proof feedback",
         "Provide an actionable empty state when Egyptian shipping rates are not configured instead of rendering an apparently broken blank select",
@@ -1344,7 +1895,20 @@
         "Arabic totals and analytics metrics render currency and digits in one stable visual order with correct values",
         "Manual-order, analytics, RTL accessibility and visual regression coverage passes at desktop and narrow viewports"
       ],
-      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "git diff --check"]
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:e2e:critical",
+        "npm run test:e2e",
+        "npm run test:a11y",
+        "npm run test:visual",
+        "npm run build",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0907",
@@ -1356,7 +1920,16 @@
       "estimate": "M",
       "parallelGroup": "production-persistence",
       "dependencies": ["T0906"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/TESTING.md", "apps/api/src/index.ts", "apps/api/src/db-cli.ts", "tools/hostinger-smoke.mjs", ".env.example"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/TESTING.md",
+        "apps/api/src/index.ts",
+        "apps/api/src/db-cli.ts",
+        "tools/hostinger-smoke.mjs",
+        ".env.example"
+      ],
       "scope": [
         "Resolve Hostinger runtime data to a stable domain-level directory instead of the replaced hbuild repository directory",
         "Share runtime path resolution between the API and database CLI and expose safe persistence diagnostics",
@@ -1368,7 +1941,18 @@
         "Startup health reports a safe persistence mode without exposing filesystem paths",
         "Automated tests prove an account created in one release can authenticate after a simulated release switch"
       ],
-      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:e2e:critical", "npm run test:hostinger", "npm run build", "git diff --check"]
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:e2e:critical",
+        "npm run test:hostinger",
+        "npm run build",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0908",
@@ -1380,7 +1964,23 @@
       "estimate": "XL",
       "parallelGroup": "merchant-workflow-completion",
       "dependencies": ["T0907"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/SYNC_AND_CONNECTORS.md", ".agentpack/architecture/TESTING.md", "apps/web/src/App.tsx", "apps/web/src/WorkspaceShell.tsx", "apps/api/src/index.ts", "packages/connectors/src/woocommerce.ts", "packages/persistence/src/index.ts", "packages/documents/src/index.ts", "packages/analytics/src/index.ts", "tests/e2e/orders.spec.ts", "tests/e2e/manual-orders.spec.ts"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/SYNC_AND_CONNECTORS.md",
+        ".agentpack/architecture/TESTING.md",
+        "apps/web/src/App.tsx",
+        "apps/web/src/WorkspaceShell.tsx",
+        "apps/api/src/index.ts",
+        "packages/connectors/src/woocommerce.ts",
+        "packages/persistence/src/index.ts",
+        "packages/documents/src/index.ts",
+        "packages/analytics/src/index.ts",
+        "tests/e2e/orders.spec.ts",
+        "tests/e2e/manual-orders.spec.ts"
+      ],
       "scope": [
         "Reduce the default order filters to merchant-critical search, Woo status, governorate, product/category and local/Woo export state while keeping secondary filters behind one advanced disclosure",
         "Ingest read-only Woo shipping-zone method costs when available and expose them as manual-order governorate choices without inventing rates",
@@ -1397,7 +1997,23 @@
         "One or multiple selected orders can generate/download invoices, thermal receipts and shipping labels without any Woo mutation",
         "Critical Arabic desktop/mobile screens pass accessibility, interaction and visual regression tests"
       ],
-      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "git diff --check"]
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e:critical",
+        "npm run test:e2e",
+        "npm run test:a11y",
+        "npm run test:visual",
+        "npm run build",
+        "git diff --check"
+      ]
     },
     {
       "id": "T0909",
@@ -1409,7 +2025,27 @@
       "estimate": "XL",
       "parallelGroup": "production-truth-and-durability",
       "dependencies": ["T0908"],
-      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/SYNC_AND_CONNECTORS.md", ".agentpack/architecture/TESTING.md", "apps/api/src/runtime-paths.ts", "apps/api/src/index.ts", "apps/api/src/job-runner.ts", "apps/api/src/woo-sync.ts", "apps/web/src/App.tsx", "apps/web/src/WorkspaceShell.tsx", "packages/connectors/src/woocommerce.ts", "packages/persistence/src/index.ts", "packages/analytics/src/index.ts", "packages/exports/src/index.ts", "tests/e2e/orders.spec.ts", "tests/e2e/manual-orders.spec.ts", "tests/e2e/analytics.spec.ts"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/SYNC_AND_CONNECTORS.md",
+        ".agentpack/architecture/TESTING.md",
+        "apps/api/src/runtime-paths.ts",
+        "apps/api/src/index.ts",
+        "apps/api/src/job-runner.ts",
+        "apps/api/src/woo-sync.ts",
+        "apps/web/src/App.tsx",
+        "apps/web/src/WorkspaceShell.tsx",
+        "packages/connectors/src/woocommerce.ts",
+        "packages/persistence/src/index.ts",
+        "packages/analytics/src/index.ts",
+        "packages/exports/src/index.ts",
+        "tests/e2e/orders.spec.ts",
+        "tests/e2e/manual-orders.spec.ts",
+        "tests/e2e/analytics.spec.ts"
+      ],
       "scope": [
         "Make Hostinger persistence durable even when legacy relative database/data environment overrides point inside disposable hbuild release directories, while preserving explicit safe absolute overrides",
         "Render all user-facing quantities, money, percentages, identifiers and dates with Latin digits and bidi isolation in both Arabic RTL and English LTR without changing canonical stored values",
@@ -1430,7 +2066,72 @@
         "Analytics totals and dimensions are explainable, integer-minor-unit safe, status/refund aware and covered by deterministic Woo/manual/combined tests",
         "Critical Arabic/English desktop/mobile workflows pass interaction, accessibility, visual, security and tenant-isolation gates"
       ],
-      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run test:hostinger", "npm run build", "git diff --check"]
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e:critical",
+        "npm run test:e2e",
+        "npm run test:a11y",
+        "npm run test:visual",
+        "npm run test:hostinger",
+        "npm run build",
+        "git diff --check"
+      ]
+    },
+    {
+      "id": "T0910",
+      "epic": "E09",
+      "title": "Repair Woo pagination compatibility and recover production synchronization",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "M",
+      "parallelGroup": "production-sync-recovery",
+      "dependencies": ["T0909"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/SYNC_AND_CONNECTORS.md",
+        ".agentpack/architecture/TESTING.md",
+        "packages/connectors/src/woocommerce.ts",
+        "apps/api/src/woo-sync.ts",
+        "apps/api/src/job-runner.ts",
+        "packages/connectors/tests/woo-orders.test.js",
+        "packages/connectors/tests/woo-products.test.js"
+      ],
+      "scope": [
+        "Accept standards-compliant Woo REST pagination for empty collections while retaining bounded page traversal and strict malformed-header rejection",
+        "Use one tested pagination parser for catalog, variation and order pages so behavior cannot drift between sync phases",
+        "Add connector contract coverage for empty collections, absent headers, malformed pagination and normal multipage traversal",
+        "Deploy the repair and verify production synchronization can progress without WOO_SCHEMA_INVALID:pagination"
+      ],
+      "acceptance": [
+        "Empty Woo collections with X-WP-TotalPages equal to zero finish successfully without requesting invalid pages",
+        "Missing pagination headers remain safely bounded by the current response while malformed or contradictory positive values fail visibly",
+        "Catalog, variation, order and refund pulls share the same validated pagination semantics",
+        "Production queue stops creating pagination dead letters and a fresh sync reaches a terminal successful state"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
