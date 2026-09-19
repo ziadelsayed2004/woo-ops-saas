@@ -171,8 +171,8 @@ test('isolates currency values from Arabic RTL reordering @analytics', async ({ 
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   const revenue = page.getByTestId('analytics-revenue').locator('[dir="ltr"]');
   const profit = page.getByTestId('analytics-profit').locator('[dir="ltr"]');
-  await expect(revenue).toHaveText('١٬٦٠٠.00 EGP');
-  await expect(profit).toHaveText('٦٨٠.00 EGP');
+  await expect(revenue).toHaveText('1,600.00 EGP');
+  await expect(profit).toHaveText('680.00 EGP');
 });
 
 test('shows an explicit empty state when filters have no facts @analytics', async ({ page }) => {

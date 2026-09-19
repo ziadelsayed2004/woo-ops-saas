@@ -26,25 +26,29 @@ export const resolveRuntimePaths = (
   const configuredDataDirectory = environment.WOO_OPS_DATA_DIR?.trim();
   const configuredDatabasePath = environment.WOO_OPS_DATABASE?.trim();
   const domainRoot =
-    environment.NODE_ENV === 'production' && !configuredDataDirectory
-      ? hostingerDomainRoot(workingDirectory)
-      : undefined;
-  const persistenceMode: PersistenceMode = configuredDataDirectory
+    environment.NODE_ENV === 'production' ? hostingerDomainRoot(workingDirectory) : undefined;
+  // Hostinger checks every deployment out below hbuilds/<release>. Relative overrides from
+  // older deployments therefore point at disposable release storage. Treat those values as
+  // legacy hints and anchor them at the stable domain root instead.
+  const hasDurableConfiguredData = Boolean(
+    configuredDataDirectory && isAbsolute(configuredDataDirectory),
+  );
+  const persistenceMode: PersistenceMode = hasDurableConfiguredData
     ? 'configured'
     : domainRoot
       ? 'hostinger-domain'
       : 'release-local';
-  const dataDirectory = configuredDataDirectory
-    ? resolve(workingDirectory, configuredDataDirectory)
+  const dataDirectory = hasDurableConfiguredData
+    ? resolve(workingDirectory, configuredDataDirectory as string)
     : domainRoot
       ? join(domainRoot, '.woo-ops-data')
       : resolve(workingDirectory, 'data');
-  const databasePath = configuredDatabasePath
-    ? resolve(workingDirectory, configuredDatabasePath)
-    : join(dataDirectory, 'woo-ops.sqlite');
+  const databasePath =
+    configuredDatabasePath && isAbsolute(configuredDatabasePath)
+      ? resolve(workingDirectory, configuredDatabasePath)
+      : join(dataDirectory, 'woo-ops.sqlite');
   const configuredPathsAreDurable =
-    Boolean(configuredDataDirectory && isAbsolute(configuredDataDirectory)) &&
-    (!configuredDatabasePath || isAbsolute(configuredDatabasePath));
+    hasDurableConfiguredData && (!configuredDatabasePath || isAbsolute(configuredDatabasePath));
 
   return {
     dataDirectory,

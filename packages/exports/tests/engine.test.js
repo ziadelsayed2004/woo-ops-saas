@@ -41,6 +41,7 @@ test('formula-like values are prefixed without changing safe text', () => {
   assert.equal(sanitizeSpreadsheetValue('=SUM(A1:A2)'), "'=SUM(A1:A2)");
   assert.equal(sanitizeSpreadsheetValue('+20100000000'), "'+20100000000");
   assert.equal(sanitizeSpreadsheetValue('00123'), '00123');
+  assert.equal(sanitizeSpreadsheetValue('طلب ١٢٣۴'), 'طلب 1234');
 });
 
 test('Arabic labels and values remain UTF-8 export data', async () => {

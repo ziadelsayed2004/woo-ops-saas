@@ -99,6 +99,7 @@ import { createApiJobRunner } from './job-runner.js';
 import { createWooSyncEffect, healthCheckWooConnection } from './woo-sync.js';
 import { readPaymentProof, writePaymentProof } from './payment-proof-files.js';
 import { resolveRuntimePaths } from './runtime-paths.js';
+import { migrateLegacyHostingerDatabase } from './legacy-hostinger-migration.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const runtimePaths = resolveRuntimePaths();
@@ -121,6 +122,7 @@ const documentFontBytes = process.env.WOO_OPS_DOCUMENT_FONT_PATH
   : undefined;
 mkdirSync(dataDirectory, { recursive: true });
 mkdirSync(dirname(databasePath), { recursive: true });
+migrateLegacyHostingerDatabase(runtimePaths);
 mkdirSync(documentStorageRoot, { recursive: true });
 mkdirSync(exportStorageRoot, { recursive: true });
 mkdirSync(paymentProofStorageRoot, { recursive: true });
@@ -153,6 +155,40 @@ const jobRunner = createApiJobRunner(store, {
   },
 });
 const app: Express = express();
+const automaticSyncMinutes = (() => {
+  const raw = Number(process.env.WOO_OPS_SYNC_INTERVAL_MINUTES ?? 15);
+  return Number.isInteger(raw) && raw >= 5 && raw <= 1440 ? raw : 15;
+})();
+const automaticReconcileHours = (() => {
+  const raw = Number(process.env.WOO_OPS_RECONCILE_INTERVAL_HOURS ?? 24);
+  return Number.isInteger(raw) && raw >= 6 && raw <= 168 ? raw : 24;
+})();
+const enqueueAutomaticSync = (): void => {
+  const bucket = Math.floor(Date.now() / (automaticSyncMinutes * 60_000));
+  const reconcileBucket = Math.floor(Date.now() / (automaticReconcileHours * 60 * 60_000));
+  const reconcileBoundary =
+    bucket % Math.max(1, Math.floor((automaticReconcileHours * 60) / automaticSyncMinutes)) === 0;
+  for (const target of store.listAutomaticSyncTargets()) {
+    const context: AccountContext = {
+      accountId: target.accountId,
+      correlationId: `automatic-sync:${bucket}`,
+    };
+    try {
+      store.enqueueJob(context, {
+        id: randomUUID(),
+        type: reconcileBoundary ? 'sync.reconcile' : 'sync.incremental',
+        idempotencyKey: reconcileBoundary
+          ? `automatic-reconcile:${target.connectionId}:${reconcileBucket}`
+          : `automatic:${target.connectionId}:${bucket}`,
+        payload: { connectionId: target.connectionId },
+        maxAttempts: 5,
+      });
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== 'JOB_IDEMPOTENCY_CONFLICT')
+        console.error('Automatic WooCommerce sync could not be queued');
+    }
+  }
+};
 const attempts = new Map<string, { count: number; resetAt: number }>();
 const callbackSecret = process.env.SESSION_SECRET ?? 'development-only-session-secret';
 if (process.env.NODE_ENV === 'production' && callbackSecret.length < 32)
@@ -772,6 +808,22 @@ app.get('/api/v1/catalog', (request, response) => {
         ...(request.query.category === undefined
           ? {}
           : { category: String(request.query.category) }),
+        ...(request.query.stockStatus === undefined
+          ? {}
+          : {
+              stockStatus: String(request.query.stockStatus) as
+                'instock' | 'outofstock' | 'onbackorder',
+            }),
+        ...(request.query.backorders === undefined
+          ? {}
+          : { backorders: String(request.query.backorders) as 'no' | 'notify' | 'yes' }),
+        ...(request.query.visibility === undefined
+          ? {}
+          : {
+              visibility: String(request.query.visibility) as
+                'visible' | 'catalog' | 'search' | 'hidden',
+            }),
+        ...(request.query.cursor === undefined ? {} : { cursor: String(request.query.cursor) }),
         ...(request.query.limit === undefined ? {} : { limit: Number(request.query.limit) }),
       }),
     );
@@ -2975,12 +3027,16 @@ if (webDistDirectory) {
 
 const server = app.listen(port, process.env.WOO_OPS_BIND_HOST ?? '0.0.0.0', () => {
   jobRunner.start();
+  enqueueAutomaticSync();
   console.log(`Woo Ops API listening on ${port}`);
 });
+const automaticSyncTimer = setInterval(enqueueAutomaticSync, automaticSyncMinutes * 60_000);
+automaticSyncTimer.unref();
 let shuttingDown = false;
 const shutdown = (): void => {
   if (shuttingDown) return;
   shuttingDown = true;
+  clearInterval(automaticSyncTimer);
   void jobRunner
     .stop({ drain: true, timeoutMs: 5_000 })
     .catch(() => undefined)

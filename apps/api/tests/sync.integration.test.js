@@ -221,6 +221,13 @@ test('API runner wires sync jobs to the durable effect and keeps failures observ
           assert.equal(init.method, 'GET');
           const parsed = new URL(String(url));
           if (parsed.pathname.endsWith('/orders')) return response([]);
+          if (
+            parsed.pathname.endsWith('/products') ||
+            parsed.pathname.endsWith('/products/categories') ||
+            parsed.pathname.endsWith('/products/tags') ||
+            parsed.pathname.endsWith('/products/shipping_classes')
+          )
+            return response([]);
           throw new Error('WOO_UNEXPECTED_INCREMENTAL_ENDPOINT');
         },
         resolveHost: async () => [{ address: '93.184.216.34' }],

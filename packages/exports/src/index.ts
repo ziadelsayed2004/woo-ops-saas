@@ -89,6 +89,11 @@ const text = (value: unknown): string => {
   return JSON.stringify(value) ?? '';
 };
 
+const latinDigits = (value: string): string =>
+  value
+    .replace(/[٠-٩]/gu, (digit) => String(digit.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/gu, (digit) => String(digit.charCodeAt(0) - 0x06f0));
+
 const assertText = (value: unknown, code: string, maxLength: number): string => {
   if (typeof value !== 'string' || value.trim().length === 0 || value.length > maxLength)
     throw new Error(code);
@@ -116,7 +121,7 @@ const pathValue = (source: unknown, path: string): unknown => {
 
 /** Prefixes spreadsheet formula-like values while keeping phone/SKU/IDs as text. */
 export const sanitizeSpreadsheetValue = (value: unknown): string => {
-  const stringValue = text(value);
+  const stringValue = latinDigits(text(value));
   return DANGEROUS_SPREADSHEET_START.test(stringValue) ? `'${stringValue}` : stringValue;
 };
 

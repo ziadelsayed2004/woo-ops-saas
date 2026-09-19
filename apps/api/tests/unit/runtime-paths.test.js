@@ -21,19 +21,32 @@ test('Hostinger release directories share one domain-level data root', () => {
   assert.equal(second.databasePath, first.databasePath);
 });
 
-test('explicit data and database paths keep precedence', () => {
+test('legacy relative Hostinger overrides cannot move accounts into a disposable release', () => {
+  const domainRoot = resolve('fixtures', 'domains', 'ops.example.test');
+  const cwd = join(domainRoot, 'hbuilds', 'release-a', 'source', 'repository');
+  const paths = resolveRuntimePaths(
+    { NODE_ENV: 'production', WOO_OPS_DATA_DIR: 'data', WOO_OPS_DATABASE: 'data/store.sqlite' },
+    cwd,
+  );
+  assert.equal(paths.persistenceMode, 'hostinger-domain');
+  assert.equal(paths.durable, true);
+  assert.equal(paths.dataDirectory, join(domainRoot, '.woo-ops-data'));
+  assert.equal(paths.databasePath, join(domainRoot, '.woo-ops-data', 'woo-ops.sqlite'));
+});
+
+test('explicit absolute data and database paths keep precedence', () => {
   const cwd = resolve('fixtures', 'release');
   const paths = resolveRuntimePaths(
     {
       NODE_ENV: 'production',
-      WOO_OPS_DATA_DIR: '../private-data',
-      WOO_OPS_DATABASE: '../private-db/store.sqlite',
+      WOO_OPS_DATA_DIR: resolve('fixtures', 'private-data'),
+      WOO_OPS_DATABASE: resolve('fixtures', 'private-db', 'store.sqlite'),
     },
     cwd,
   );
 
   assert.equal(paths.persistenceMode, 'configured');
-  assert.equal(paths.durable, false);
-  assert.equal(paths.dataDirectory, resolve(cwd, '../private-data'));
-  assert.equal(paths.databasePath, resolve(cwd, '../private-db/store.sqlite'));
+  assert.equal(paths.durable, true);
+  assert.equal(paths.dataDirectory, resolve('fixtures', 'private-data'));
+  assert.equal(paths.databasePath, resolve('fixtures', 'private-db', 'store.sqlite'));
 });

@@ -34,6 +34,13 @@ test('catalog pages upsert idempotently, expose safe read-only facts, and mark r
       sale_price: '499.50',
       stock_status: 'instock',
       stock_quantity: 12,
+      manage_stock: true,
+      backorders: 'notify',
+      backorders_allowed: true,
+      backordered: false,
+      catalog_visibility: 'visible',
+      status: 'publish',
+      type: 'simple',
     },
   });
   const item = {
@@ -84,8 +91,19 @@ test('catalog pages upsert idempotently, expose safe read-only facts, and mark r
     salePrice: '499.50',
     stockStatus: 'instock',
     stockQuantity: 12,
+    manageStock: true,
+    backorders: 'notify',
+    backordersAllowed: true,
+    backordered: false,
+    catalogVisibility: 'visible',
+    productStatus: 'publish',
+    productType: 'simple',
     categories: [{ id: '4', name: 'Footwear' }],
   });
+  assert.equal(store.listCatalog(context, { stockStatus: 'instock' }).totalCount, 1);
+  assert.equal(store.listCatalog(context, { stockStatus: 'outofstock' }).totalCount, 0);
+  assert.equal(store.listCatalog(context, { backorders: 'notify' }).totalCount, 1);
+  assert.equal(store.listCatalog(context, { visibility: 'visible' }).totalCount, 1);
   assert.equal(
     store.markCatalogDeleted(context, connectionId, [
       `${accountId}:${connectionId}:${item.identity}`,

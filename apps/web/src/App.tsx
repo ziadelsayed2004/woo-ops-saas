@@ -81,6 +81,13 @@ type CatalogItemView = {
   salePrice: string | null;
   stockStatus: string | null;
   stockQuantity: number | null;
+  manageStock: boolean;
+  backorders: string | null;
+  backordersAllowed: boolean;
+  backordered: boolean;
+  catalogVisibility: string | null;
+  productStatus: string | null;
+  productType: string | null;
   categories: readonly { id: string; name: string }[];
 };
 type ManualOrderConfig = {
@@ -808,9 +815,14 @@ const asRecord = (value: unknown): JsonRecord =>
 const asList = (value: unknown): readonly JsonRecord[] =>
   Array.isArray(value) ? value.map(asRecord) : [];
 
+const latinDigits = (value: string): string =>
+  value
+    .replace(/[٠-٩]/gu, (digit) => String(digit.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/gu, (digit) => String(digit.charCodeAt(0) - 0x06f0));
+
 const valueText = (value: unknown, fallback = '—'): string =>
   typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
-    ? String(value)
+    ? latinDigits(String(value))
     : fallback;
 
 const dateText = (value: unknown, locale: Locale): string => {
@@ -818,7 +830,7 @@ const dateText = (value: unknown, locale: Locale): string => {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? '—'
-    : date.toLocaleString(locale === 'ar' ? 'ar-EG' : 'en-US', {
+    : date.toLocaleString(locale === 'ar' ? 'ar-EG-u-nu-latn' : 'en-US-u-nu-latn', {
         dateStyle: 'medium',
         timeStyle: 'short',
       });
@@ -831,7 +843,7 @@ const formatMinor = (value: unknown, currency: string, locale: Locale): string =
     const absolute = negative ? -minor : minor;
     const whole = absolute / 100n;
     const fraction = (absolute % 100n).toString().padStart(2, '0');
-    return `${negative ? '-' : ''}${whole.toLocaleString(locale === 'ar' ? 'ar-EG' : 'en-US')}.${fraction} ${currency}`;
+    return `${negative ? '-' : ''}${whole.toLocaleString('en-US-u-nu-latn')}.${fraction} ${currency}`;
   } catch {
     return `— ${currency}`;
   }
@@ -2032,8 +2044,30 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
   const [categories, setCategories] = useState<CatalogItemView[]>([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
+  const [stockStatus, setStockStatus] = useState('');
+  const [backorders, setBackorders] = useState('');
+  const [visibility, setVisibility] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const fetchCatalogPages = async (initial: URLSearchParams): Promise<CatalogItemView[]> => {
+    const result: CatalogItemView[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < 100; page += 1) {
+      const query = new URLSearchParams(initial);
+      if (cursor) query.set('cursor', cursor);
+      const response = await fetch(`/api/v1/catalog?${query}`, { credentials: 'include' });
+      if (!response.ok) throw new Error('CATALOG_FAILED');
+      const body = (await response.json()) as {
+        items: CatalogItemView[];
+        nextCursor: string | null;
+        hasMore: boolean;
+      };
+      result.push(...body.items);
+      if (!body.hasMore || !body.nextCursor) break;
+      cursor = body.nextCursor;
+    }
+    return result;
+  };
   const load = async () => {
     setLoading(true);
     setError(false);
@@ -2041,15 +2075,21 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
       const query = new URLSearchParams({ limit: '100', kind: 'product' });
       if (search.trim()) query.set('search', search.trim());
       if (category.trim()) query.set('category', category.trim());
-      const [response, categoryResponse] = await Promise.all([
-        fetch(`/api/v1/catalog?${query}`, { credentials: 'include' }),
-        fetch('/api/v1/catalog?limit=100&kind=category', { credentials: 'include' }),
+      if (stockStatus) query.set('stockStatus', stockStatus);
+      if (backorders) query.set('backorders', backorders);
+      if (visibility) query.set('visibility', visibility);
+      const variationQuery = new URLSearchParams(query);
+      variationQuery.set('kind', 'variation');
+      const [products, variations, categoryItems] = await Promise.all([
+        fetchCatalogPages(query),
+        fetchCatalogPages(variationQuery),
+        fetchCatalogPages(new URLSearchParams({ limit: '100', kind: 'category' })),
       ]);
-      if (!response.ok || !categoryResponse.ok) throw new Error('CATALOG_FAILED');
-      const body = (await response.json()) as { items: CatalogItemView[] };
-      const categoryBody = (await categoryResponse.json()) as { items: CatalogItemView[] };
-      setItems(body.items);
-      setCategories(categoryBody.items);
+      setItems([
+        ...products.filter((item) => item.kind === 'product'),
+        ...variations.filter((item) => item.kind === 'variation'),
+      ]);
+      setCategories(categoryItems);
     } catch {
       setError(true);
     } finally {
@@ -2080,7 +2120,18 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
           void load();
         }}
       >
-        <Stack direction={{ xs: 'column', sm: 'row' }} gap={2}>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: {
+              xs: '1fr',
+              md: 'repeat(2, minmax(0, 1fr))',
+              lg: 'repeat(3, minmax(0, 1fr))',
+            },
+            gap: 2,
+            '& .MuiFormControl-root': { minWidth: 0 },
+          }}
+        >
           <TextField
             fullWidth
             size="small"
@@ -2098,10 +2149,56 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
               <TextField {...params} label={locale === 'ar' ? 'التصنيف' : 'Category'} />
             )}
           />
+          <TextField
+            select
+            fullWidth
+            size="small"
+            label={locale === 'ar' ? 'حالة المخزون' : 'Stock status'}
+            value={stockStatus}
+            onChange={(event) => setStockStatus(event.target.value)}
+          >
+            <MenuItem value="">{locale === 'ar' ? 'كل الحالات' : 'All statuses'}</MenuItem>
+            <MenuItem value="instock">{locale === 'ar' ? 'متوفر' : 'In stock'}</MenuItem>
+            <MenuItem value="outofstock">
+              {locale === 'ar' ? 'نفد المخزون' : 'Out of stock'}
+            </MenuItem>
+            <MenuItem value="onbackorder">{locale === 'ar' ? 'حجز مسبق' : 'On backorder'}</MenuItem>
+          </TextField>
+          <TextField
+            select
+            fullWidth
+            size="small"
+            label={locale === 'ar' ? 'الحجز المسبق' : 'Backorders'}
+            value={backorders}
+            onChange={(event) => setBackorders(event.target.value)}
+          >
+            <MenuItem value="">{locale === 'ar' ? 'الكل' : 'All'}</MenuItem>
+            <MenuItem value="no">{locale === 'ar' ? 'غير مسموح' : 'Not allowed'}</MenuItem>
+            <MenuItem value="notify">
+              {locale === 'ar' ? 'مسموح مع تنبيه' : 'Allowed with notice'}
+            </MenuItem>
+            <MenuItem value="yes">{locale === 'ar' ? 'مسموح' : 'Allowed'}</MenuItem>
+          </TextField>
+          <TextField
+            select
+            fullWidth
+            size="small"
+            label={locale === 'ar' ? 'ظهور المنتج' : 'Catalog visibility'}
+            value={visibility}
+            onChange={(event) => setVisibility(event.target.value)}
+          >
+            <MenuItem value="">{locale === 'ar' ? 'الكل' : 'All'}</MenuItem>
+            <MenuItem value="visible">
+              {locale === 'ar' ? 'المتجر والبحث' : 'Shop and search'}
+            </MenuItem>
+            <MenuItem value="catalog">{locale === 'ar' ? 'المتجر فقط' : 'Shop only'}</MenuItem>
+            <MenuItem value="search">{locale === 'ar' ? 'البحث فقط' : 'Search only'}</MenuItem>
+            <MenuItem value="hidden">{locale === 'ar' ? 'مخفي' : 'Hidden'}</MenuItem>
+          </TextField>
           <Button type="submit" variant="contained">
             {locale === 'ar' ? 'تطبيق' : 'Apply'}
           </Button>
-        </Stack>
+        </Box>
       </Paper>
       {error && (
         <Alert severity="error">
@@ -2118,6 +2215,8 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
                 <TableCell>{locale === 'ar' ? 'التصنيفات' : 'Categories'}</TableCell>
                 <TableCell>{locale === 'ar' ? 'السعر' : 'Price'}</TableCell>
                 <TableCell>{locale === 'ar' ? 'المخزون' : 'Stock'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'الحجز المسبق' : 'Backorders'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'الظهور' : 'Visibility'}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -2128,12 +2227,24 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
                   <TableCell>
                     {item.categories.map((entry) => entry.name).join(', ') || '—'}
                   </TableCell>
-                  <TableCell>{item.price ?? '—'}</TableCell>
+                  <TableCell>{item.backorders ?? '—'}</TableCell>
+                  <TableCell>{item.catalogVisibility ?? '—'}</TableCell>
+                  <TableCell>
+                    <Box component="bdi" dir="ltr">
+                      {item.price ?? '—'}
+                    </Box>
+                  </TableCell>
                   <TableCell>
                     <Chip
                       size="small"
                       color={item.stockStatus === 'instock' ? 'success' : 'default'}
-                      label={`${item.stockStatus ?? 'unknown'}${item.stockQuantity === null ? '' : ` · ${item.stockQuantity}`}`}
+                      label={
+                        <Box
+                          component="span"
+                          dir="ltr"
+                          sx={{ unicodeBidi: 'isolate' }}
+                        >{`${item.stockStatus ?? 'unknown'}${item.stockQuantity === null ? '' : ` · ${item.stockQuantity}`}`}</Box>
+                      }
                     />
                   </TableCell>
                 </TableRow>
@@ -2287,6 +2398,17 @@ function ManualOrderForm({
   const [currency, setCurrency] = useState('EGP');
   const [catalog, setCatalog] = useState<CatalogItemView[]>([]);
   const [selectedCatalogId, setSelectedCatalogId] = useState('');
+  const [manualLines, setManualLines] = useState<
+    Array<{
+      catalogId: string;
+      name: string;
+      sku?: string;
+      productId: string;
+      variationId?: string;
+      quantity: number;
+      unitPriceMinor: string;
+    }>
+  >([]);
   const [config, setConfig] = useState<ManualOrderConfig | null>(null);
   const [paymentProof, setPaymentProof] = useState<File | null>(null);
   const [productName, setProductName] = useState('');
@@ -2304,13 +2426,30 @@ function ManualOrderForm({
   const [error, setError] = useState(false);
   const [saved, setSaved] = useState(false);
   useEffect(() => {
-    void Promise.all([
-      fetch('/api/v1/catalog?limit=100&kind=product', { credentials: 'include' }).then(
-        async (response) => {
+    const loadAllProducts = async (): Promise<{ items: CatalogItemView[] }> => {
+      const items: CatalogItemView[] = [];
+      let cursor: string | null = null;
+      for (const kind of ['product', 'variation']) {
+        cursor = null;
+        for (let page = 0; page < 100; page += 1) {
+          const query = new URLSearchParams({ limit: '100', kind });
+          if (cursor) query.set('cursor', cursor);
+          const response = await fetch(`/api/v1/catalog?${query}`, { credentials: 'include' });
           if (!response.ok) throw new Error('CATALOG_FAILED');
-          return (await response.json()) as { items: CatalogItemView[] };
-        },
-      ),
+          const body = (await response.json()) as {
+            items: CatalogItemView[];
+            nextCursor: string | null;
+            hasMore: boolean;
+          };
+          items.push(...body.items.filter((item) => item.kind === kind));
+          if (!body.hasMore || !body.nextCursor) break;
+          cursor = body.nextCursor;
+        }
+      }
+      return { items };
+    };
+    void Promise.all([
+      loadAllProducts(),
       fetch('/api/v1/manual-orders/config', { credentials: 'include' }).then(async (response) => {
         if (!response.ok) throw new Error('CONFIG_FAILED');
         return (await response.json()) as ManualOrderConfig;
@@ -2355,9 +2494,37 @@ function ManualOrderForm({
   const governorateRates = Array.from(
     new Map((config?.rates ?? []).map((rate) => [rate.governorate, rate])).values(),
   );
+  const currentManualLine = () => {
+    const item = catalog.find((candidate) => candidate.id === selectedCatalogId);
+    const parsedQuantity = Number(quantity);
+    if (!item || !Number.isInteger(parsedQuantity) || parsedQuantity < 1) return null;
+    return {
+      catalogId: item.id,
+      name: productName,
+      ...(productSku ? { sku: productSku } : {}),
+      productId: item.parentExternalId ?? item.externalId,
+      ...(item.kind === 'variation' ? { variationId: item.externalId } : {}),
+      quantity: parsedQuantity,
+      unitPriceMinor,
+    };
+  };
+  const addCurrentLine = () => {
+    const line = currentManualLine();
+    if (!line) return;
+    setManualLines((current) => [...current, line]);
+    selectCatalogProduct('');
+    setQuantity('1');
+  };
   const totalMinor = useMemo(() => {
     try {
-      const subtotal = BigInt(unitPriceMinor || '0') * BigInt(quantity || '0');
+      const savedSubtotal = manualLines.reduce(
+        (sum, line) => sum + BigInt(line.unitPriceMinor) * BigInt(line.quantity),
+        0n,
+      );
+      const currentSubtotal = selectedCatalogId
+        ? BigInt(unitPriceMinor || '0') * BigInt(quantity || '0')
+        : 0n;
+      const subtotal = savedSubtotal + currentSubtotal;
       const value =
         subtotal -
         BigInt(discountMinor || '0') +
@@ -2368,14 +2535,25 @@ function ManualOrderForm({
     } catch {
       return '0';
     }
-  }, [discountMinor, feesMinor, quantity, shippingMinor, taxMinor, unitPriceMinor]);
+  }, [
+    discountMinor,
+    feesMinor,
+    manualLines,
+    quantity,
+    selectedCatalogId,
+    shippingMinor,
+    taxMinor,
+    unitPriceMinor,
+  ]);
   const shippingRatesConfigured = (config?.rates.length ?? 0) > 0;
   const selectedCatalogItem =
     catalog.find((candidate) => candidate.id === selectedCatalogId) ?? null;
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedCatalogId || !governorate || !paymentProof || !config) {
+    const pendingLine = currentManualLine();
+    const lines = [...manualLines, ...(pendingLine ? [pendingLine] : [])];
+    if (lines.length === 0 || !governorate || !paymentProof || !config) {
       setError(true);
       return;
     }
@@ -2396,21 +2574,14 @@ function ManualOrderForm({
             methodId: selectedShippingRate?.methodId ?? 'configured-rate',
             title: selectedShippingRate?.title ?? governorate,
           },
-          lines: [
-            {
-              name: productName,
-              sku: productSku || undefined,
-              productId:
-                catalog.find((item) => item.id === selectedCatalogId)?.parentExternalId ??
-                catalog.find((item) => item.id === selectedCatalogId)?.externalId,
-              variationId:
-                catalog.find((item) => item.id === selectedCatalogId)?.kind === 'variation'
-                  ? catalog.find((item) => item.id === selectedCatalogId)?.externalId
-                  : undefined,
-              quantity: Number(quantity),
-              unitPriceMinor,
-            },
-          ],
+          lines: lines.map((line) => ({
+            name: line.name,
+            ...(line.sku ? { sku: line.sku } : {}),
+            productId: line.productId,
+            ...(line.variationId ? { variationId: line.variationId } : {}),
+            quantity: line.quantity,
+            unitPriceMinor: line.unitPriceMinor,
+          })),
           shippingCollectedMinor: shippingMinor,
           discountMinor,
           taxMinor,
@@ -2587,7 +2758,9 @@ function ManualOrderForm({
                 </Stack>
               </Box>
             )}
-            renderInput={(params) => <TextField {...params} required label={t.productName} />}
+            renderInput={(params) => (
+              <TextField {...params} required={manualLines.length === 0} label={t.productName} />
+            )}
           />
           <Box
             sx={{
@@ -2623,6 +2796,58 @@ function ManualOrderForm({
               InputProps={{ readOnly: true }}
             />
           </Box>
+          <Stack direction="row" justifyContent="flex-end" mt={2}>
+            <Button
+              type="button"
+              variant="outlined"
+              disabled={!selectedCatalogId}
+              onClick={addCurrentLine}
+            >
+              {locale === 'ar' ? 'إضافة منتج آخر' : 'Add another product'}
+            </Button>
+          </Stack>
+          {manualLines.length > 0 && (
+            <TableContainer component={Paper} variant="outlined" sx={{ mt: 2 }}>
+              <Table size="small" aria-label={locale === 'ar' ? 'منتجات الطلب' : 'Order products'}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>{t.productName}</TableCell>
+                    <TableCell>{t.quantity}</TableCell>
+                    <TableCell>{t.total}</TableCell>
+                    <TableCell />
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {manualLines.map((line, index) => (
+                    <TableRow key={`${line.catalogId}:${index}`}>
+                      <TableCell>{line.name}</TableCell>
+                      <TableCell dir="ltr">{line.quantity}</TableCell>
+                      <TableCell>
+                        <MoneyValue
+                          value={(BigInt(line.unitPriceMinor) * BigInt(line.quantity)).toString()}
+                          currency={currency}
+                          locale={locale}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          type="button"
+                          color="error"
+                          onClick={() =>
+                            setManualLines((current) =>
+                              current.filter((_item, itemIndex) => itemIndex !== index),
+                            )
+                          }
+                        >
+                          {locale === 'ar' ? 'حذف' : 'Remove'}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
         </Section>
         <Section title={t.finance}>
           <Box
@@ -4221,7 +4446,8 @@ export function App({
                   display: 'grid',
                   gridTemplateColumns: {
                     xs: '1fr',
-                    md: 'minmax(260px, 2fr) repeat(4, minmax(150px, 1fr)) auto',
+                    md: 'repeat(2, minmax(0, 1fr))',
+                    lg: 'minmax(240px, 2fr) repeat(3, minmax(130px, 1fr))',
                   },
                   gap: 1.5,
                   alignItems: 'start',
@@ -4284,17 +4510,6 @@ export function App({
                     setFilters((current) => ({ ...current, product: value ?? '' }))
                   }
                   renderInput={(params) => <TextField {...params} label={t.productFilterOrders} />}
-                />
-                <Autocomplete
-                  size="small"
-                  options={catalogOptions
-                    .flatMap((item) => item.categories.map((entry) => entry.name))
-                    .filter((value, index, values) => values.indexOf(value) === index)}
-                  value={filters.category || null}
-                  onChange={(_event, value) =>
-                    setFilters((current) => ({ ...current, category: value ?? '' }))
-                  }
-                  renderInput={(params) => <TextField {...params} label={t.categoryFilterOrders} />}
                 />
                 <FormControl size="small">
                   <InputLabel id="orders-export-quick-label">{t.exportFilter}</InputLabel>

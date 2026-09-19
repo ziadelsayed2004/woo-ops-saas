@@ -135,6 +135,13 @@ export type CatalogListItem = Readonly<{
   salePrice: string | null;
   stockStatus: string | null;
   stockQuantity: number | null;
+  manageStock: boolean;
+  backorders: string | null;
+  backordersAllowed: boolean;
+  backordered: boolean;
+  catalogVisibility: string | null;
+  productStatus: string | null;
+  productType: string | null;
   categories: readonly { id: string; name: string }[];
 }>;
 export type ManualPaymentProofRecord = Readonly<{
@@ -3603,6 +3610,19 @@ export class SqliteStore {
 
   getConnectionForWorker(context: AccountContext, connectionId: string): ConnectionWorkerRecord {
     return connectionWorker(this.assertConnection(context, connectionId));
+  }
+
+  listAutomaticSyncTargets(): readonly { accountId: string; connectionId: string }[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT account_id, id FROM connections
+           WHERE platform = 'woocommerce' AND status IN ('active', 'degraded')
+             AND encrypted_credentials IS NOT NULL
+           ORDER BY account_id, id LIMIT 1000`,
+        )
+        .all() as { account_id: string; id: string }[]
+    ).map((row) => ({ accountId: row.account_id, connectionId: row.id }));
   }
 
   getConnectionForWebhook(connectionId: string): {
@@ -9610,8 +9630,22 @@ export class SqliteStore {
 
   listCatalog(
     context: AccountContext,
-    input: { search?: string; kind?: CatalogItem['kind']; category?: string; limit?: number } = {},
-  ): { items: readonly CatalogListItem[]; totalCount: number } {
+    input: {
+      search?: string;
+      kind?: CatalogItem['kind'];
+      category?: string;
+      stockStatus?: 'instock' | 'outofstock' | 'onbackorder';
+      backorders?: 'no' | 'notify' | 'yes';
+      visibility?: 'visible' | 'catalog' | 'search' | 'hidden';
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ): {
+    items: readonly CatalogListItem[];
+    totalCount: number;
+    nextCursor: string | null;
+    hasMore: boolean;
+  } {
     this.assertContext(context);
     const limit = input.limit ?? 50;
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
@@ -9637,19 +9671,74 @@ export class SqliteStore {
       clauses.push("LOWER(source_json) LIKE ? ESCAPE '\\'");
       params.push(`%${escapeLike(input.category.toLowerCase())}%`);
     }
+    if (input.stockStatus) {
+      if (!['instock', 'outofstock', 'onbackorder'].includes(input.stockStatus))
+        throw new Error('CATALOG_STOCK_STATUS_INVALID');
+      clauses.push("json_extract(source_json, '$.source.stock_status') = ?");
+      params.push(input.stockStatus);
+    }
+    if (input.backorders) {
+      if (!['no', 'notify', 'yes'].includes(input.backorders))
+        throw new Error('CATALOG_BACKORDERS_INVALID');
+      clauses.push("json_extract(source_json, '$.source.backorders') = ?");
+      params.push(input.backorders);
+    }
+    if (input.visibility) {
+      if (!['visible', 'catalog', 'search', 'hidden'].includes(input.visibility))
+        throw new Error('CATALOG_VISIBILITY_INVALID');
+      clauses.push("json_extract(source_json, '$.source.catalog_visibility') = ?");
+      params.push(input.visibility);
+    }
+    const totalWhere = clauses.join(' AND ');
+    const totalParams = [...params];
+    if (input.cursor) {
+      let cursor: { kind: string; name: string; id: string };
+      try {
+        cursor = JSON.parse(
+          Buffer.from(input.cursor, 'base64url').toString('utf8'),
+        ) as typeof cursor;
+      } catch {
+        throw new Error('CATALOG_CURSOR_INVALID');
+      }
+      if (
+        !cursor ||
+        typeof cursor.kind !== 'string' ||
+        typeof cursor.name !== 'string' ||
+        typeof cursor.id !== 'string' ||
+        cursor.kind.length > 40 ||
+        cursor.name.length > 500 ||
+        cursor.id.length > 500
+      )
+        throw new Error('CATALOG_CURSOR_INVALID');
+      clauses.push(
+        '(kind > ? OR (kind = ? AND (name COLLATE NOCASE > ? COLLATE NOCASE OR (name COLLATE NOCASE = ? COLLATE NOCASE AND id > ?))))',
+      );
+      params.push(cursor.kind, cursor.kind, cursor.name, cursor.name, cursor.id);
+    }
     const where = clauses.join(' AND ');
     const rows = this.db
       .prepare(
         `SELECT id, connection_id, kind, external_id, parent_external_id, name, sku, source_json
          FROM catalog_items WHERE ${where} ORDER BY kind, name COLLATE NOCASE, id LIMIT ?`,
       )
-      .all(...params, limit) as Array<Record<string, unknown>>;
+      .all(...params, limit + 1) as Array<Record<string, unknown>>;
     const count = this.db
-      .prepare(`SELECT COUNT(*) AS count FROM catalog_items WHERE ${where}`)
-      .get(...params) as { count: number };
+      .prepare(`SELECT COUNT(*) AS count FROM catalog_items WHERE ${totalWhere}`)
+      .get(...totalParams) as { count: number };
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
+    const last = pageRows.at(-1);
     return {
       totalCount: Number(count.count),
-      items: rows.map((row) => {
+      hasMore,
+      nextCursor:
+        hasMore && last
+          ? Buffer.from(
+              JSON.stringify({ kind: last.kind, name: last.name, id: last.id }),
+              'utf8',
+            ).toString('base64url')
+          : null,
+      items: pageRows.map((row) => {
         const normalized = parseJsonRecord(row.source_json);
         const source = isRecord(normalized.source) ? normalized.source : normalized;
         const categories = Array.isArray(normalized.categories)
@@ -9681,6 +9770,13 @@ export class SqliteStore {
             typeof source.stock_quantity === 'number' && Number.isFinite(source.stock_quantity)
               ? source.stock_quantity
               : null,
+          manageStock: source.manage_stock === true,
+          backorders: optionalText(source.backorders),
+          backordersAllowed: source.backorders_allowed === true,
+          backordered: source.backordered === true,
+          catalogVisibility: optionalText(source.catalog_visibility),
+          productStatus: optionalText(source.status),
+          productType: optionalText(source.type),
           categories,
         };
       }),

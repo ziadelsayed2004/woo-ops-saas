@@ -200,8 +200,21 @@ const syncCatalog = async (context: SyncContext, cursor: SyncCursor): Promise<Sy
       const isLastPage = page.page >= page.totalPages || page.items.length < 100;
       const nextKind = isLastPage ? CATALOG_KINDS[kindIndex + 1] : kind;
       const nextCursor: SyncCursor = nextKind
-        ? { phase: 'catalog', kind: nextKind, page: isLastPage ? 1 : page.page + 1 }
-        : { phase: 'orders', page: 1 };
+        ? {
+            phase: 'catalog',
+            kind: nextKind,
+            page: isLastPage ? 1 : page.page + 1,
+            ...(current.lastModifiedAt === undefined
+              ? {}
+              : { lastModifiedAt: current.lastModifiedAt }),
+          }
+        : {
+            phase: 'orders',
+            page: 1,
+            ...(current.lastModifiedAt === undefined
+              ? {}
+              : { lastModifiedAt: current.lastModifiedAt }),
+          };
       context.store.upsertCatalogPage(context.account, {
         connectionId: context.connectionId,
         cursor: encodeCursor(nextCursor),
@@ -341,16 +354,19 @@ export const createWooSyncEffect =
       let cursor = initialCursor;
       if (type !== 'initial' && cursor.phase === 'complete') {
         cursor = {
-          phase: 'orders',
+          phase: 'catalog',
+          kind: 'categories',
           page: 1,
           ...(type === 'incremental' && cursor.lastModifiedAt === undefined
             ? {}
             : { lastModifiedAt: cursor.lastModifiedAt ?? null }),
         };
       }
-      if (type === 'initial' && cursor.phase !== 'orders' && cursor.phase !== 'complete')
+      // Catalog, categories, variations, stock and backorder state are mutable remote facts too.
+      // Refresh them on every scheduled/manual sync instead of only on first connection.
+      if (cursor.phase !== 'orders' && cursor.phase !== 'complete')
         cursor = await syncCatalog(syncContext, cursor);
-      if (type === 'initial') {
+      {
         try {
           const shippingRates = await syncContext.connector.readEgyptShippingRates();
           store.replaceWooShippingRates(account, connectionId, shippingRates);
