@@ -1,0 +1,52 @@
+@import './variables.css';
+/* CSS Sibling for layout separation */
+.permission-matrix__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+}
+
+.permission-matrix__summary-actions,
+.permission-matrix__section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.permission-matrix__section {
+  margin-bottom: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  overflow: hidden;
+}
+
+.permission-matrix__section-title {
+  width: 100%;
+}
+
+.permission-matrix__section-title > :first-child {
+  flex: 1;
+}
+
+.permission-matrix__card {
+  height: 100%;
+  padding: 8px 10px;
+}
+
+.permission-matrix__card .MuiFormControlLabel-root {
+  width: 100%;
+  margin: 0;
+  align-items: flex-start;
+}
+
+@media (max-width: 600px) {
+  .permission-matrix__summary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

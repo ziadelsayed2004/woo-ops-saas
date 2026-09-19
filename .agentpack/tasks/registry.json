@@ -1042,6 +1042,31 @@
         "Tracked repository state contains no pnpm lock/workspace files or generated dist/artifact/test-result files, while user-owned unrelated worktrees remain untouched"
       ],
       "validation": ["npm ci", "npm run agent:doctor", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:chaos", "npm run test:golden", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run test:performance", "npm run test:hostinger", "npm run security:scan", "npm run security:audit", "npm run build", "git diff --check"]
+    },
+    {
+      "id": "T0816",
+      "epic": "E08",
+      "title": "Audit production behavior and apply the reference Material UI design system",
+      "type": "feat",
+      "phase": 8,
+      "priority": "P0",
+      "estimate": "XL",
+      "parallelGroup": "production-design-audit",
+      "dependencies": ["T0815"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/API.md", ".agentpack/architecture/DATA_MODEL.md", ".agentpack/architecture/SECURITY.md", ".agentpack/architecture/TESTING.md", ".agentpack/architecture/DEPLOYMENT.md", "README.md", "template/template.main/client/src/theme/ThemeConfig.jsx", "template/template.main/client/src/theme/ThemeConfig.css", "template/template.main/client/src/layouts/MainLayout.jsx", "template/template.main/client/src/styles/MainLayout.css", "template/template.main/client/src/styles/variables.css"],
+      "scope": [
+        "Audit the shipped web and API implementation against the PRD, architecture, tests and actual runtime behavior, fixing reproducible locally actionable defects without weakening account isolation or read-only Woo connector direction",
+        "Extract the visual language, theme tokens, responsive top bar, collapsible sidebar, RTL/LTR behavior, navigation grouping and content distribution from the supplied template and implement them as typed reusable Material UI primitives for Woo Ops",
+        "Polish every existing Woo Ops workspace for consistent hierarchy, responsive layout, loading/empty/error/forbidden states, Arabic typography, keyboard navigation and production-grade operator density without copying unrelated template business behavior",
+        "Update automated tests, visual baselines, operating documentation and task evidence with exact commands, known external prerequisites and immediate local/production startup instructions"
+      ],
+      "acceptance": [
+        "The authenticated shell has a responsive Material UI top bar and collapsible sidebar derived from the reference design system, supports Arabic RTL and English LTR, and exposes every existing production workspace with active, hover and focus states",
+        "Orders, analytics, exports, documents and administration workspaces share coherent typography, spacing, cards, tables, forms and status feedback while remaining usable on desktop and mobile and meeting WCAG 2.2 AA-oriented automated checks",
+        "All reproducible backend, contract, security, account-isolation and runtime defects found by the audit are fixed and covered by tests; Woo connectors remain read-only and manual/local data invariants remain intact",
+        "Fresh format, lint, typecheck, unit, integration, contract, security, tenant-isolation, E2E, accessibility, visual, build and startup smoke evidence is recorded, with external Woo/Hostinger/legal inputs explicitly separated"
+      ],
+      "validation": ["npm ci", "npm run agent:doctor", "npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:contract", "npm run test:security", "npm run test:tenant-isolation", "npm run test:e2e:critical", "npm run test:e2e", "npm run test:a11y", "npm run test:visual", "npm run build", "npm run security:scan", "npm run security:audit", "git diff --check"]
     }
   ]
 }

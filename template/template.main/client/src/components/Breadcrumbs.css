@@ -1,0 +1,29 @@
+.breadcrumbs-container {
+  margin-bottom: var(--space-4);
+}
+
+.breadcrumbs-list {
+  color: var(--color-text-muted);
+}
+
+.breadcrumbs-list .MuiBreadcrumbs-separator {
+  margin-left: var(--space-1);
+  margin-right: var(--space-1);
+}
+
+.breadcrumbs-link {
+  display: flex;
+  align-items: center;
+  color: inherit;
+}
+
+.breadcrumbs-home-icon {
+  margin-right: var(--space-1);
+  margin-left: var(--space-1);
+  font-size: 20px;
+}
+
+.breadcrumbs-current {
+  font-weight: 500;
+  color: var(--color-text);
+}

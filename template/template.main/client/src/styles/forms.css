@@ -1,0 +1,277 @@
+@import './variables.css';
+/* Form layouts and field grids */
+
+.form-section {
+  background-color: var(--color-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+
+.form-section__title,
+.form-section h3.form-section__title,
+.form-section .MuiTypography-h6.form-section__title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-top: 0;
+  margin-bottom: var(--space-3);
+  color: var(--color-text);
+}
+
+.form-section__description {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-5);
+}
+
+/* Grids for inputs */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: var(--space-5);
+}
+
+.form-grid--three {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  gap: var(--space-5);
+}
+
+.form-grid--one {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-5);
+}
+
+/* Full span element in form grids */
+.form-grid__span-full {
+  grid-column: 1 / -1;
+}
+
+/* Form fields container and validation messages */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.form-field__label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+  color: var(--color-text);
+}
+
+.form-field__error {
+  font-size: 0.8rem;
+  color: var(--color-danger);
+  margin-top: var(--space-1);
+}
+
+.form-field__helper {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-top: var(--space-1);
+}
+
+/* Form actions bar */
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-color);
+}
+
+@media (max-width: 768px) {
+
+  .form-grid,
+  .form-grid--three {
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+  }
+}
+
+/* Ensure inputs don't squash their content or placeholders */
+.MuiInputBase-root {
+  width: 100%;
+}
+
+.MuiInputBase-input {
+  width: 100%;
+  max-width: 100%;
+}
+
+.MuiSelect-select {
+  min-width: 140px;
+}
+
+/* Keep MUI field labels readable for long Arabic filter labels */
+.MuiInputLabel-root,
+.MuiFormLabel-root,
+.MuiOutlinedInput-notchedOutline legend,
+.MuiOutlinedInput-notchedOutline legend>span {
+  white-space: nowrap;
+  width: max-content;
+}
+
+.filter-panel-title {
+  white-space: nowrap;
+  width: max-content;
+}
+
+/* Ensure all inputs and selectors in filter grids have a uniform min-width of 280px to prevent clipping */
+.filter-grid .MuiFormControl-root,
+.filter-grid .MuiTextField-root,
+.filter-grid .MuiAutocomplete-root,
+.filter-grid .MuiInputBase-root {
+  min-width: 280px;
+}
+
+/* Invoice Creator Item Card Styles */
+.invoice-item-card {
+  padding: 20px;
+  margin-bottom: 16px;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+[data-theme='dark'] .invoice-item-card {
+  background-color: #1e1e1e;
+  border-color: #3c4043;
+}
+
+.invoice-item-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.invoice-item-field {
+  width: 100%;
+}
+
+.invoice-item-spacer {
+  width: 5%;
+}
+
+.invoice-item-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid #f1f5f9;
+}
+
+[data-theme='dark'] .invoice-item-footer {
+  border-top-color: #3c4043;
+}
+
+.invoice-item-stock-error {
+  display: flex;
+  justify-content: space-between;
+  padding-left: 8px;
+  padding-right: 8px;
+  margin-top: 8px;
+}
+
+/* Minimal Invoice Summary Card */
+.invoice-summary-card {
+  padding: 20px;
+  max-width: 100%;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-top: 24px;
+  margin-right: auto;
+}
+
+[data-theme='dark'] .invoice-summary-card {
+  background-color: #1e1e1e;
+  border-color: #3c4043;
+}
+
+.invoice-summary-card-content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+  gap: 16px;
+}
+
+.invoice-summary-breakdown {
+  width: 65%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.invoice-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.invoice-summary-callout {
+  width: 30%;
+  padding: 16px;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  text-align: center;
+}
+
+[data-theme='dark'] .invoice-summary-callout {
+  background-color: #121212;
+  border-color: #3c4043;
+}
+
+.invoice-summary-callout-label {
+  display: block;
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.5px;
+}
+
+.invoice-summary-callout-value {
+  font-weight: 700;
+  font-family: monospace;
+  font-size: 1.3rem;
+  color: var(--color-primary);
+}
+
+@media (max-width: 600px) {
+  .invoice-summary-card {
+    width: 100%;
+  }
+
+  .invoice-summary-card-content {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .invoice-summary-breakdown {
+    width: 100%;
+  }
+
+  .invoice-summary-callout {
+    width: 100%;
+  }
+}
+
+.receipt-upload-container {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}

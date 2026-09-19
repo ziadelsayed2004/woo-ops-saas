@@ -1,0 +1,48 @@
+/* Google Fonts - Cairo for Arabic typography */
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Shared Design System Stylesheet Imports */
+@import './variables.css';
+@import './reset.css';
+@import './rtl.css';
+@import './layout.css';
+@import './forms.css';
+@import './tables.css';
+@import './drawers.css';
+@import './dialogs.css';
+@import './material-overrides.css';
+
+/* Custom Scrollbar — respects light/dark mode */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.7);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+
+/* Selection highlight */
+::selection {
+  background-color: rgba(26, 115, 232, 0.25);
+}
+
+/* Smooth transitions for theme switching */
+body {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}

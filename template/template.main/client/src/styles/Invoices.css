@@ -1,0 +1,94 @@
+@import './variables.css';
+/* CSS Sibling for layout separation */
+
+.invoice-item-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 600px) {
+  .invoice-item-row {
+    flex-wrap: wrap;
+  }
+}
+
+.invoice-item-product {
+  flex: 2 1 0%;
+}
+@media (max-width: 600px) {
+  .invoice-item-product {
+    flex: 1 1 100%;
+  }
+}
+
+.invoice-item-field {
+  flex: 1 1 0%;
+}
+@media (max-width: 600px) {
+  .invoice-item-field {
+    flex: 1 1 45%;
+  }
+}
+
+.invoice-item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+@media (max-width: 600px) {
+  .invoice-item-actions {
+    flex: 1 1 100%;
+  }
+}
+
+@media (min-width: 601px) {
+  .invoice-item-actions {
+    flex: 0.8 1 0%;
+  }
+}
+
+/* Custom Styles for search filter groups & table footer pagination */
+.invoice-filter-group {
+  margin-bottom: 24px;
+  padding: 20px;
+  border: 1px solid var(--border-color);
+  background-color: var(--color-surface-alt);
+  border-radius: 4px;
+}
+
+.invoice-filter-group-alt {
+  margin-bottom: 20px;
+  padding: 20px;
+  border: 1px solid var(--border-color);
+  background-color: var(--color-surface-alt);
+  border-radius: 4px;
+}
+
+.invoices-filter-input {
+  field-sizing: content;
+  min-width: 140px;
+  width: auto;
+}
+
+.invoice-filters-grid .MuiAutocomplete-root,
+.invoice-filters-grid .MuiFormControl-root,
+.invoice-filters-grid .MuiTextField-root {
+  width: 100%;
+}
+
+.invoice-footer-pagination {
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--border-color);
+}
+
+.invoice-qr-code {
+  width: 70px;
+  height: 70px;
+}

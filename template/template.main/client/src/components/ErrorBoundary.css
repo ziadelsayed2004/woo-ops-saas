@@ -1,0 +1,67 @@
+.error-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: var(--color-bg);
+  font-family: var(--app-font-family);
+  direction: rtl;
+  padding: var(--space-5);
+}
+
+.error-boundary__card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-8);
+  max-width: 500px;
+  width: 100%;
+  text-align: center;
+}
+
+.error-boundary__title {
+  color: var(--color-danger);
+  font-size: 1.5rem;
+  margin-top: 0;
+  margin-bottom: var(--space-4);
+  font-weight: 700;
+}
+
+.error-boundary__subtitle {
+  color: var(--color-text-muted);
+  font-size: 1rem;
+  margin-bottom: var(--space-6);
+  line-height: 1.6;
+}
+
+.error-boundary__error-text {
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  padding: var(--space-3);
+  font-size: 0.8rem;
+  color: var(--color-danger);
+  text-align: left;
+  overflow-x: auto;
+  margin-bottom: var(--space-6);
+  max-height: 150px;
+  font-family: monospace;
+}
+
+.error-boundary__button {
+  background-color: var(--color-primary);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-xs);
+  padding: var(--space-3) var(--space-6);
+  font-size: 1rem;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background-color 0.2s, box-shadow 0.2s;
+  outline: none;
+}
+
+.error-boundary__button:hover {
+  background-color: var(--color-primary-hover);
+}

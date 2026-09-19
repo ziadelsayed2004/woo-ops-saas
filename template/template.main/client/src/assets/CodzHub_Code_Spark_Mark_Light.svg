@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="CodzHub Code Spark Mark">
+  <defs>
+    <linearGradient id="czhSpark" x1="244" y1="258" x2="782" y2="762" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6D5BFF"/>
+      <stop offset="0.43" stop-color="#2F7BFF"/>
+      <stop offset="0.76" stop-color="#12D8FF"/>
+      <stop offset="1" stop-color="#49F2A8"/>
+    </linearGradient>
+    <radialGradient id="czhGlow" cx="50%" cy="50%" r="58%">
+      <stop offset="0" stop-color="#12D8FF" stop-opacity="0.42"/>
+      <stop offset="0.48" stop-color="#2F7BFF" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#6D5BFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="czhAppBg" x1="96" y1="78" x2="950" y2="946" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#070A12"/>
+      <stop offset="0.62" stop-color="#0B1020"/>
+      <stop offset="1" stop-color="#061B2E"/>
+    </linearGradient>
+    <filter id="softShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="28" stdDeviation="30" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  
+  <circle cx="512" cy="512" r="338" fill="url(#czhGlow)" opacity="0.28"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#softShadow)">
+    <path d="M418 326 L248 512 L418 698" stroke="#0B1020" stroke-width="82"/>
+    <path d="M606 326 L776 512 L606 698" stroke="#0B1020" stroke-width="82"/>
+    <path d="M570 316 L490 505 L548 505 L454 708" stroke="url(#czhSpark)" stroke-width="74"/>
+  </g>
+  <g opacity="0.16" fill="none" stroke="url(#czhSpark)" stroke-width="22" stroke-linecap="round">
+    <path d="M328 232 C430 170 592 170 696 232"/>
+    <path d="M696 792 C590 854 432 854 328 792"/>
+  </g>
+  <circle cx="512" cy="512" r="22" fill="#0B1020" opacity="0.94"/>
+  <circle cx="512" cy="512" r="10" fill="url(#czhSpark)"/>
+</svg>

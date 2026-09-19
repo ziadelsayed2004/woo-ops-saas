@@ -174,7 +174,7 @@ test('sync runs checkpoint counters, classify failures, resume idempotently, and
     context,
     connection.id,
     'reconcile:seen',
-    '2026-09-01T00:00:00.000Z',
+    new Date().toISOString(),
   );
   assert.equal(deleted, 1);
   assert.equal(

@@ -1,0 +1,122 @@
+@import './variables.css';
+/* Standardized, responsive tables and lists styling */
+
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+  background-color: var(--color-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-5);
+  /* Webkit custom scrollbars inside tables */
+  scrollbar-width: thin;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: right;
+}
+
+.data-table th {
+  background-color: var(--color-surface-alt);
+  color: var(--color-text);
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 2px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--color-text);
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
+
+.data-table tbody tr:hover {
+  background-color: var(--color-surface-alt);
+}
+
+/* Sticky Headers when tables are long */
+.data-table--sticky th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* Pagination container alignment */
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-color);
+  background-color: var(--color-surface);
+  border-bottom-left-radius: var(--radius-sm);
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+/* Empty/Loading states placeholders in tables */
+.table-state-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+}
+
+.table-state-placeholder__text {
+  color: var(--color-text-muted);
+  font-size: 1rem;
+  margin-top: var(--space-3);
+}
+
+/* Responsive, dynamic scrollable table wrapper */
+.scrollable-table-container {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  position: relative;
+  scrollbar-width: thin;
+}
+
+.scrollable-table-container table {
+  min-width: 100%;
+  table-layout: auto;
+}
+
+.scrollable-table-container th,
+.scrollable-table-container td {
+  white-space: nowrap;
+}
+
+.scrollable-table-container thead th {
+  position: sticky;
+  top: 0;
+  background-color: var(--color-surface-alt);
+  z-index: 2;
+}
+
+.main-table-paper {
+  width: 100%;
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+/* Helper utility classes for tables */
+.font-monospace {
+  font-family: monospace !important;
+}
+
+.font-bold {
+  font-weight: bold !important;
+}
+
+.text-error {
+  color: var(--color-error, #ef4444) !important;
+}

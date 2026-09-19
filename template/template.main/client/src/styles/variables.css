@@ -1,0 +1,59 @@
+:root {
+  --app-font-family: "Cairo", "Inter", "Roboto", "Segoe UI", sans-serif;
+
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f1f5f9;
+
+  --color-text: #111827;
+  --color-text-muted: #64748b;
+
+  --color-primary: #1a73e8;
+  --color-primary-hover: #1558b0;
+  --color-primary-soft: #e8f0fe;
+
+  --color-success: #188038;
+  --color-warning: #f29900;
+  --color-danger: #d93025;
+  --color-info: #1a73e8;
+
+  --border-color: #e5e7eb;
+  --border-strong: #cbd5e1;
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.10);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --sidebar-width: 288px;
+  --sidebar-collapsed-width: 76px;
+  --topbar-height: 64px;
+  --content-max-width: 1440px;
+}
+
+/* MUI or HTML element class for dark theme matching context */
+[data-theme="dark"],
+.dark-theme-root {
+  --color-bg: #121212;
+  --color-surface: #1e1e1e;
+  --color-surface-alt: #2d2d2d;
+  --color-text: #e8eaed;
+  --color-text-muted: #9aa0a6;
+  --border-color: #3c4043;
+  --border-strong: #475569;
+  
+  --color-primary-soft: rgba(138, 180, 248, 0.12);
+  --color-primary: #8ab4f8;
+  --color-primary-hover: #aecbfa;
+}
