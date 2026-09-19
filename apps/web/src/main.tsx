@@ -43,8 +43,13 @@ function AppShell() {
             transform: 'translate(0, 9px) scale(1)',
           },
           '[dir="rtl"] .MuiInputLabel-outlined.MuiInputLabel-shrink': {
-            transform: 'translate(0, -9px) scale(0.75)',
+            transform: 'translate(-2px, -9px) scale(0.75)',
           },
+          '[dir="rtl"] .MuiFormControl-root .MuiInputLabel-shrink + .MuiOutlinedInput-root legend':
+            {
+              marginInlineStart: 6,
+              paddingInline: 5,
+            },
         },
       },
       MuiPaper: { styleOverrides: { root: { backgroundImage: 'none' } } },
@@ -57,8 +62,14 @@ function AppShell() {
       },
       MuiSelect: {
         styleOverrides: {
-          select: { paddingInlineStart: 14, paddingInlineEnd: 36 },
-          icon: { right: 'auto', insetInlineEnd: 10 },
+          select: { paddingInlineStart: 16, paddingInlineEnd: 44 },
+          icon: { right: 'auto', insetInlineEnd: 12, pointerEvents: 'none' },
+        },
+      },
+      MuiAutocomplete: {
+        styleOverrides: {
+          inputRoot: { paddingInlineEnd: '42px !important' },
+          endAdornment: { insetInlineEnd: 10, right: 'auto' },
         },
       },
       MuiInputLabel: {

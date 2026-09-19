@@ -2020,8 +2020,9 @@ function csrfToken(): string {
   );
 }
 
-function CatalogWorkspace({ locale }: { locale: Locale }) {
+function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => void }) {
   const [items, setItems] = useState<CatalogItemView[]>([]);
+  const [categories, setCategories] = useState<CatalogItemView[]>([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
   const [loading, setLoading] = useState(true);
@@ -2033,10 +2034,15 @@ function CatalogWorkspace({ locale }: { locale: Locale }) {
       const query = new URLSearchParams({ limit: '100', kind: 'product' });
       if (search.trim()) query.set('search', search.trim());
       if (category.trim()) query.set('category', category.trim());
-      const response = await fetch(`/api/v1/catalog?${query}`, { credentials: 'include' });
-      if (!response.ok) throw new Error('CATALOG_FAILED');
+      const [response, categoryResponse] = await Promise.all([
+        fetch(`/api/v1/catalog?${query}`, { credentials: 'include' }),
+        fetch('/api/v1/catalog?limit=100&kind=category', { credentials: 'include' }),
+      ]);
+      if (!response.ok || !categoryResponse.ok) throw new Error('CATALOG_FAILED');
       const body = (await response.json()) as { items: CatalogItemView[] };
+      const categoryBody = (await categoryResponse.json()) as { items: CatalogItemView[] };
       setItems(body.items);
+      setCategories(categoryBody.items);
     } catch {
       setError(true);
     } finally {
@@ -2075,12 +2081,15 @@ function CatalogWorkspace({ locale }: { locale: Locale }) {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
-          <TextField
+          <Autocomplete
             fullWidth
             size="small"
-            label={locale === 'ar' ? 'التصنيف' : 'Category'}
-            value={category}
-            onChange={(event) => setCategory(event.target.value)}
+            options={categories.map((item) => item.name)}
+            value={category || null}
+            onChange={(_event, value) => setCategory(value ?? '')}
+            renderInput={(params) => (
+              <TextField {...params} label={locale === 'ar' ? 'التصنيف' : 'Category'} />
+            )}
           />
           <Button type="submit" variant="contained">
             {locale === 'ar' ? 'تطبيق' : 'Apply'}
@@ -2127,9 +2136,21 @@ function CatalogWorkspace({ locale }: { locale: Locale }) {
         </TableContainer>
         {loading && <LinearProgress />}
         {!loading && items.length === 0 && (
-          <Box p={4} textAlign="center">
-            —
-          </Box>
+          <Stack p={5} gap={2} alignItems="center" textAlign="center">
+            <Typography fontWeight={700}>
+              {locale === 'ar'
+                ? 'لا توجد منتجات متزامنة من WooCommerce بعد'
+                : 'No WooCommerce products have been synchronized yet'}
+            </Typography>
+            <Typography color="text.secondary">
+              {locale === 'ar'
+                ? 'افتح ربط WooCommerce وتأكد من صحة الاتصال ثم شغّل المزامنة الأولية.'
+                : 'Open the WooCommerce connection, verify it, then run the initial sync.'}
+            </Typography>
+            <Button variant="contained" onClick={onSync}>
+              {locale === 'ar' ? 'فتح الربط والمزامنة' : 'Open connection & sync'}
+            </Button>
+          </Stack>
         )}
       </Paper>
     </Stack>
@@ -3889,6 +3910,49 @@ export function App({
     }
   };
 
+  const createSelectionDocuments = async (
+    action: 'generate-invoice' | 'generate-thermal' | 'generate-label',
+  ) => {
+    const selectionId = await createSelectionSnapshot();
+    if (!selectionId) return;
+    try {
+      const templatesResponse = await fetch('/api/v1/document-templates', {
+        credentials: 'include',
+      });
+      if (!templatesResponse.ok) throw new Error('DOCUMENT_TEMPLATES_LOAD_FAILED');
+      const templatesBody = (await templatesResponse.json()) as { items: DocumentTemplate[] };
+      const template = templatesBody.items[0];
+      if (!template) {
+        setSelectionMessage('DOCUMENT_TEMPLATE_REQUIRED');
+        setView('documents');
+        return;
+      }
+      const format =
+        action === 'generate-thermal'
+          ? 'thermal-80mm'
+          : action === 'generate-label'
+            ? 'label-100x150mm'
+            : 'a4';
+      const response = await fetch('/api/v1/document-jobs', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        body: JSON.stringify({
+          selectionId,
+          action,
+          format,
+          templateId: template.id,
+          idempotencyKey: `orders-${action}:${selectionId}:${crypto.randomUUID()}`,
+        }),
+      });
+      if (!response.ok) throw new Error('DOCUMENT_JOB_FAILED');
+      clearOrderSelection();
+      setView('documents');
+    } catch {
+      setSelectionMessage('DOCUMENT_JOB_FAILED');
+    }
+  };
+
   const openOrder = async (order: Order) => {
     setSelected(order);
     try {
@@ -4072,7 +4136,7 @@ export function App({
         ) : view === 'analytics' ? (
           <AnalyticsWorkspace locale={locale} t={t} />
         ) : view === 'catalog' ? (
-          <CatalogWorkspace locale={locale} />
+          <CatalogWorkspace locale={locale} onSync={() => setView('connections')} />
         ) : view === 'manual' ? (
           <ManualOrdersWorkspace locale={locale} onCreate={() => setView('manual-create')} />
         ) : view === 'manual-create' ? (
@@ -4134,7 +4198,18 @@ export function App({
                 void loadOrders();
               }}
             >
-              <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    md: 'minmax(260px, 2fr) repeat(4, minmax(150px, 1fr)) auto',
+                  },
+                  gap: 1.5,
+                  alignItems: 'start',
+                  '& .MuiFormControl-root': { minWidth: 0, width: '100%' },
+                }}
+              >
                 <TextField
                   fullWidth
                   size="small"
@@ -4170,10 +4245,59 @@ export function App({
                     ))}
                   </Select>
                 </FormControl>
+                <Autocomplete
+                  size="small"
+                  options={facetValues('governorate')}
+                  value={filters.governorate || null}
+                  getOptionLabel={(option) => egyptianGovernorateName(option, locale)}
+                  onChange={(_event, value) =>
+                    setFilters((current) => ({ ...current, governorate: value ?? '' }))
+                  }
+                  renderInput={(params) => <TextField {...params} label={t.governorateFilter} />}
+                />
+                <Autocomplete
+                  size="small"
+                  options={catalogOptions
+                    .filter((item) => item.kind === 'product' || item.kind === 'variation')
+                    .map((item) => item.name)
+                    .filter((value, index, values) => values.indexOf(value) === index)}
+                  value={filters.product || null}
+                  onChange={(_event, value) =>
+                    setFilters((current) => ({ ...current, product: value ?? '' }))
+                  }
+                  renderInput={(params) => <TextField {...params} label={t.productFilterOrders} />}
+                />
+                <Autocomplete
+                  size="small"
+                  options={catalogOptions
+                    .flatMap((item) => item.categories.map((entry) => entry.name))
+                    .filter((value, index, values) => values.indexOf(value) === index)}
+                  value={filters.category || null}
+                  onChange={(_event, value) =>
+                    setFilters((current) => ({ ...current, category: value ?? '' }))
+                  }
+                  renderInput={(params) => <TextField {...params} label={t.categoryFilterOrders} />}
+                />
+                <FormControl size="small">
+                  <InputLabel id="orders-export-quick-label">{t.exportFilter}</InputLabel>
+                  <Select
+                    value={filters.exportState}
+                    labelId="orders-export-quick-label"
+                    label={t.exportFilter}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, exportState: event.target.value }))
+                    }
+                  >
+                    <MenuItem value="">{t.all}</MenuItem>
+                    <MenuItem value="never-exported">{t.never}</MenuItem>
+                    <MenuItem value="exported">{t.exported}</MenuItem>
+                    <MenuItem value="changed-after-export">{t.changedAfterExport}</MenuItem>
+                  </Select>
+                </FormControl>
                 <Button type="submit" variant="contained">
                   {t.searchButton}
                 </Button>
-              </Stack>
+              </Box>
               <Stack direction="row" gap={1} mt={2} flexWrap="wrap" alignItems="center">
                 <Button
                   type="button"
@@ -4230,27 +4354,10 @@ export function App({
                     '& .MuiFormControl-root': { minWidth: 0, width: '100%' },
                   }}
                 >
-                  <FormControl size="small">
-                    <InputLabel id="orders-export-label">{t.exportFilter}</InputLabel>
-                    <Select
-                      value={filters.exportState}
-                      labelId="orders-export-label"
-                      label={t.exportFilter}
-                      onChange={(event) =>
-                        setFilters((current) => ({ ...current, exportState: event.target.value }))
-                      }
-                    >
-                      <MenuItem value="">{t.all}</MenuItem>
-                      <MenuItem value="never-exported">{t.never}</MenuItem>
-                      <MenuItem value="exported">{t.exported}</MenuItem>
-                      <MenuItem value="changed-after-export">{t.changedAfterExport}</MenuItem>
-                    </Select>
-                  </FormControl>
                   {(
                     [
                       ['paymentMethod', t.paymentFilter],
                       ['shippingMethod', t.shippingFilterOrders],
-                      ['governorate', t.governorateFilter],
                     ] as const
                   ).map(([field, label]) => (
                     <Autocomplete
@@ -4258,42 +4365,13 @@ export function App({
                       size="small"
                       options={facetValues(field)}
                       value={filters[field] || null}
-                      getOptionLabel={(option) =>
-                        field === 'governorate' ? egyptianGovernorateName(option, locale) : option
-                      }
+                      getOptionLabel={(option) => option}
                       onChange={(_event, value) =>
                         setFilters((current) => ({ ...current, [field]: value ?? '' }))
                       }
                       renderInput={(params) => <TextField {...params} label={label} />}
                     />
                   ))}
-                  <Autocomplete
-                    size="small"
-                    options={catalogOptions
-                      .filter((item) => item.kind === 'product' || item.kind === 'variation')
-                      .map((item) => item.name)
-                      .filter((value, index, values) => values.indexOf(value) === index)}
-                    value={filters.product || null}
-                    onChange={(_event, value) =>
-                      setFilters((current) => ({ ...current, product: value ?? '' }))
-                    }
-                    renderInput={(params) => (
-                      <TextField {...params} label={t.productFilterOrders} />
-                    )}
-                  />
-                  <Autocomplete
-                    size="small"
-                    options={catalogOptions
-                      .flatMap((item) => item.categories.map((category) => category.name))
-                      .filter((value, index, values) => values.indexOf(value) === index)}
-                    value={filters.category || null}
-                    onChange={(_event, value) =>
-                      setFilters((current) => ({ ...current, category: value ?? '' }))
-                    }
-                    renderInput={(params) => (
-                      <TextField {...params} label={t.categoryFilterOrders} />
-                    )}
-                  />
                   <TextField
                     size="small"
                     type="date"
@@ -4348,6 +4426,27 @@ export function App({
                     onClick={() => void markSelectionExportReady()}
                   >
                     {t.markExportReady}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => void createSelectionDocuments('generate-invoice')}
+                  >
+                    {locale === 'ar' ? 'فاتورة A4' : 'A4 invoice'}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => void createSelectionDocuments('generate-thermal')}
+                  >
+                    {locale === 'ar' ? 'إيصال حراري' : 'Thermal receipt'}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => void createSelectionDocuments('generate-label')}
+                  >
+                    {locale === 'ar' ? 'بوليصة شحن 100×150' : '100×150 shipping label'}
                   </Button>
                   <Button size="small" onClick={clearOrderSelection}>
                     {t.clearSelection}
