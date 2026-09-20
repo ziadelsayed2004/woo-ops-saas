@@ -97,18 +97,21 @@ async function mockAnalyticsApi(page: Page, empty = false) {
     });
   });
   await page.route('**/api/v1/analytics/breakdown', async (route: Route) => {
-    requestBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+    const request = route.request().postDataJSON() as Record<string, unknown>;
+    requestBodies.push(request);
     await route.fulfill({
       json: {
         breakdown: {
-          dimension: 'source',
+          dimension: request.dimension ?? 'source',
           source: 'combined',
           items: empty
             ? []
-            : [
-                { key: 'manual', currency: 'EGP', orderCount: 2, lineCount: 4, totals },
-                { key: 'woo', currency: 'EGP', orderCount: 2, lineCount: 4, totals },
-              ],
+            : request.dimension === 'governorate'
+              ? [{ key: 'EGC', currency: 'EGP', orderCount: 4, lineCount: 8, totals }]
+              : [
+                  { key: 'manual', currency: 'EGP', orderCount: 2, lineCount: 4, totals },
+                  { key: 'woo', currency: 'EGP', orderCount: 2, lineCount: 4, totals },
+                ],
         },
       },
     });
@@ -148,6 +151,8 @@ test('renders revenue, profit, sources and explainable analytics in English layo
     'aria-selected',
     'true',
   );
+  await page.getByRole('tab', { name: 'Governorate' }).click();
+  await expect(page.getByText('Cairo (EGC)')).toBeVisible();
 
   await page.getByLabel('Currency').fill('EGP');
   await page.getByRole('button', { name: 'Apply filters' }).click();

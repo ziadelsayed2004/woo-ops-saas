@@ -6,6 +6,7 @@ import express, {
 } from 'express';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { accessSync, existsSync, mkdirSync, readFileSync, constants as fsConstants } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import {
   bulkCreateSchema,
@@ -119,9 +120,11 @@ const webDistCandidates = [
 const webDistDirectory = webDistCandidates.find((candidate) =>
   existsSync(resolve(candidate, 'index.html')),
 );
-const documentFontBytes = process.env.WOO_OPS_DOCUMENT_FONT_PATH
-  ? new Uint8Array(readFileSync(resolve(process.env.WOO_OPS_DOCUMENT_FONT_PATH)))
-  : undefined;
+const require = createRequire(import.meta.url);
+const documentFontPath = process.env.WOO_OPS_DOCUMENT_FONT_PATH
+  ? resolve(process.env.WOO_OPS_DOCUMENT_FONT_PATH)
+  : require.resolve('dejavu-fonts-ttf/ttf/DejaVuSans.ttf');
+const documentFontBytes = new Uint8Array(readFileSync(documentFontPath));
 mkdirSync(dataDirectory, { recursive: true });
 mkdirSync(dirname(databasePath), { recursive: true });
 migrateLegacyHostingerDatabase(runtimePaths);

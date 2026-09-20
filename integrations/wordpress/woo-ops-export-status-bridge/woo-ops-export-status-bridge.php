@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Woo Ops Export Status Bridge
  * Description: Read-only REST exposure for WooCommerce Customer / Order / Coupon Export status.
- * Version: 1.6.0
+ * Version: 1.7.0
  * Requires Plugins: woocommerce
  * Requires PHP: 7.4
  * Author: Woo Ops
@@ -13,7 +13,6 @@ defined( 'ABSPATH' ) || exit;
 
 const WOO_OPS_EXPORT_STATUS_META_KEY = '_wc_customer_order_csv_export_is_exported';
 const WOO_OPS_EXPORT_STATUS_TAXONOMY = 'wc_export_is_order_exported';
-const WOO_OPS_EXPORT_STATUS_GLOBAL_TERM = 'global';
 
 /**
  * Customer / Order / Coupon Export 5.0+ stores the global flag as a private
@@ -82,14 +81,24 @@ function woo_ops_order_export_status( WC_Order $order ): array {
 	}
 
 	if ( taxonomy_exists( WOO_OPS_EXPORT_STATUS_TAXONOMY ) ) {
-		$taxonomy_status = is_object_in_term(
+		// The private term identifier is internal and has changed between
+		// extension releases. Woo's own exported filter checks for any order
+		// relationship in this taxonomy, so mirror that authoritative rule.
+		$taxonomy_terms = wp_get_object_terms(
 			$order_id,
 			WOO_OPS_EXPORT_STATUS_TAXONOMY,
-			WOO_OPS_EXPORT_STATUS_GLOBAL_TERM
+			array( 'fields' => 'ids' )
 		);
+		if ( is_wp_error( $taxonomy_terms ) ) {
+			return array(
+				'status'      => 'unknown',
+				'source'      => 'unavailable',
+				'diagnostics' => $diagnostics,
+			);
+		}
 
 		return array(
-			'status'      => true === $taxonomy_status ? 'exported' : 'not_exported',
+			'status'      => empty( $taxonomy_terms ) ? 'not_exported' : 'exported',
 			'source'      => 'taxonomy',
 			'diagnostics' => $diagnostics,
 		);
@@ -172,7 +181,7 @@ function woo_ops_read_export_statuses( WP_REST_Request $request ) {
 	return rest_ensure_response(
 		array(
 			'version'       => 1,
-			'bridgeVersion' => '1.6.0',
+			'bridgeVersion' => '1.7.0',
 			'items'         => $items,
 		)
 	);

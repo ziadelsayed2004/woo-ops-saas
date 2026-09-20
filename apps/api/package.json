@@ -21,13 +21,14 @@
     "test:tenant-isolation": "tsx --test tests/tenant-isolation.integration.test.js"
   },
   "dependencies": {
+    "@types/express": "^5.0.3",
     "@woo-ops/application": "0.1.0",
-    "@woo-ops/contracts": "0.1.0",
     "@woo-ops/connectors": "0.1.0",
+    "@woo-ops/contracts": "0.1.0",
     "@woo-ops/documents": "0.1.0",
     "@woo-ops/exports": "0.1.0",
     "@woo-ops/persistence": "0.1.0",
-    "@types/express": "^5.0.3",
+    "dejavu-fonts-ttf": "^2.37.3",
     "express": "^5.1.0",
     "zod": "^4.1.5"
   },

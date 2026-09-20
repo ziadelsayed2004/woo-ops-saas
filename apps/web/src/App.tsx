@@ -1561,7 +1561,11 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
               <TableBody>
                 {data.breakdown.map((item) => (
                   <TableRow key={`${item.key}-${item.currency}`}>
-                    <TableCell>{item.label ?? item.key}</TableCell>
+                    <TableCell>
+                      {dimension === 'governorate'
+                        ? `${egyptianGovernorateName(item.key, locale)} (${item.key})`
+                        : (item.label ?? item.key)}
+                    </TableCell>
                     <TableCell>{item.currency}</TableCell>
                     <TableCell>
                       <MoneyValue
@@ -3398,6 +3402,46 @@ type ExportBatchSummary = {
   job?: { progress: number; status: string } | null;
 };
 
+const exportJobStatusLabel = (status: string, direction: Direction): string => {
+  const labels: Record<string, readonly [string, string]> = {
+    queued: ['قيد الانتظار', 'Queued'],
+    running: ['جاري التجهيز', 'Preparing'],
+    completed: ['جاهز للتنزيل', 'Ready'],
+    partial: ['اكتمل جزئيًا', 'Partially completed'],
+    failed: ['فشل', 'Failed'],
+    cancelled: ['ملغي', 'Cancelled'],
+  };
+  return labels[status]?.[direction === 'rtl' ? 0 : 1] ?? status;
+};
+
+const documentFormatLabel = (format: DocumentTemplate['format'], direction: Direction): string => {
+  const labels: Record<DocumentTemplate['format'], readonly [string, string]> = {
+    a4: ['فاتورة A4', 'A4 invoice'],
+    a5: ['فاتورة A5', 'A5 invoice'],
+    'thermal-80mm': ['إيصال حراري 80mm', '80mm thermal receipt'],
+    'label-100x150mm': ['بوليصة شحن 100×150mm', '100×150mm shipping label'],
+  };
+  return labels[format][direction === 'rtl' ? 0 : 1];
+};
+
+const documentArtifactLabel = (artifact: DocumentArtifactSummary, direction: Direction): string => {
+  const labels: Record<DocumentArtifactSummary['kind'], readonly [string, string]> = {
+    'merged-pdf': ['تنزيل PDF للطباعة', 'Download printable PDF'],
+    zip: ['تنزيل الملفات منفصلة ZIP', 'Download individual files ZIP'],
+    'order-pdf': ['تنزيل ملف الطلب', 'Download order PDF'],
+    manifest: ['تنزيل بيان تقني', 'Download technical manifest'],
+  };
+  return labels[artifact.kind][direction === 'rtl' ? 0 : 1];
+};
+
+const exportRowModeLabel = (rowMode: string, direction: Direction): string => {
+  const labels: Record<string, readonly [string, string]> = {
+    order: ['طلب واحد في كل صف', 'One row per order'],
+    line: ['منتج واحد في كل صف', 'One row per product'],
+  };
+  return labels[rowMode]?.[direction === 'rtl' ? 0 : 1] ?? rowMode;
+};
+
 function ExportsWorkspace({
   direction,
   t,
@@ -3421,6 +3465,7 @@ function ExportsWorkspace({
   >({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [historyTab, setHistoryTab] = useState<'spreadsheets' | 'documents'>('spreadsheets');
 
   const loadBatches = async (force = false) => {
     const body = await cachedGetJson<{ items?: ExportBatchSummary[] }>(
@@ -3603,7 +3648,31 @@ function ExportsWorkspace({
     }
   };
 
-  const statusLabel = (status: ExportBatchSummary['status']): string => status;
+  const retryDocumentBatch = async (batchId: string) => {
+    setLoading(true);
+    try {
+      const response = await fetch(
+        `/api/v1/document-jobs/${encodeURIComponent(batchId)}/retry-failures`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        },
+      );
+      if (!response.ok) throw new Error('DOCUMENT_RETRY_FAILED');
+      await loadDocumentBatches(true);
+      setMessage(
+        direction === 'rtl' ? 'تمت إعادة محاولة الملفات الفاشلة' : 'Failed files queued again',
+      );
+    } catch {
+      setMessage('DOCUMENT_RETRY_FAILED');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const statusLabel = (status: ExportBatchSummary['status']): string =>
+    exportJobStatusLabel(status, direction);
 
   return (
     <Stack gap={3} data-testid="exports-workspace" dir={direction}>
@@ -3628,6 +3697,23 @@ function ExportsWorkspace({
         </Typography>
       </Box>
       {message && <Alert severity={message.endsWith('FAILED') ? 'error' : 'info'}>{message}</Alert>}
+      {historyOnly && (
+        <Paper variant="outlined" sx={{ px: 2, pt: 1 }}>
+          <Tabs
+            value={historyTab}
+            onChange={(_event, value: 'spreadsheets' | 'documents') => setHistoryTab(value)}
+            variant="scrollable"
+            scrollButtons="auto"
+            aria-label={direction === 'rtl' ? 'أنواع أوامر التصدير' : 'Export command types'}
+          >
+            <Tab value="spreadsheets" label={direction === 'rtl' ? 'Excel وCSV' : 'Excel & CSV'} />
+            <Tab
+              value="documents"
+              label={direction === 'rtl' ? 'الفواتير والطباعة' : 'Invoices & print'}
+            />
+          </Tabs>
+        </Paper>
+      )}
       {!historyOnly && (
         <Paper variant="outlined" sx={{ p: 2 }}>
           <Stack gap={2}>
@@ -3676,7 +3762,10 @@ function ExportsWorkspace({
           </Stack>
         </Paper>
       )}
-      <Paper variant="outlined" sx={{ p: 2 }}>
+      <Paper
+        variant="outlined"
+        sx={{ p: 2, display: historyOnly && historyTab !== 'spreadsheets' ? 'none' : 'block' }}
+      >
         <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
           <Typography variant="h6" component="h2" fontWeight={800}>
             {t.exportBatches}
@@ -3709,7 +3798,12 @@ function ExportsWorkspace({
                     </Stack>
                   </TableCell>
                   <TableCell>
-                    {batch.format.toUpperCase()} · {batch.rowMode}
+                    <Stack gap={0.25}>
+                      <Typography fontWeight={700}>{batch.format.toUpperCase()}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {exportRowModeLabel(batch.rowMode, direction)}
+                      </Typography>
+                    </Stack>
                   </TableCell>
                   <TableCell>
                     {batch.orderCount} / {batch.rowCount}
@@ -3750,7 +3844,11 @@ function ExportsWorkspace({
           </Typography>
         )}
       </Paper>
-      <Paper variant="outlined" sx={{ p: 2 }} data-testid="export-document-jobs">
+      <Paper
+        variant="outlined"
+        sx={{ p: 2, display: historyOnly && historyTab !== 'documents' ? 'none' : 'block' }}
+        data-testid="export-document-jobs"
+      >
         <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
           <Box>
             <Typography variant="h6" component="h2" fontWeight={800}>
@@ -3783,9 +3881,21 @@ function ExportsWorkspace({
               {documentBatches.map((batch) => (
                 <TableRow key={batch.id}>
                   <TableCell>
-                    <Chip size="small" label={batch.status} />
+                    <Chip
+                      size="small"
+                      label={exportJobStatusLabel(batch.status, direction)}
+                      color={
+                        batch.status === 'completed'
+                          ? 'success'
+                          : batch.status === 'failed'
+                            ? 'error'
+                            : batch.status === 'partial'
+                              ? 'warning'
+                              : 'default'
+                      }
+                    />
                   </TableCell>
-                  <TableCell>{batch.format}</TableCell>
+                  <TableCell>{documentFormatLabel(batch.format, direction)}</TableCell>
                   <TableCell dir="ltr">
                     {batch.succeededCount}/{batch.totalCount}
                   </TableCell>
@@ -3810,16 +3920,31 @@ function ExportsWorkspace({
                       >
                         {direction === 'rtl' ? 'عرض الملفات' : 'Show files'}
                       </Button>
-                      {(documentArtifacts[batch.id] ?? []).map((artifact) => (
+                      {(batch.status === 'partial' || batch.status === 'failed') && (
                         <Button
-                          key={artifact.id}
                           size="small"
-                          component="a"
-                          href={`/api/v1/document-artifacts/${encodeURIComponent(artifact.id)}?download=1`}
+                          color="warning"
+                          onClick={() => void retryDocumentBatch(batch.id)}
+                          disabled={loading}
                         >
-                          {direction === 'rtl' ? 'تنزيل' : 'Download'} {artifact.filename}
+                          {t.retryDocumentBatch}
                         </Button>
-                      ))}
+                      )}
+                      {(documentArtifacts[batch.id] ?? [])
+                        .filter((artifact) => artifact.kind !== 'manifest')
+                        .map((artifact) => (
+                          <Button
+                            key={artifact.id}
+                            size="small"
+                            variant={artifact.kind === 'merged-pdf' ? 'contained' : 'outlined'}
+                            component="a"
+                            href={`/api/v1/document-artifacts/${encodeURIComponent(artifact.id)}?download=1`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {documentArtifactLabel(artifact, direction)}
+                          </Button>
+                        ))}
                     </Stack>
                   </TableCell>
                 </TableRow>
@@ -4403,11 +4528,20 @@ export function App({
           idempotencyKey: `orders-${action}:${selectionId}:${crypto.randomUUID()}`,
         }),
       });
-      if (!response.ok) throw new Error('DOCUMENT_JOB_FAILED');
+      if (!response.ok) {
+        const errorBody = (await response.json().catch(() => null)) as {
+          error?: { code?: string };
+          code?: string;
+        } | null;
+        throw new Error(
+          errorBody?.error?.code ?? errorBody?.code ?? `DOCUMENT_JOB_HTTP_${response.status}`,
+        );
+      }
       clearOrderSelection();
       setExportHistoryRevision((value) => value + 1);
-    } catch {
-      setSelectionMessage('DOCUMENT_JOB_FAILED');
+    } catch (error) {
+      setSelectionError(true);
+      setSelectionMessage(error instanceof Error ? error.message : 'DOCUMENT_JOB_FAILED');
     }
   };
 

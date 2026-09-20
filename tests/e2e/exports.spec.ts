@@ -92,6 +92,77 @@ test('does not load profiles merely to show order export history @exports', asyn
   expect(profileReads).toBe(0);
 });
 
+test('organizes printable outputs and exposes useful downloads without the manifest @exports', async ({
+  page,
+}) => {
+  await mockExports(page);
+  await page.unroute('**/api/v1/document-jobs?limit=30');
+  await page.route('**/api/v1/document-jobs?limit=30', async (route: Route) => {
+    await route.fulfill({
+      json: {
+        items: [
+          {
+            id: 'documents-1',
+            action: 'generate-label',
+            format: 'label-100x150mm',
+            status: 'completed',
+            totalCount: 2,
+            processedCount: 2,
+            succeededCount: 2,
+            failedCount: 0,
+            attemptCount: 1,
+            jobId: 'job-1',
+            createdAt: '2026-09-21T10:00:00.000Z',
+            completedAt: '2026-09-21T10:00:01.000Z',
+          },
+        ],
+      },
+    });
+  });
+  await page.route('**/api/v1/document-jobs/documents-1', async (route: Route) => {
+    await route.fulfill({
+      json: {
+        batch: { id: 'documents-1' },
+        artifacts: [
+          {
+            id: 'pdf-1',
+            kind: 'merged-pdf',
+            filename: 'labels.pdf',
+            mimeType: 'application/pdf',
+            byteSize: 120,
+            checksum: 'a',
+          },
+          {
+            id: 'zip-1',
+            kind: 'zip',
+            filename: 'labels.zip',
+            mimeType: 'application/zip',
+            byteSize: 240,
+            checksum: 'b',
+          },
+          {
+            id: 'manifest-1',
+            kind: 'manifest',
+            filename: 'manifest.json',
+            mimeType: 'application/json',
+            byteSize: 20,
+            checksum: 'c',
+          },
+        ],
+      },
+    });
+  });
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'English' }).click();
+  await page.getByRole('tab', { name: 'Invoices & print' }).click();
+  await expect(page.getByText('100×150mm shipping label')).toBeVisible();
+  await page.getByRole('button', { name: 'Show files' }).click();
+  await expect(page.getByRole('link', { name: 'Download printable PDF' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Download individual files ZIP' })).toBeVisible();
+  await expect(page.getByText('manifest.json')).toHaveCount(0);
+});
+
 test('export workspace has no automated accessibility violations @a11y @exports', async ({
   page,
 }) => {
