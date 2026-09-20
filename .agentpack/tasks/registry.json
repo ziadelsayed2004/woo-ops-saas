@@ -2356,6 +2356,51 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0915",
+      "epic": "E09",
+      "title": "Expose protected Woo export status read-only",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "M",
+      "parallelGroup": "woo-export-status-bridge",
+      "dependencies": ["T0914"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/SYNC_AND_CONNECTORS.md",
+        ".agentpack/architecture/TESTING.md",
+        "packages/connectors/src/woocommerce.ts",
+        "packages/connectors/tests/woo-orders.test.js",
+        "apps/api/src/woo-sync.ts"
+      ],
+      "scope": [
+        "Provide an installable read-only WordPress REST companion that exposes the protected global Customer Order Coupon Export status for bounded order ID batches",
+        "Authenticate the companion endpoint with existing read-only Woo credentials and prohibit every remote mutation",
+        "Overlay companion export status onto Woo order payloads during full and incremental synchronization with a graceful unavailable fallback",
+        "Document installation, endpoint behavior and the distinction between remote Woo status and local reversible export history"
+      ],
+      "acceptance": [
+        "The companion returns only order ID, the recognized export metadata key and a normalized exported or not-exported value for at most 100 requested orders",
+        "Unauthenticated and unauthorized callers cannot read status and no route or connector method can mutate Woo orders, products, customers or stock",
+        "Order page synchronization batches one companion read per page and persists the true remote status without mistaking Paymob metadata",
+        "A missing or older companion endpoint does not fail normal Woo synchronization and is represented honestly as unavailable",
+        "Contract, security, type, lint and regression tests cover authentication, batching, normalization and fallback"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
