@@ -2654,6 +2654,49 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0921",
+      "epic": "E09",
+      "title": "Match legacy Woo export truth exactly",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "S",
+      "parallelGroup": "woo-export-legacy-truth",
+      "dependencies": ["T0920"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/SYNC_AND_CONNECTORS.md",
+        ".agentpack/architecture/TESTING.md",
+        "packages/connectors/src/woocommerce.ts",
+        "integrations/wordpress/woo-ops-export-status-bridge/woo-ops-export-status-bridge.php",
+        "packages/connectors/tests/security.test.js",
+        "packages/connectors/tests/woo-orders.test.js"
+      ],
+      "scope": [
+        "Match the legacy Woo export admin column's exact truthiness rule for its protected order metadata",
+        "Retain current taxonomy-backed status support and safe source/version diagnostics",
+        "Produce a replacement read-only bridge artifact"
+      ],
+      "acceptance": [
+        "Every truthy legacy export metadata value renders exported exactly as the installed Woo admin column does",
+        "Empty and zero legacy values remain not exported and the current taxonomy path remains supported",
+        "Connector contract and security tests pass and a versioned bridge ZIP is produced"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
