@@ -2791,6 +2791,46 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0924",
+      "epic": "E09",
+      "title": "Deliver completed order exports without hidden downloads",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "M",
+      "parallelGroup": "order-export-output",
+      "dependencies": ["T0923"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/TESTING.md",
+        "apps/web/src/App.tsx",
+        "apps/api/src/index.ts",
+        "tests/e2e/orders.spec.ts"
+      ],
+      "scope": [
+        "Make the newly created export batch visible immediately beside the orders instead of below the long grid",
+        "Automatically initiate one authenticated download when that batch completes, preserving the repeat download action",
+        "Distinguish queued, failed and completed export states in user-facing feedback without confusing an accepted job with a downloaded file"
+      ],
+      "acceptance": [
+        "Creating a selected-order export shows its progress near the controls",
+        "A completed batch initiates exactly one browser download and retains its repeat-download link",
+        "A failed batch displays its cause and retry without silently claiming download success",
+        "Browser, typecheck and affected repository checks pass"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:e2e",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
