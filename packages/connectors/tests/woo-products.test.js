@@ -147,7 +147,7 @@ test('variable products tolerate an empty zero-page variations collection', asyn
   assert.equal(toCatalogItems(pages[0]).length, 1);
 });
 
-test('Woo shipping zones expose only explicit Egyptian state flat rates', async () => {
+test('Woo shipping zones normalize composite state codes and expand an Egypt-wide rate', async () => {
   const connector = new WooCommerceConnector(
     'secret',
     new URL('https://shop.example.com'),
@@ -159,9 +159,8 @@ test('Woo shipping zones expose only explicit Egyptian state flat rates', async 
       if (path.endsWith('/shipping/zones/2/locations'))
         return new Response(
           JSON.stringify([
-            { code: 'EG:C', type: 'state' },
+            { code: 'EG:EGC', type: 'state' },
             { code: 'EG:SHR', type: 'state' },
-            { code: 'EG', type: 'country' },
           ]),
         );
       return new Response(
@@ -204,4 +203,40 @@ test('Woo shipping zones expose only explicit Egyptian state flat rates', async 
       currency: 'EGP',
     },
   ]);
+});
+
+test('an Egypt country shipping zone supplies every canonical governorate', async () => {
+  const connector = new WooCommerceConnector(
+    'secret',
+    new URL('https://shop.example.com'),
+    { key: 'k', secret: 's' },
+    async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith('/shipping/zones')) return new Response(JSON.stringify([{ id: 3 }]));
+      if (path.endsWith('/shipping/zones/3/locations'))
+        return new Response(JSON.stringify([{ code: 'EG', type: 'country' }]));
+      return new Response(
+        JSON.stringify([
+          {
+            instance_id: 11,
+            method_id: 'flat_rate',
+            title: 'Egypt',
+            enabled: true,
+            settings: { cost: { value: '90' } },
+          },
+        ]),
+      );
+    },
+    async () => [{ address: '93.184.216.34' }],
+  );
+  const rates = await connector.readEgyptShippingRates();
+  assert.equal(rates.length, 27);
+  assert.equal(
+    rates.some((rate) => rate.stateCode === 'EGSHR'),
+    true,
+  );
+  assert.equal(
+    rates.every((rate) => rate.amountMinor === '9000'),
+    true,
+  );
 });

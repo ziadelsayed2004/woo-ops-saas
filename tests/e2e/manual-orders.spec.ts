@@ -175,6 +175,17 @@ test('explains missing shipping rates instead of opening an empty governorate li
   await expect(page.locator('button[type="submit"]')).toBeDisabled();
 });
 
+test('shows all Egyptian governorates by name while disabling those without Woo rates', async ({
+  page,
+}) => {
+  await openManualForm(page, [{ governorate: 'EGSHR', amountMinor: '1500' }]);
+  await page.getByLabel('المحافظة').click();
+  const options = page.getByRole('option');
+  await expect(options).toHaveCount(27);
+  await expect(page.getByRole('option', { name: /الشرقية/ })).toBeEnabled();
+  await expect(page.getByRole('option', { name: /القاهرة/ })).toBeDisabled();
+});
+
 test('keeps a deterministic responsive manual-order baseline @visual @manual-orders', async ({
   page,
 }) => {

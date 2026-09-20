@@ -132,35 +132,27 @@ test('renders revenue, profit, sources and explainable analytics in English layo
   await expect(page.getByRole('heading', { name: 'Sales analytics dashboard' })).toBeVisible();
   await expect(page.getByTestId('analytics-revenue')).toContainText('1,600.00 EGP');
   await expect(page.getByTestId('analytics-profit')).toContainText('680.00 EGP');
-  await expect(page.getByText('Combined').first()).toBeVisible();
+  await expect(page.getByText('WooCommerce data')).toBeVisible();
   await expect(page.getByText('Formulas and exclusions')).toBeVisible();
   await expect(page.getByText('80% (8/10)')).toBeVisible();
   await expect(page.getByTestId('analytics-trend')).toBeVisible();
   await expect(page.getByTestId('analytics-breakdown')).toBeVisible();
-  await page.getByLabel('Break down by').click();
-  await expect(page.getByRole('option', { name: 'WooCommerce status' })).toBeVisible();
-  await expect(page.getByRole('option', { name: 'Manual order lifecycle' })).toBeVisible();
-  await expect(page.getByRole('option', { name: 'Export state' })).toBeVisible();
-  await expect(page.getByRole('option', { name: 'Governorate / region' })).toBeVisible();
-  await page.keyboard.press('Escape');
+  await expect(page.getByRole('tab', { name: 'Product' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Category' }).click();
+  await expect(page.getByRole('tab', { name: 'Category' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await page.getByRole('tab', { name: 'Customer' }).click();
+  await expect(page.getByRole('tab', { name: 'Customer' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
 
-  await page.getByLabel('Store / connection ID').fill('store-egypt');
-  await page.getByLabel('Shipping method').fill('courier');
-  await page.getByLabel('Product / SKU').fill('shirt');
-  await page.getByLabel('Category').fill('clothing');
-  await page.getByLabel('Author').fill('author-1');
+  await page.getByLabel('Currency').fill('EGP');
   await page.getByRole('button', { name: 'Apply filters' }).click();
   await expect
-    .poll(() =>
-      requestBodies.some(
-        (body) => body.store === 'store-egypt' && body.shippingMethod === 'courier',
-      ),
-    )
-    .toBe(true);
-  await expect
-    .poll(() =>
-      requestBodies.some((body) => body.product === 'shirt' && body.category === 'clothing'),
-    )
+    .poll(() => requestBodies.some((body) => body.currency === 'EGP' && body.source === 'woo'))
     .toBe(true);
 });
 

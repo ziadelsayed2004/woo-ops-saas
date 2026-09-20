@@ -54,8 +54,22 @@ export const EGYPTIAN_GOVERNORATES: readonly EgyptianGovernorate[] = governorate
 
 export const egyptianGovernorate = (value: unknown): EgyptianGovernorate | null => {
   if (typeof value !== 'string') return null;
-  const normalized = value.trim().toUpperCase().replace(/^EG-?/u, 'EG');
-  return EGYPTIAN_GOVERNORATES.find((item) => item.code === normalized) ?? null;
+  const byName = EGYPTIAN_GOVERNORATES.find(
+    (item) => item.ar === value.trim() || item.en.toLowerCase() === value.trim().toLowerCase(),
+  );
+  if (byName) return byName;
+  const compact = value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z]/gu, '');
+  const candidates = [compact];
+  let withoutDuplicateCountry = compact;
+  while (withoutDuplicateCountry.startsWith('EGEG')) {
+    withoutDuplicateCountry = withoutDuplicateCountry.slice(2);
+    candidates.push(withoutDuplicateCountry);
+  }
+  if (!withoutDuplicateCountry.startsWith('EG')) candidates.push(`EG${withoutDuplicateCountry}`);
+  return EGYPTIAN_GOVERNORATES.find((item) => candidates.includes(item.code)) ?? null;
 };
 
 export const egyptianGovernorateName = (value: unknown, locale: 'ar' | 'en' = 'ar'): string =>

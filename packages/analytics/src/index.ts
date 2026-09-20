@@ -344,14 +344,21 @@ const dimensionsFor = (order: AnalyticsOrder, source: OrderSource): Record<strin
   const lines = Array.isArray(normalized.lines) ? normalized.lines : [];
   const products = lines
     .filter(isRecord)
-    .map((line) => ({
-      product: lineValue(line, ['productId', 'externalProductId', 'productRef']) ?? null,
-      variation: lineValue(line, ['variationId', 'externalVariationId']) ?? null,
-      sku: text(line.sku),
-      name: text(line.name),
-      categories: textValues(line.categories ?? line.category ?? line.categoryId),
-      authors: textValues(line.authors ?? line.author ?? line.authorId),
-    }))
+    .map((line) => {
+      const snapshot = isRecord(line.productSnapshot) ? line.productSnapshot : {};
+      return {
+        product: lineValue(line, ['productId', 'externalProductId', 'productRef']) ?? null,
+        variation: lineValue(line, ['variationId', 'externalVariationId']) ?? null,
+        name: text(line.name ?? snapshot.name),
+        quantity: Number.isSafeInteger(line.quantity) ? Number(line.quantity) : 0,
+        subtotalMinor: minorText(minor(line.subtotalMinor)),
+        totalMinor: minorText(minor(line.totalMinor)),
+        categories: textValues(
+          line.categories ?? snapshot.categories ?? line.category ?? line.categoryId,
+        ),
+        authors: textValues(line.authors ?? snapshot.authors ?? line.author ?? line.authorId),
+      };
+    })
     .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
   const categories = [...new Set(products.flatMap((product) => product.categories))].sort();
   const authors = [...new Set(products.flatMap((product) => product.authors))].sort();
@@ -372,6 +379,7 @@ const dimensionsFor = (order: AnalyticsOrder, source: OrderSource): Record<strin
     null;
   return {
     source,
+    orderId: order.id,
     store: order.connectionId ?? normalized.connectionId ?? null,
     channel: normalized.channel ?? null,
     pos: normalized.posLocation ?? normalized.pos ?? null,

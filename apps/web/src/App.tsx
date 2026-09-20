@@ -40,7 +40,11 @@ import {
   type AuthenticatedUser,
 } from './AdminWorkspaces';
 import { WorkspaceShell } from './WorkspaceShell';
-import { egyptianGovernorateName } from '@woo-ops/domain';
+import {
+  EGYPTIAN_GOVERNORATES,
+  egyptianGovernorate,
+  egyptianGovernorateName,
+} from '@woo-ops/domain';
 
 type Locale = 'ar' | 'en';
 type Direction = 'rtl' | 'ltr';
@@ -238,6 +242,7 @@ type AnalyticsTimeseriesItem = {
 };
 type AnalyticsBreakdownItem = {
   key: string;
+  label?: string;
   currency: string;
   orderCount: number;
   lineCount: number;
@@ -924,7 +929,7 @@ const addressLines = (addressValue: unknown, locale: Locale = 'ar'): string[] =>
 };
 
 const emptyAnalyticsFilters = (): AnalyticsFilterState => ({
-  source: 'combined',
+  source: 'woo',
   currency: '',
   from: '',
   to: '',
@@ -937,17 +942,13 @@ const emptyAnalyticsFilters = (): AnalyticsFilterState => ({
 });
 
 type AnalyticsDimension =
-  | 'source'
-  | 'store'
   | 'remoteStatus'
-  | 'localStatus'
-  | 'exportState'
   | 'governorate'
   | 'customer'
   | 'shippingMethod'
+  | 'paymentMethod'
   | 'product'
-  | 'category'
-  | 'author';
+  | 'category';
 
 const analyticsMetricLabel = (key: AnalyticsMetricKey, t: (typeof copy)[Locale]): string =>
   ({
@@ -971,7 +972,7 @@ const analyticsSourceLabel = (source: AnalyticsSource, t: (typeof copy)[Locale])
 function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Locale] }) {
   const [filters, setFilters] = useState<AnalyticsFilterState>(emptyAnalyticsFilters);
   const [appliedFilters, setAppliedFilters] = useState<AnalyticsFilterState>(emptyAnalyticsFilters);
-  const [dimension, setDimension] = useState<AnalyticsDimension>('source');
+  const [dimension, setDimension] = useState<AnalyticsDimension>('product');
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -1163,9 +1164,7 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
       >
         <Stack gap={2}>
           <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
-            <Chip
-              label={`${t.analyticsSource}: ${analyticsSourceLabel(appliedFilters.source, t)}`}
-            />
+            <Chip label={locale === 'ar' ? 'بيانات WooCommerce' : 'WooCommerce data'} />
             <Typography variant="body2" color="text.secondary">
               {t.currencySeparated}
             </Typography>
@@ -1176,25 +1175,12 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
               gridTemplateColumns: {
                 xs: '1fr',
                 sm: 'repeat(2, minmax(0, 1fr))',
-                lg: 'repeat(3, minmax(180px, 1fr))',
+                lg: 'repeat(4, minmax(180px, 1fr))',
               },
               gap: 2,
               '& .MuiFormControl-root': { width: '100%', minWidth: 0 },
             }}
           >
-            <FormControl size="small">
-              <InputLabel id="analytics-source-label">{t.analyticsSource}</InputLabel>
-              <Select
-                labelId="analytics-source-label"
-                value={filters.source}
-                label={t.analyticsSource}
-                onChange={(event) => updateFilter('source', event.target.value as AnalyticsSource)}
-              >
-                <MenuItem value="combined">{t.allSources}</MenuItem>
-                <MenuItem value="woo">{t.sourceWoo}</MenuItem>
-                <MenuItem value="manual">{t.sourceManual}</MenuItem>
-              </Select>
-            </FormControl>
             <TextField
               size="small"
               label={t.currencyFilter}
@@ -1218,12 +1204,6 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
               onChange={(event) => updateFilter('to', event.target.value)}
               InputLabelProps={{ shrink: true }}
             />
-            <TextField
-              size="small"
-              label={t.storeFilter}
-              value={filters.store}
-              onChange={(event) => updateFilter('store', event.target.value)}
-            />
             <FormControl size="small">
               <InputLabel id="analytics-status-label">{t.statusFilter}</InputLabel>
               <Select
@@ -1238,43 +1218,6 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                 <MenuItem value="cancelled">cancelled</MenuItem>
               </Select>
             </FormControl>
-          </Box>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: {
-                xs: '1fr',
-                sm: 'repeat(2, minmax(0, 1fr))',
-                lg: 'repeat(4, minmax(180px, 1fr))',
-              },
-              gap: 2,
-              '& .MuiFormControl-root': { width: '100%', minWidth: 0 },
-            }}
-          >
-            <TextField
-              size="small"
-              label={t.shippingFilter}
-              value={filters.shippingMethod}
-              onChange={(event) => updateFilter('shippingMethod', event.target.value)}
-            />
-            <TextField
-              size="small"
-              label={t.productFilter}
-              value={filters.product}
-              onChange={(event) => updateFilter('product', event.target.value)}
-            />
-            <TextField
-              size="small"
-              label={t.categoryFilter}
-              value={filters.category}
-              onChange={(event) => updateFilter('category', event.target.value)}
-            />
-            <TextField
-              size="small"
-              label={t.authorFilter}
-              value={filters.author}
-              onChange={(event) => updateFilter('author', event.target.value)}
-            />
           </Box>
           <Stack direction="row" gap={1.5} justifyContent="flex-end" flexWrap="wrap">
             <Button type="submit" variant="contained" disabled={loading} sx={{ minWidth: 140 }}>
@@ -1322,8 +1265,14 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                       </Typography>
                       <Chip size="small" label={analyticsSourceLabel(summary.source, t)} />
                     </Stack>
-                    <Stack direction={{ xs: 'column', sm: 'row' }} gap={2}>
-                      <Box flex={1} data-testid="analytics-revenue">
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr 1fr', lg: 'repeat(4, 1fr)' },
+                        gap: 2,
+                      }}
+                    >
+                      <Box data-testid="analytics-revenue">
                         <Typography variant="caption" color="text.secondary">
                           {t.revenue}
                         </Typography>
@@ -1335,38 +1284,109 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                           />
                         </Typography>
                       </Box>
-                      <Box flex={1} data-testid="analytics-profit">
+                      <Box>
                         <Typography variant="caption" color="text.secondary">
-                          {t.profit}
+                          {locale === 'ar' ? 'صافي المبيعات' : 'Net sales'}
                         </Typography>
-                        <Typography
-                          variant="h5"
-                          component="div"
-                          fontWeight={800}
-                          color="success.main"
-                        >
+                        <Typography variant="h6" component="div" fontWeight={800}>
                           <MoneyValue
-                            value={currency.totals.contributionProfitMinor}
+                            value={(
+                              BigInt(currency.totals.netMerchandiseMinor) -
+                              BigInt(currency.totals.refundsMinor)
+                            ).toString()}
                             currency={currency.currency}
                             locale={locale}
                           />
                         </Typography>
                       </Box>
-                    </Stack>
-                    <Divider />
-                    <Stack direction="row" gap={3}>
-                      <Typography variant="body2">
-                        {t.ordersCount}: <strong>{currency.orderCount}</strong>
-                      </Typography>
-                      <Typography variant="body2">
-                        {t.linesCount}: <strong>{currency.lineCount}</strong>
-                      </Typography>
-                    </Stack>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary">
+                          {locale === 'ar' ? 'إجمالي المبيعات' : 'Total sales'}
+                        </Typography>
+                        <Typography variant="h6" component="div" fontWeight={800}>
+                          <MoneyValue
+                            value={(
+                              BigInt(currency.totals.netMerchandiseMinor) -
+                              BigInt(currency.totals.refundsMinor) +
+                              BigInt(currency.totals.shippingCollectedMinor) +
+                              BigInt(currency.totals.taxMinor)
+                            ).toString()}
+                            currency={currency.currency}
+                            locale={locale}
+                          />
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary">
+                          {t.ordersCount}
+                        </Typography>
+                        <Typography variant="h6" component="div" fontWeight={800}>
+                          {currency.orderCount}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary">
+                          {locale === 'ar' ? 'متوسط الطلب' : 'Average order value'}
+                        </Typography>
+                        <Typography variant="h6" component="div" fontWeight={800}>
+                          <MoneyValue
+                            value={
+                              currency.orderCount > 0
+                                ? (
+                                    (BigInt(currency.totals.netMerchandiseMinor) -
+                                      BigInt(currency.totals.refundsMinor)) /
+                                    BigInt(currency.orderCount)
+                                  ).toString()
+                                : '0'
+                            }
+                            currency={currency.currency}
+                            locale={locale}
+                          />
+                        </Typography>
+                      </Box>
+                      {(
+                        [
+                          [
+                            'grossSalesMinor',
+                            locale === 'ar' ? 'المبيعات قبل الخصم' : 'Gross sales',
+                          ],
+                          ['discountMinor', t.discount],
+                          ['refundsMinor', t.refund],
+                          ['shippingCollectedMinor', t.shippingCollected],
+                          ['taxMinor', t.tax],
+                          ['contributionProfitMinor', t.profit],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <Box
+                          key={key}
+                          data-testid={
+                            key === 'contributionProfitMinor' ? 'analytics-profit' : undefined
+                          }
+                        >
+                          <Typography variant="caption" color="text.secondary">
+                            {label}
+                          </Typography>
+                          <Typography fontWeight={700}>
+                            <MoneyValue
+                              value={currency.totals[key]}
+                              currency={currency.currency}
+                              locale={locale}
+                            />
+                          </Typography>
+                        </Box>
+                      ))}
+                    </Box>
                   </Stack>
                 </CardContent>
               </Card>
             ))}
           </Stack>
+
+          <Typography variant="caption" color="text.secondary">
+            {locale === 'ar'
+              ? 'الأرقام محسوبة من نسخ الطلبات المقروءة من WooCommerce؛ تُنسب المرتجعات لتاريخ الطلب الأصلي، وقد تختلف عن تقرير Woo Analytics الذي ينسبها لتاريخ الاسترجاع.'
+              : 'Calculated from read-only WooCommerce order snapshots. Refunds are attributed to the original order date, so date-filtered totals can differ from Woo Analytics reports.'}
+          </Typography>
 
           <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
             <Paper variant="outlined" sx={{ p: 2, flex: 1 }}>
@@ -1473,56 +1493,72 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
               <Typography variant="h6" component="h2" fontWeight={800}>
                 {t.breakdown}
               </Typography>
-              <FormControl size="small" sx={{ minWidth: 180 }}>
-                <InputLabel id="analytics-dimension-label">{t.breakdownDimension}</InputLabel>
-                <Select
-                  labelId="analytics-dimension-label"
-                  value={dimension}
-                  label={t.breakdownDimension}
-                  onChange={(event) => setDimension(event.target.value as AnalyticsDimension)}
-                >
-                  <MenuItem value="source">{t.dimensionSource}</MenuItem>
-                  <MenuItem value="store">{t.dimensionStore}</MenuItem>
-                  <MenuItem value="remoteStatus">{t.dimensionRemoteStatus}</MenuItem>
-                  <MenuItem value="localStatus">{t.dimensionLocalStatus}</MenuItem>
-                  <MenuItem value="exportState">{t.dimensionExportState}</MenuItem>
-                  <MenuItem value="governorate">{t.dimensionGovernorate}</MenuItem>
-                  <MenuItem value="customer">{t.dimensionCustomer}</MenuItem>
-                  <MenuItem value="shippingMethod">{t.dimensionShipping}</MenuItem>
-                  <MenuItem value="product">{t.dimensionProduct}</MenuItem>
-                  <MenuItem value="category">{t.dimensionCategory}</MenuItem>
-                  <MenuItem value="author">{t.dimensionAuthor}</MenuItem>
-                </Select>
-              </FormControl>
             </Stack>
+            <Tabs
+              value={dimension}
+              onChange={(_event, value: AnalyticsDimension) => setDimension(value)}
+              variant="scrollable"
+              scrollButtons="auto"
+              allowScrollButtonsMobile
+              aria-label={t.breakdownDimension}
+              sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
+            >
+              <Tab value="product" label={t.dimensionProduct} />
+              <Tab value="category" label={t.dimensionCategory} />
+              <Tab value="customer" label={t.dimensionCustomer} />
+              <Tab value="remoteStatus" label={t.dimensionRemoteStatus} />
+              <Tab value="governorate" label={t.dimensionGovernorate} />
+              <Tab value="shippingMethod" label={t.dimensionShipping} />
+              <Tab value="paymentMethod" label={t.payment} />
+            </Tabs>
             <Table size="small" aria-label={t.breakdown}>
               <TableHead>
                 <TableRow>
                   <TableCell>{t.breakdownDimension}</TableCell>
                   <TableCell>{t.currency}</TableCell>
-                  <TableCell>{t.revenue}</TableCell>
-                  <TableCell>{t.profit}</TableCell>
+                  <TableCell>
+                    {dimension === 'product' || dimension === 'category'
+                      ? locale === 'ar'
+                        ? 'مبيعات المنتجات بعد الخصم وقبل المرتجعات'
+                        : 'Item sales after discounts, before returns'
+                      : t.revenue}
+                  </TableCell>
+                  <TableCell>
+                    {dimension === 'product' || dimension === 'category'
+                      ? locale === 'ar'
+                        ? 'القطع المباعة'
+                        : 'Items sold'
+                      : t.profit}
+                  </TableCell>
                   <TableCell>{t.ordersCount}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {data.breakdown.map((item) => (
                   <TableRow key={`${item.key}-${item.currency}`}>
-                    <TableCell>{item.key}</TableCell>
+                    <TableCell>{item.label ?? item.key}</TableCell>
                     <TableCell>{item.currency}</TableCell>
                     <TableCell>
                       <MoneyValue
-                        value={item.totals.collectedRevenueMinor}
+                        value={
+                          dimension === 'product' || dimension === 'category'
+                            ? item.totals.netMerchandiseMinor
+                            : item.totals.collectedRevenueMinor
+                        }
                         currency={item.currency}
                         locale={locale}
                       />
                     </TableCell>
                     <TableCell>
-                      <MoneyValue
-                        value={item.totals.contributionProfitMinor}
-                        currency={item.currency}
-                        locale={locale}
-                      />
+                      {dimension === 'product' || dimension === 'category' ? (
+                        item.lineCount
+                      ) : (
+                        <MoneyValue
+                          value={item.totals.contributionProfitMinor}
+                          currency={item.currency}
+                          locale={locale}
+                        />
+                      )}
                     </TableCell>
                     <TableCell>{item.orderCount}</TableCell>
                   </TableRow>
@@ -1531,8 +1567,12 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
             </Table>
           </Paper>
 
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Typography variant="h6" component="h2" fontWeight={800} gutterBottom>
+          <Paper
+            component="details"
+            variant="outlined"
+            sx={{ p: 2, '& summary': { cursor: 'pointer' } }}
+          >
+            <Typography variant="h6" component="summary" fontWeight={800} gutterBottom>
               {t.formulas}
             </Typography>
             <Typography variant="body2" color="text.secondary" gutterBottom>
@@ -2518,7 +2558,9 @@ function ManualOrderForm({
   };
   const selectGovernorate = (value: string) => {
     setGovernorate(value);
-    const rate = config?.rates.find((candidate) => candidate.governorate === value);
+    const rate = config?.rates.find(
+      (candidate) => egyptianGovernorate(candidate.governorate)?.code === value,
+    );
     setShippingRateKey(rate ? `${rate.governorate}:${rate.methodId}:${rate.amountMinor}` : '');
     setShippingMinor(rate?.amountMinor ?? '0');
   };
@@ -2526,9 +2568,12 @@ function ManualOrderForm({
     config?.rates.find(
       (rate) => `${rate.governorate}:${rate.methodId}:${rate.amountMinor}` === shippingRateKey,
     ) ?? null;
-  const governorateRates = Array.from(
-    new Map((config?.rates ?? []).map((rate) => [rate.governorate, rate])).values(),
-  );
+  const governorateRates = EGYPTIAN_GOVERNORATES.map((governorate) => ({
+    ...governorate,
+    rate: config?.rates.find(
+      (candidate) => egyptianGovernorate(candidate.governorate)?.code === governorate.code,
+    ),
+  }));
   const currentManualLine = () => {
     const item = catalog.find((candidate) => candidate.id === selectedCatalogId);
     const parsedQuantity = Number(quantity);
@@ -2736,8 +2781,8 @@ function ManualOrderForm({
                 value={governorate}
                 onChange={(event) => selectGovernorate(event.target.value)}
               >
-                {governorateRates.map((rate) => (
-                  <MenuItem key={rate.governorate} value={rate.governorate}>
+                {governorateRates.map(({ code, rate }) => (
+                  <MenuItem key={code} value={code} disabled={!rate}>
                     <Stack
                       direction="row"
                       justifyContent="space-between"
@@ -2745,8 +2790,14 @@ function ManualOrderForm({
                       gap={2}
                       width="100%"
                     >
-                      <span>{egyptianGovernorateName(rate.governorate, locale)}</span>
-                      <MoneyValue value={rate.amountMinor} currency={currency} locale={locale} />
+                      <span>{egyptianGovernorateName(code, locale)}</span>
+                      {rate ? (
+                        <MoneyValue value={rate.amountMinor} currency={currency} locale={locale} />
+                      ) : (
+                        <span>
+                          {locale === 'ar' ? 'سعر الشحن غير متاح' : 'Shipping unavailable'}
+                        </span>
+                      )}
                     </Stack>
                   </MenuItem>
                 ))}
@@ -4023,6 +4074,8 @@ export function App({
   const [selectionMessage, setSelectionMessage] = useState('');
   const [viewName, setViewName] = useState('');
   const [savedViews, setSavedViews] = useState<SavedOrderView[]>([]);
+  const [selectedSavedViewId, setSelectedSavedViewId] = useState('');
+  const [activeSavedQuery, setActiveSavedQuery] = useState<JsonRecord | null>(null);
   const [visibleColumns, setVisibleColumns] = useState<string[]>([...defaultOrderColumns]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -4142,15 +4195,18 @@ export function App({
     return leaves.length === 1 ? leaves[0] : { op: 'and', children: leaves };
   }, [filters, status]);
   const currentOrderQuery = useMemo<JsonRecord>(
-    () => ({
-      search: search || undefined,
-      filter: orderFilter,
-      sort: { field: 'remoteCreatedAt', direction: 'desc' },
-    }),
-    [orderFilter, search],
+    () =>
+      activeSavedQuery ?? {
+        search: search || undefined,
+        filter: orderFilter,
+        sort: { field: 'remoteCreatedAt', direction: 'desc' },
+      },
+    [activeSavedQuery, orderFilter, search],
   );
 
-  const loadOrders = async (append = false) => {
+  const loadOrders = async (append = false, queryOverride?: JsonRecord) => {
+    const query = queryOverride ??
+      activeSavedQuery ?? { search: search || undefined, filter: orderFilter };
     setLoading(true);
     setError(false);
     setAuthRequired(false);
@@ -4160,8 +4216,8 @@ export function App({
         headers: { 'content-type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          search: search || undefined,
-          filter: orderFilter,
+          search: query.search,
+          filter: query.filter,
           includeFacets: true,
           cursor: append ? cursor : null,
           limit: 50,
@@ -4239,6 +4295,8 @@ export function App({
         ...current.filter((item) => item.id !== body.view.id),
       ]);
       setViewName('');
+      setSelectedSavedViewId(body.view.id);
+      setActiveSavedQuery(body.view.query);
       setSelectionMessage(body.view.name);
     } catch {
       setSelectionMessage('SAVED_VIEW_FAILED');
@@ -4246,11 +4304,38 @@ export function App({
   };
 
   const applySavedView = (viewId: string) => {
+    setSelectedSavedViewId(viewId);
     const saved = savedViews.find((item) => item.id === viewId);
-    if (!saved) return;
+    if (!saved) {
+      setActiveSavedQuery(null);
+      void loadOrders(false, { search: search || undefined, filter: orderFilter });
+      return;
+    }
+    setActiveSavedQuery(saved.query);
     setSearch(typeof saved.query.search === 'string' ? saved.query.search : '');
     setVisibleColumns(saved.columns.length > 0 ? saved.columns : [...columns]);
-    void loadOrders();
+    void loadOrders(false, saved.query);
+  };
+
+  const deleteSavedView = async () => {
+    if (!selectedSavedViewId) return;
+    try {
+      const response = await fetch(
+        `/api/v1/saved-views/${encodeURIComponent(selectedSavedViewId)}`,
+        {
+          method: 'DELETE',
+          credentials: 'include',
+          headers: { 'x-csrf-token': csrfToken() },
+        },
+      );
+      if (!response.ok) throw new Error('SAVED_VIEW_DELETE_FAILED');
+      setSavedViews((current) => current.filter((item) => item.id !== selectedSavedViewId));
+      setSelectedSavedViewId('');
+      setActiveSavedQuery(null);
+      setSelectionMessage(locale === 'ar' ? 'تم حذف الفلتر المحفوظ' : 'Saved filter deleted');
+    } catch {
+      setSelectionMessage('SAVED_VIEW_DELETE_FAILED');
+    }
   };
 
   const toggleOrderSelection = (orderId: string) => {
@@ -4547,33 +4632,39 @@ export function App({
         : t.originWoo
       : column === 'total'
         ? formatMinor(order.grandTotalMinor, valueText(order.currency, ''), locale)
-        : column === 'customerName'
-          ? valueText(order.customerName ?? orderCustomerName(order))
-          : column === 'customerEmail'
-            ? valueText(order.customerEmail ?? asRecord(order.billing).email)
-            : column === 'customerPhone'
-              ? valueText(order.customerPhone ?? asRecord(order.billing).phone)
-              : column === 'paymentMethod'
-                ? valueText(order.paymentMethodTitle ?? asRecord(order.payment).title)
-                : column === 'shippingMethod'
-                  ? valueText(order.shippingMethodTitle ?? asRecord(order.shippingMethod).title)
-                  : column === 'posLocation'
-                    ? valueText(order.posLocation ?? order.pos)
-                    : column === 'quantityTotal'
-                      ? valueText(order.quantityTotal)
-                      : column === 'createdAt'
-                        ? dateText(order.createdAt ?? order.remoteCreatedAt, locale)
-                        : column === 'updatedAt'
-                          ? dateText(order.updatedAt, locale)
-                          : column === 'exportState'
-                            ? order.exportState === 'never-exported'
-                              ? t.never
-                              : order.exportState === 'exported'
-                                ? t.exported
-                                : order.exportState === 'changed-after-export'
-                                  ? t.changedAfterExport
-                                  : valueText(order.exportState)
-                            : valueText(order[column]);
+        : column === 'remoteExportStatus'
+          ? order.remoteExportStatus == null
+            ? locale === 'ar'
+              ? 'غير متاح عبر Woo REST'
+              : 'Not exposed by Woo REST'
+            : valueText(order.remoteExportStatus)
+          : column === 'customerName'
+            ? valueText(order.customerName ?? orderCustomerName(order))
+            : column === 'customerEmail'
+              ? valueText(order.customerEmail ?? asRecord(order.billing).email)
+              : column === 'customerPhone'
+                ? valueText(order.customerPhone ?? asRecord(order.billing).phone)
+                : column === 'paymentMethod'
+                  ? valueText(order.paymentMethodTitle ?? asRecord(order.payment).title)
+                  : column === 'shippingMethod'
+                    ? valueText(order.shippingMethodTitle ?? asRecord(order.shippingMethod).title)
+                    : column === 'posLocation'
+                      ? valueText(order.posLocation ?? order.pos)
+                      : column === 'quantityTotal'
+                        ? valueText(order.quantityTotal)
+                        : column === 'createdAt'
+                          ? dateText(order.createdAt ?? order.remoteCreatedAt, locale)
+                          : column === 'updatedAt'
+                            ? dateText(order.updatedAt, locale)
+                            : column === 'exportState'
+                              ? order.exportState === 'never-exported'
+                                ? t.never
+                                : order.exportState === 'exported'
+                                  ? t.exported
+                                  : order.exportState === 'changed-after-export'
+                                    ? t.changedAfterExport
+                                    : valueText(order.exportState)
+                              : valueText(order[column]);
 
   if (authStatus === 'checking')
     return (
@@ -4740,7 +4831,9 @@ export function App({
               component="form"
               onSubmit={(event) => {
                 event.preventDefault();
-                void loadOrders();
+                setSelectedSavedViewId('');
+                setActiveSavedQuery(null);
+                void loadOrders(false, { search: search || undefined, filter: orderFilter });
               }}
             >
               <Box
@@ -4770,7 +4863,11 @@ export function App({
                     value={status}
                     labelId="orders-status-label"
                     label={t.status}
-                    onChange={(event) => setStatus(event.target.value)}
+                    onChange={(event) => {
+                      setSelectedSavedViewId('');
+                      setActiveSavedQuery(null);
+                      setStatus(event.target.value);
+                    }}
                   >
                     <MenuItem value="">{t.all}</MenuItem>
                     {facetValues('remoteStatus').map((value) => (
@@ -4869,7 +4966,7 @@ export function App({
                     <FormControl size="small" sx={{ minWidth: 220, flex: 1 }}>
                       <InputLabel id="orders-saved-view-label">{t.savedViews}</InputLabel>
                       <Select
-                        value=""
+                        value={selectedSavedViewId}
                         labelId="orders-saved-view-label"
                         label={t.savedViews}
                         onChange={(event) => applySavedView(event.target.value)}
@@ -4881,6 +4978,16 @@ export function App({
                         ))}
                       </Select>
                     </FormControl>
+                    <Button
+                      type="button"
+                      size="small"
+                      color="error"
+                      variant="outlined"
+                      onClick={() => void deleteSavedView()}
+                      disabled={!selectedSavedViewId}
+                    >
+                      {locale === 'ar' ? 'حذف الفلتر' : 'Delete filter'}
+                    </Button>
                     <TextField
                       size="small"
                       label={t.viewName}
