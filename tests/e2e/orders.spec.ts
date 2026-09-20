@@ -154,6 +154,16 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
   const filterGrid = page.getByTestId('advanced-order-filters');
   await expect(filterGrid).toBeVisible();
   await expect(page.getByLabel('المحافظة / المنطقة')).toBeVisible();
+  const governorateControl = page
+    .getByLabel('المحافظة / المنطقة')
+    .locator('xpath=ancestor::div[contains(@class,"MuiAutocomplete-root")]');
+  const [governorateBox, governorateIndicatorBox] = await Promise.all([
+    governorateControl.boundingBox(),
+    governorateControl.locator('.MuiAutocomplete-popupIndicator').boundingBox(),
+  ]);
+  expect(governorateBox).not.toBeNull();
+  expect(governorateIndicatorBox).not.toBeNull();
+  expect(governorateIndicatorBox!.x).toBeLessThan(governorateBox!.x + governorateBox!.width / 2);
   await page.getByLabel('المحافظة / المنطقة').click();
   await page.getByRole('option', { name: 'القاهرة' }).click();
   await page.getByRole('button', { name: 'بحث', exact: true }).click();
@@ -171,6 +181,14 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
   await expect(row).toHaveCount(1);
   await row.press('Enter');
   await expect(page.getByText('بيانات المنصة')).toBeVisible();
+  const arabicDrawerBox = await page
+    .locator('.MuiDrawer-paper[role="dialog"]:visible')
+    .filter({ hasText: 'بيانات المنصة' })
+    .boundingBox();
+  expect(arabicDrawerBox).not.toBeNull();
+  expect(arabicDrawerBox!.x + arabicDrawerBox!.width / 2).toBeGreaterThan(
+    page.viewportSize()!.width / 2,
+  );
   await expect(page.getByText('قميص قطني')).toBeVisible();
 
   const itemsTab = page.getByRole('tab', { name: 'المنتجات' });
@@ -187,6 +205,16 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
   await languageButton.click();
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.getByRole('heading', { name: 'Orders workspace' })).toBeVisible();
+  await page.getByTestId('order-row-order-1').press('Enter');
+  await expect(page.getByText('Platform facts')).toBeVisible();
+  const englishDrawerBox = await page
+    .locator('.MuiDrawer-paper[role="dialog"]:visible')
+    .filter({ hasText: 'Platform facts' })
+    .boundingBox();
+  expect(englishDrawerBox).not.toBeNull();
+  expect(englishDrawerBox!.x + englishDrawerBox!.width / 2).toBeLessThan(
+    page.viewportSize()!.width / 2,
+  );
 });
 
 test('has no automated accessibility violations in the orders workspace @a11y @orders', async ({
