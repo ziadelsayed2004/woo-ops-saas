@@ -2498,6 +2498,48 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0918",
+      "epic": "E09",
+      "title": "Read modern Woo export taxonomy status",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "S",
+      "parallelGroup": "woo-export-status-bridge",
+      "dependencies": ["T0917"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/SYNC_AND_CONNECTORS.md",
+        ".agentpack/architecture/TESTING.md",
+        "integrations/wordpress/woo-ops-export-status-bridge/woo-ops-export-status-bridge.php",
+        "integrations/wordpress/woo-ops-export-status-bridge/README.md",
+        "packages/connectors/tests/security.test.js"
+      ],
+      "scope": [
+        "Read the modern Customer Order Coupon Export global order taxonomy while retaining legacy metadata compatibility",
+        "Keep the companion endpoint authenticated, bounded and strictly read-only",
+        "Ship a versioned replacement ZIP and regression evidence for the production plugin upgrade"
+      ],
+      "acceptance": [
+        "Orders marked globally exported by current Woo Customer Order Coupon Export return exported",
+        "Legacy metadata values remain supported and unexported orders return not_exported",
+        "The endpoint exposes no raw metadata or mutation route and remains bounded to 100 IDs",
+        "A ready-to-upload replacement ZIP and upgrade instructions are produced"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
