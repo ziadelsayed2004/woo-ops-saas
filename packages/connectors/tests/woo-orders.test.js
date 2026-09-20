@@ -52,6 +52,18 @@ test('normalizes Woo order money, dates, lines, and refunds deterministically', 
   assert.equal(normalized.sourceHash, normalizeWooOrder(fixture).sourceHash);
 });
 
+test('never mistakes Paymob identifiers for a Woo export status', () => {
+  const normalized = normalizeWooOrder({
+    ...fixture,
+    meta_data: [
+      { id: 1, key: 'Paymob Merchant Order ID', value: '1799875497' },
+      { id: 2, key: 'paymob_transaction_id', value: '538041195' },
+    ],
+  });
+  assert.equal(normalized.remoteExportStatus, null);
+  assert.equal(normalized.remoteExportStatusKey, null);
+});
+
 test('pulls orders read-only and resumes at a requested page', async () => {
   const calls = [];
   const connector = new WooCommerceConnector(

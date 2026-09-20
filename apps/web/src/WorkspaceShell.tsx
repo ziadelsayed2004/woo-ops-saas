@@ -200,14 +200,32 @@ export function WorkspaceShell({
         ))}
       </Box>
       <Divider />
-      <Stack p={1.5} gap={1}>
+      <Stack p={1.25} gap={1}>
         {(!collapsed || mobile) && (
-          <Typography variant="caption" color="text.secondary" noWrap dir="ltr">
-            {userEmail}
-          </Typography>
+          <Box
+            sx={{
+              px: 1.25,
+              py: 1,
+              bgcolor: 'background.default',
+              borderRadius: 2,
+              minWidth: 0,
+            }}
+          >
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              noWrap
+              dir="ltr"
+              title={userEmail}
+              sx={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >
+              {userEmail}
+            </Typography>
+          </Box>
         )}
         {!mobile && (
           <Button
+            variant="outlined"
             color="inherit"
             onClick={() => setCollapsed((value) => !value)}
             aria-label={copy.collapse}
@@ -217,6 +235,9 @@ export function WorkspaceShell({
             sx={{
               justifyContent: collapsed ? 'center' : 'flex-start',
               minWidth: 0,
+              width: '100%',
+              minHeight: 42,
+              borderColor: 'divider',
               px: collapsed ? 1 : 1.5,
               '& .MuiButton-startIcon': { m: 0, me: 1 },
             }}

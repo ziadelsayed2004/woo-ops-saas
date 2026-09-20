@@ -37,6 +37,15 @@ async function mockExports(page: Page) {
   await page.route('**/api/v1/export-batches', async (route: Route) => {
     await route.fulfill({ json: { items: [] } });
   });
+  await page.route('**/api/v1/document-jobs?limit=30', async (route: Route) => {
+    await route.fulfill({ json: { items: [] } });
+  });
+  await page.route('**/api/v1/saved-views', async (route: Route) => {
+    await route.fulfill({ json: { items: [] } });
+  });
+  await page.route('**/api/v1/selections', async (route: Route) => {
+    await route.fulfill({ json: { selection: { id: 'selection-1' } } });
+  });
   await page.route('**/api/v1/export-profiles/profile-1/preview', async (route: Route) => {
     await route.fulfill({
       json: {
@@ -63,9 +72,27 @@ test('renders the export workspace with profile, selection preview, and progress
   await page.getByRole('button', { name: 'Exports' }).click();
   await expect(page.getByTestId('exports-workspace')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Order exports' })).toBeVisible();
-  await page.getByLabel('Selection ID').fill('selection-1');
+  await expect(page.getByLabel('Orders to export')).toContainText('Current orders filter');
   await page.getByRole('button', { name: 'Preview' }).click();
   await expect(page.getByTestId('export-preview')).toContainText('1001');
+});
+
+test('reuses bounded export reads when revisiting the workspace @exports', async ({ page }) => {
+  let profileReads = 0;
+  await mockExports(page);
+  await page.unroute('**/api/v1/export-profiles');
+  await page.route('**/api/v1/export-profiles', async (route: Route) => {
+    profileReads += 1;
+    await route.fulfill({ json: { items: [profile] } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'English' }).click();
+  await page.getByRole('button', { name: 'Exports' }).click();
+  await expect(page.getByTestId('exports-workspace')).toBeVisible();
+  await page.getByRole('button', { name: 'Orders workspace' }).click();
+  await page.getByRole('button', { name: 'Exports' }).click();
+  await expect(page.getByTestId('exports-workspace')).toBeVisible();
+  expect(profileReads).toBe(1);
 });
 
 test('export workspace has no automated accessibility violations @a11y @exports', async ({

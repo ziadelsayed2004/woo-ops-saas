@@ -562,8 +562,20 @@ export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
     const meta = asRecord(item);
     return meta && typeof meta.key === 'string' ? [{ key: meta.key, value: meta.value }] : [];
   });
+  const remoteExportKeys = new Set([
+    '_order_export_status',
+    'order_export_status',
+    '_wc_order_export_status',
+    'wc_order_export_status',
+    '_wc_export_status',
+    'wc_export_status',
+    '_export_status',
+    'export_status',
+    '_order_exported',
+    'order_exported',
+  ]);
   const remoteExportMetadata = metadata.find((item) =>
-    /(?:^|[_-])export(?:ed)?(?:[_-](?:status|state|date|at))?(?:$|[_-])/iu.test(item.key),
+    remoteExportKeys.has(item.key.trim().toLowerCase()),
   );
   const remoteExportValue = asRecord(remoteExportMetadata?.value);
   const remoteExportScalar =

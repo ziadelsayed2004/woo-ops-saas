@@ -45,6 +45,27 @@ import { egyptianGovernorateName } from '@woo-ops/domain';
 type Locale = 'ar' | 'en';
 type Direction = 'rtl' | 'ltr';
 type JsonRecord = Record<string, unknown>;
+type CachedJson = { expiresAt: number; value: unknown };
+const readCache = new Map<string, CachedJson>();
+const inflightReads = new Map<string, Promise<unknown>>();
+
+async function cachedGetJson<T>(url: string, ttlMs = 30_000, force = false): Promise<T> {
+  const now = Date.now();
+  const cached = readCache.get(url);
+  if (!force && cached && cached.expiresAt > now) return cached.value as T;
+  const inflight = inflightReads.get(url);
+  if (!force && inflight) return inflight as Promise<T>;
+  const request = fetch(url, { credentials: 'include' })
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`READ_FAILED:${response.status}`);
+      const value = (await response.json()) as T;
+      readCache.set(url, { value, expiresAt: Date.now() + ttlMs });
+      return value;
+    })
+    .finally(() => inflightReads.delete(url));
+  inflightReads.set(url, request);
+  return request;
+}
 type Order = JsonRecord & {
   id: string;
   orderNumber?: string;
@@ -3408,29 +3429,55 @@ type ExportBatchSummary = {
   job?: { progress: number; status: string } | null;
 };
 
-function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof copy)[Locale] }) {
+function ExportsWorkspace({
+  direction,
+  t,
+  savedViews,
+  currentOrderQuery,
+}: {
+  direction: Direction;
+  t: (typeof copy)[Locale];
+  savedViews: SavedOrderView[];
+  currentOrderQuery: JsonRecord;
+}) {
   const [profiles, setProfiles] = useState<ExportProfileSummary[]>([]);
   const [versions, setVersions] = useState<ExportVersionSummary[]>([]);
   const [batches, setBatches] = useState<ExportBatchSummary[]>([]);
   const [profileId, setProfileId] = useState('');
   const [versionId, setVersionId] = useState('');
-  const [selectionId, setSelectionId] = useState('');
+  const [selectionSource, setSelectionSource] = useState('current');
+  const [documentBatches, setDocumentBatches] = useState<DocumentBatchSummary[]>([]);
+  const [documentArtifacts, setDocumentArtifacts] = useState<
+    Record<string, DocumentArtifactSummary[]>
+  >({});
   const [profileName, setProfileName] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [preview, setPreview] = useState<JsonRecord | null>(null);
 
-  const loadBatches = async () => {
-    const response = await fetch('/api/v1/export-batches', { credentials: 'include' });
-    if (!response.ok) throw new Error('EXPORT_BATCHES_LOAD_FAILED');
-    const body = (await response.json()) as { items?: ExportBatchSummary[] };
+  const loadBatches = async (force = false) => {
+    const body = await cachedGetJson<{ items?: ExportBatchSummary[] }>(
+      '/api/v1/export-batches',
+      10_000,
+      force,
+    );
     setBatches(body.items ?? []);
   };
 
+  const loadDocumentBatches = async (force = false) => {
+    const body = await cachedGetJson<{ items?: DocumentBatchSummary[] }>(
+      '/api/v1/document-jobs?limit=30',
+      15_000,
+      force,
+    );
+    setDocumentBatches(body.items ?? []);
+  };
+
   const loadProfiles = async () => {
-    const response = await fetch('/api/v1/export-profiles', { credentials: 'include' });
-    if (!response.ok) throw new Error('EXPORT_PROFILES_LOAD_FAILED');
-    const body = (await response.json()) as { items?: ExportProfileSummary[] };
+    const body = await cachedGetJson<{ items?: ExportProfileSummary[] }>(
+      '/api/v1/export-profiles',
+      60_000,
+    );
     const items = body.items ?? [];
     setProfiles(items);
     const nextProfile = items.find((item) => item.active) ?? items[0];
@@ -3443,12 +3490,10 @@ function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof c
       setVersionId('');
       return;
     }
-    const response = await fetch(
+    const body = await cachedGetJson<{ items?: ExportVersionSummary[] }>(
       `/api/v1/export-profiles/${encodeURIComponent(nextProfileId)}/versions`,
-      { credentials: 'include' },
+      60_000,
     );
-    if (!response.ok) throw new Error('EXPORT_VERSIONS_LOAD_FAILED');
-    const body = (await response.json()) as { items?: ExportVersionSummary[] };
     const items = body.items ?? [];
     setVersions(items);
     setVersionId(items[0]?.id ?? '');
@@ -3456,7 +3501,7 @@ function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof c
 
   useEffect(() => {
     setLoading(true);
-    void Promise.all([loadProfiles(), loadBatches()])
+    void Promise.all([loadProfiles(), loadBatches(), loadDocumentBatches()])
       .catch(() => setMessage('EXPORT_LOAD_FAILED'))
       .finally(() => setLoading(false));
   }, []);
@@ -3468,10 +3513,29 @@ function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof c
   useEffect(() => {
     if (!batches.some((batch) => batch.status === 'queued' || batch.status === 'running')) return;
     const timer = window.setInterval(() => {
-      void loadBatches().catch(() => setMessage('EXPORT_BATCHES_LOAD_FAILED'));
+      void loadBatches(true).catch(() => setMessage('EXPORT_BATCHES_LOAD_FAILED'));
     }, 1_000);
     return () => window.clearInterval(timer);
   }, [batches]);
+
+  const createSelectionFromSource = async (): Promise<string> => {
+    const saved = savedViews.find((item) => item.id === selectionSource.replace(/^saved:/u, ''));
+    const query =
+      selectionSource === 'all'
+        ? { sort: { field: 'remoteCreatedAt', direction: 'desc' } }
+        : saved
+          ? { ...saved.query, ...(saved.sort ? { sort: saved.sort } : {}) }
+          : currentOrderQuery;
+    const response = await fetch('/api/v1/selections', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+      body: JSON.stringify({ mode: 'query', query }),
+    });
+    if (!response.ok) throw new Error('SELECTION_CREATE_FAILED');
+    const body = (await response.json()) as { selection: { id: string } };
+    return body.selection.id;
+  };
 
   const createProfile = async () => {
     if (!profileName.trim()) return;
@@ -3529,6 +3593,7 @@ function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof c
         },
       );
       if (!response.ok) throw new Error('EXPORT_VERSION_CREATE_FAILED');
+      readCache.delete(`/api/v1/export-profiles/${encodeURIComponent(profileId)}/versions`);
       await loadVersions(profileId);
       setMessage('EXPORT_VERSION_CREATED');
     } catch {
@@ -3539,16 +3604,17 @@ function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof c
   };
 
   const previewExport = async () => {
-    if (!profileId || !versionId || !selectionId.trim()) return;
+    if (!profileId || !versionId) return;
     setLoading(true);
     try {
+      const nextSelectionId = await createSelectionFromSource();
       const response = await fetch(
         `/api/v1/export-profiles/${encodeURIComponent(profileId)}/preview`,
         {
           method: 'POST',
           credentials: 'include',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ selectionId: selectionId.trim(), profileVersionId: versionId }),
+          body: JSON.stringify({ selectionId: nextSelectionId, profileVersionId: versionId }),
         },
       );
       if (!response.ok) throw new Error('EXPORT_PREVIEW_FAILED');
@@ -3563,15 +3629,16 @@ function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof c
   };
 
   const createBatch = async () => {
-    if (!selectionId.trim() || !versionId) return;
+    if (!versionId) return;
     setLoading(true);
     try {
+      const nextSelectionId = await createSelectionFromSource();
       const response = await fetch('/api/v1/export-batches', {
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
         body: JSON.stringify({
-          selectionId: selectionId.trim(),
+          selectionId: nextSelectionId,
           profileVersionId: versionId,
           idempotencyKey: `web-export-${Date.now()}`,
         }),
@@ -3580,7 +3647,7 @@ function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof c
       const body = (await response.json()) as { batch: ExportBatchSummary };
       setBatches((current) => [body.batch, ...current.filter((item) => item.id !== body.batch.id)]);
       setMessage('EXPORT_QUEUED');
-      await loadBatches();
+      await loadBatches(true);
     } catch {
       setMessage('EXPORT_CREATE_FAILED');
     } finally {
@@ -3597,7 +3664,7 @@ function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof c
         headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
       });
       if (!response.ok) throw new Error('EXPORT_RETRY_FAILED');
-      await loadBatches();
+      await loadBatches(true);
       setMessage('EXPORT_RETRY_QUEUED');
     } catch {
       setMessage('EXPORT_RETRY_FAILED');
@@ -3671,12 +3738,28 @@ function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof c
             {t.createExport}
           </Typography>
           <Stack direction={{ xs: 'column', md: 'row' }} gap={2} flexWrap="wrap">
-            <TextField
-              size="small"
-              label={t.exportSelectionId}
-              value={selectionId}
-              onChange={(event) => setSelectionId(event.target.value)}
-            />
+            <FormControl size="small" sx={{ minWidth: 260 }}>
+              <InputLabel id="export-source-label">
+                {direction === 'rtl' ? 'الطلبات المطلوب تصديرها' : 'Orders to export'}
+              </InputLabel>
+              <Select
+                labelId="export-source-label"
+                label={direction === 'rtl' ? 'الطلبات المطلوب تصديرها' : 'Orders to export'}
+                value={selectionSource}
+                onChange={(event) => setSelectionSource(event.target.value)}
+              >
+                <MenuItem value="current">
+                  {direction === 'rtl' ? 'الفلتر الحالي في الطلبات' : 'Current orders filter'}
+                </MenuItem>
+                <MenuItem value="all">{direction === 'rtl' ? 'كل الطلبات' : 'All orders'}</MenuItem>
+                {savedViews.map((saved) => (
+                  <MenuItem key={saved.id} value={`saved:${saved.id}`}>
+                    {direction === 'rtl' ? 'فلتر محفوظ: ' : 'Saved filter: '}
+                    {saved.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <FormControl size="small" sx={{ minWidth: 240 }}>
               <InputLabel id="export-version-label">{t.exportVersion}</InputLabel>
               <Select
@@ -3695,14 +3778,14 @@ function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof c
             <Button
               variant="outlined"
               onClick={() => void previewExport()}
-              disabled={loading || !versionId || !selectionId.trim()}
+              disabled={loading || !versionId}
             >
               {t.exportPreview}
             </Button>
             <Button
               variant="contained"
               onClick={() => void createBatch()}
-              disabled={loading || !versionId || !selectionId.trim()}
+              disabled={loading || !versionId}
             >
               {loading ? <CircularProgress size={18} aria-label={t.loading} /> : t.createExport}
             </Button>
@@ -3725,7 +3808,7 @@ function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof c
           <Typography variant="h6" component="h2" fontWeight={800}>
             {t.exportBatches}
           </Typography>
-          <Button size="small" onClick={() => void loadBatches()} disabled={loading}>
+          <Button size="small" onClick={() => void loadBatches(true)} disabled={loading}>
             {t.refresh}
           </Button>
         </Stack>
@@ -3782,6 +3865,89 @@ function ExportsWorkspace({ direction, t }: { direction: Direction; t: (typeof c
           </Table>
         </TableContainer>
         {batches.length === 0 && (
+          <Typography color="text.secondary" sx={{ py: 2 }}>
+            {t.noData}
+          </Typography>
+        )}
+      </Paper>
+      <Paper variant="outlined" sx={{ p: 2 }} data-testid="export-document-jobs">
+        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+          <Box>
+            <Typography variant="h6" component="h2" fontWeight={800}>
+              {direction === 'rtl' ? 'أوامر الفواتير والطباعة' : 'Invoice and print commands'}
+            </Typography>
+            <Typography color="text.secondary" variant="body2">
+              {direction === 'rtl'
+                ? 'الفواتير الحرارية وبوليصات الشحن وملفات PDF المنشأة من الطلبات.'
+                : 'Thermal receipts, shipping labels and PDF jobs created from orders.'}
+            </Typography>
+          </Box>
+          <Button size="small" onClick={() => void loadDocumentBatches(true)} disabled={loading}>
+            {t.refresh}
+          </Button>
+        </Stack>
+        <TableContainer>
+          <Table
+            size="small"
+            aria-label={direction === 'rtl' ? 'أوامر المستندات' : 'Document jobs'}
+          >
+            <TableHead>
+              <TableRow>
+                <TableCell>{t.status}</TableCell>
+                <TableCell>{t.format}</TableCell>
+                <TableCell>{t.total}</TableCell>
+                <TableCell>{t.actions}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {documentBatches.map((batch) => (
+                <TableRow key={batch.id}>
+                  <TableCell>
+                    <Chip size="small" label={batch.status} />
+                  </TableCell>
+                  <TableCell>{batch.format}</TableCell>
+                  <TableCell dir="ltr">
+                    {batch.succeededCount}/{batch.totalCount}
+                  </TableCell>
+                  <TableCell>
+                    <Stack direction="row" gap={1} flexWrap="wrap">
+                      <Button
+                        size="small"
+                        onClick={() =>
+                          void fetch(`/api/v1/document-jobs/${encodeURIComponent(batch.id)}`, {
+                            credentials: 'include',
+                          })
+                            .then(async (response) => {
+                              if (!response.ok) throw new Error('DOCUMENT_JOB_LOAD_FAILED');
+                              const body = (await response.json()) as DocumentBatchDetails;
+                              setDocumentArtifacts((current) => ({
+                                ...current,
+                                [batch.id]: body.artifacts ?? [],
+                              }));
+                            })
+                            .catch(() => setMessage('DOCUMENT_JOB_LOAD_FAILED'))
+                        }
+                      >
+                        {direction === 'rtl' ? 'عرض الملفات' : 'Show files'}
+                      </Button>
+                      {(documentArtifacts[batch.id] ?? []).map((artifact) => (
+                        <Button
+                          key={artifact.id}
+                          size="small"
+                          component="a"
+                          href={`/api/v1/document-artifacts/${encodeURIComponent(artifact.id)}?download=1`}
+                        >
+                          {direction === 'rtl' ? 'تنزيل' : 'Download'} {artifact.filename}
+                        </Button>
+                      ))}
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        {documentBatches.length === 0 && (
           <Typography color="text.secondary" sx={{ py: 2 }}>
             {t.noData}
           </Typography>
@@ -3844,6 +4010,7 @@ export function App({
   const [status, setStatus] = useState('');
   const [filters, setFilters] = useState<OrderFilters>(emptyOrderFilters);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [savedFiltersOpen, setSavedFiltersOpen] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [orderFacets, setOrderFacets] = useState<NonNullable<QueryResponse['facets']>>([]);
   const [catalogOptions, setCatalogOptions] = useState<CatalogItemView[]>([]);
@@ -3921,6 +4088,8 @@ export function App({
   }, [authStatus, locale]);
 
   const expireSession = () => {
+    readCache.clear();
+    inflightReads.clear();
     setAuthUser(null);
     setAuthStatus('unauthenticated');
     setSessionMessage(sessionExpiredLabel(locale));
@@ -3935,6 +4104,8 @@ export function App({
         body: '{}',
       });
     } finally {
+      readCache.clear();
+      inflightReads.clear();
       setAuthUser(null);
       setAuthStatus('unauthenticated');
     }
@@ -3970,6 +4141,14 @@ export function App({
     if (leaves.length === 0) return undefined;
     return leaves.length === 1 ? leaves[0] : { op: 'and', children: leaves };
   }, [filters, status]);
+  const currentOrderQuery = useMemo<JsonRecord>(
+    () => ({
+      search: search || undefined,
+      filter: orderFilter,
+      sort: { field: 'remoteCreatedAt', direction: 'desc' },
+    }),
+    [orderFilter, search],
+  );
 
   const loadOrders = async (append = false) => {
     setLoading(true);
@@ -4493,7 +4672,12 @@ export function App({
         ) : view === 'documents' ? (
           <DocumentsWorkspace direction={direction} t={t} />
         ) : view === 'exports' ? (
-          <ExportsWorkspace direction={direction} t={t} />
+          <ExportsWorkspace
+            direction={direction}
+            t={t}
+            savedViews={savedViews}
+            currentOrderQuery={currentOrderQuery}
+          />
         ) : view === 'analytics' ? (
           <AnalyticsWorkspace locale={locale} t={t} />
         ) : view === 'catalog' ? (
@@ -4658,37 +4842,64 @@ export function App({
                 >
                   {advancedOpen ? t.hideFilters : t.advancedFilters}
                 </Button>
-                <FormControl size="small" sx={{ minWidth: 190 }}>
-                  <InputLabel id="orders-saved-view-label">{t.savedViews}</InputLabel>
-                  <Select
-                    value=""
-                    labelId="orders-saved-view-label"
-                    label={t.savedViews}
-                    onChange={(event) => applySavedView(event.target.value)}
-                  >
-                    {savedViews.map((saved) => (
-                      <MenuItem key={saved.id} value={saved.id}>
-                        {saved.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                <TextField
-                  size="small"
-                  label={t.viewName}
-                  value={viewName}
-                  onChange={(event) => setViewName(event.target.value)}
-                  sx={{ minWidth: 170 }}
-                />
                 <Button
                   type="button"
                   size="small"
-                  onClick={() => void saveCurrentView()}
-                  disabled={!viewName.trim()}
+                  variant={savedFiltersOpen ? 'contained' : 'outlined'}
+                  onClick={() => setSavedFiltersOpen((current) => !current)}
+                  aria-expanded={savedFiltersOpen}
+                  aria-controls="saved-order-filters"
                 >
-                  {t.saveView}
+                  {t.savedViews}
+                  {savedViews.length > 0 ? ` (${savedViews.length})` : ''}
                 </Button>
               </Stack>
+              {savedFiltersOpen && (
+                <Paper
+                  id="saved-order-filters"
+                  data-testid="saved-order-filters"
+                  variant="outlined"
+                  sx={{ mt: 2, p: 1.5, bgcolor: 'background.default' }}
+                >
+                  <Stack
+                    direction={{ xs: 'column', md: 'row' }}
+                    gap={1.5}
+                    alignItems={{ md: 'center' }}
+                  >
+                    <FormControl size="small" sx={{ minWidth: 220, flex: 1 }}>
+                      <InputLabel id="orders-saved-view-label">{t.savedViews}</InputLabel>
+                      <Select
+                        value=""
+                        labelId="orders-saved-view-label"
+                        label={t.savedViews}
+                        onChange={(event) => applySavedView(event.target.value)}
+                      >
+                        {savedViews.map((saved) => (
+                          <MenuItem key={saved.id} value={saved.id}>
+                            {saved.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <TextField
+                      size="small"
+                      label={t.viewName}
+                      value={viewName}
+                      onChange={(event) => setViewName(event.target.value)}
+                      sx={{ minWidth: 220, flex: 1 }}
+                    />
+                    <Button
+                      type="button"
+                      size="small"
+                      variant="contained"
+                      onClick={() => void saveCurrentView()}
+                      disabled={!viewName.trim()}
+                    >
+                      {t.saveView}
+                    </Button>
+                  </Stack>
+                </Paper>
+              )}
               {advancedOpen && (
                 <Box
                   data-testid="advanced-order-filters"

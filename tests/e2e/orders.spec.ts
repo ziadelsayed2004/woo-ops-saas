@@ -132,6 +132,14 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
   expect(await scroller.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(
     true,
   );
+  await expect(page.getByTestId('saved-order-filters')).toHaveCount(0);
+  const savedFiltersButton = page.locator('button[aria-controls="saved-order-filters"]');
+  await savedFiltersButton.click();
+  await expect(page.getByTestId('saved-order-filters')).toBeVisible();
+  await expect(page.getByTestId('orders-table').locator('th').nth(1)).toHaveCSS(
+    'text-align',
+    'right',
+  );
   await expect(page.getByText('لم يُصدّر', { exact: true })).toBeVisible();
 
   await page.getByTestId('order-row-order-1').getByRole('checkbox').check();
