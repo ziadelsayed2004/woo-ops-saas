@@ -2795,7 +2795,7 @@
     {
       "id": "T0924",
       "epic": "E09",
-      "title": "Deliver completed order exports without hidden downloads",
+      "title": "Organize order export and print commands below the orders grid",
       "type": "fix",
       "phase": 9,
       "priority": "P0",
@@ -2812,14 +2812,14 @@
         "tests/e2e/orders.spec.ts"
       ],
       "scope": [
-        "Make the newly created export batch visible immediately beside the orders instead of below the long grid",
-        "Automatically initiate one authenticated download when that batch completes, preserving the repeat download action",
-        "Distinguish queued, failed and completed export states in user-facing feedback without confusing an accepted job with a downloaded file"
+        "Keep export and print jobs in a clearly titled section below the orders grid",
+        "Expose repeat downloads for completed Excel, CSV, A4 PDF, thermal receipt and shipping-label jobs",
+        "Distinguish queued, failed and completed export states without automatically downloading files"
       ],
       "acceptance": [
-        "Creating a selected-order export shows its progress near the controls",
-        "A completed batch initiates exactly one browser download and retains its repeat-download link",
-        "A failed batch displays its cause and retry without silently claiming download success",
+        "Creating a selected-order export or print job adds it to the commands section below the orders grid",
+        "Completed Excel, CSV, A4 PDF, thermal receipt and shipping-label jobs expose working download actions",
+        "Failed jobs display their cause and retry without claiming download success",
         "Browser, typecheck and affected repository checks pass"
       ],
       "validation": [

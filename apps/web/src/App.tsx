@@ -3607,18 +3607,26 @@ function ExportsWorkspace({
 
   return (
     <Stack gap={3} data-testid="exports-workspace" dir={direction}>
-      {!historyOnly && (
-        <Box>
-          <Typography
-            variant={historyOnly ? 'h6' : 'h4'}
-            component={historyOnly ? 'h2' : 'h1'}
-            fontWeight={800}
-          >
-            {historyOnly ? t.exportBatches : t.exportsTitle}
-          </Typography>
-          {!historyOnly && <Typography color="text.secondary">{t.exportsSubtitle}</Typography>}
-        </Box>
-      )}
+      <Box>
+        <Typography
+          variant={historyOnly ? 'h6' : 'h4'}
+          component={historyOnly ? 'h2' : 'h1'}
+          fontWeight={800}
+        >
+          {historyOnly
+            ? direction === 'rtl'
+              ? 'أوامر التصدير والطباعة'
+              : 'Export and print commands'
+            : t.exportsTitle}
+        </Typography>
+        <Typography color="text.secondary">
+          {historyOnly
+            ? direction === 'rtl'
+              ? 'تابع حالة الملفات ونزّل Excel أو CSV أو PDF أو الإيصال الحراري أو بوليصة الشحن.'
+              : 'Track jobs and download Excel, CSV, PDF, thermal receipts, or shipping labels.'
+            : t.exportsSubtitle}
+        </Typography>
+      </Box>
       {message && <Alert severity={message.endsWith('FAILED') ? 'error' : 'info'}>{message}</Alert>}
       {!historyOnly && (
         <Paper variant="outlined" sx={{ p: 2 }}>
@@ -3691,7 +3699,14 @@ function ExportsWorkspace({
               {batches.map((batch) => (
                 <TableRow key={batch.id}>
                   <TableCell>
-                    <Chip size="small" label={statusLabel(batch.status)} />
+                    <Stack gap={0.5} alignItems="flex-start">
+                      <Chip size="small" label={statusLabel(batch.status)} />
+                      {batch.status === 'failed' && batch.error && (
+                        <Typography variant="caption" color="error">
+                          {batch.error}
+                        </Typography>
+                      )}
+                    </Stack>
                   </TableCell>
                   <TableCell>
                     {batch.format.toUpperCase()} · {batch.rowMode}
@@ -4294,7 +4309,11 @@ export function App({
       }
       clearOrderSelection();
       setSelectionError(false);
-      setSelectionMessage(locale === 'ar' ? 'جاري تجهيز ملف التصدير' : 'Export is being prepared');
+      setSelectionMessage(
+        locale === 'ar'
+          ? 'تمت إضافة أمر التصدير. تابعه ونزّل الملف من قسم أوامر التصدير والطباعة أسفل الطلبات.'
+          : 'Export command added. Track and download it from Export and print commands below the orders.',
+      );
       setExportHistoryRevision((value) => value + 1);
     } catch (error) {
       setSelectionError(true);
@@ -5133,14 +5152,16 @@ export function App({
                 </Box>
               )}
             </Paper>
-            <ExportsWorkspace
-              key={exportHistoryRevision}
-              direction={direction}
-              t={t}
-              savedViews={savedViews}
-              currentOrderQuery={currentOrderQuery}
-              historyOnly
-            />
+            <Box sx={{ mt: 3 }}>
+              <ExportsWorkspace
+                key={exportHistoryRevision}
+                direction={direction}
+                t={t}
+                savedViews={savedViews}
+                currentOrderQuery={currentOrderQuery}
+                historyOnly
+              />
+            </Box>
           </>
         )}
       </WorkspaceShell>

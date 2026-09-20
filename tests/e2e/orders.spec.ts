@@ -148,6 +148,7 @@ test('creates the Woo-layout XLSX and offers repeat download in orders @orders @
                   rowMode: 'line',
                   orderCount: 1,
                   rowCount: 1,
+                  filename: 'orders-export-xlsx.xlsx',
                 },
               ]
             : [],
@@ -160,11 +161,18 @@ test('creates the Woo-layout XLSX and offers repeat download in orders @orders @
   await page.route('**/api/v1/selections', async (route: Route) => {
     await route.fulfill({ json: { selection: { id: 'selection-woo', estimatedCount: 1 } } });
   });
+  await page.route('**/api/v1/export-batches/batch-woo/download', async (route: Route) => {
+    await route.fulfill({
+      body: 'mock workbook',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      headers: { 'content-disposition': 'attachment; filename="orders-export-xlsx.xlsx"' },
+    });
+  });
   await page.goto('/');
   await page.getByRole('button', { name: 'English' }).click();
   await page.getByTestId('order-row-order-1').getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Export Excel' }).click();
-  await expect(page.getByText('Export is being prepared')).toBeVisible();
+  await expect(page.getByText('Export command added.')).toBeVisible();
   const columns = (createdVersion?.columns ?? []) as Array<{ key: string; label: string }>;
   expect(createdVersion?.filenameTemplate).toBe('orders-{date}-{format}');
   expect(createdVersion?.rowMode).toBe('line');
@@ -180,6 +188,70 @@ test('creates the Woo-layout XLSX and offers repeat download in orders @orders @
     'href',
     '/api/v1/export-batches/batch-woo/download',
   );
+  const downloadEvent = page.waitForEvent('download');
+  await page.getByRole('link', { name: 'Download' }).click();
+  const download = await downloadEvent;
+  expect(download.suggestedFilename()).toBe('orders-export-xlsx.xlsx');
+  const historyBox = await page.getByTestId('exports-workspace').boundingBox();
+  const tableBox = await page.getByTestId('orders-table').boundingBox();
+  expect(historyBox).not.toBeNull();
+  expect(tableBox).not.toBeNull();
+  expect(historyBox!.y).toBeGreaterThan(tableBox!.y);
+});
+
+test('shows an export job failure with retry instead of claiming a download @orders @exports', async ({
+  page,
+}) => {
+  await mockOrderApi(page);
+  let created = false;
+  let downloads = 0;
+  page.on('download', () => {
+    downloads += 1;
+  });
+  await page.route('**/api/v1/export-profiles', async (route: Route) => {
+    await route.fulfill({
+      json: { items: [{ id: 'profile-woo', name: 'Woo Orders XLSX v2', active: true }] },
+    });
+  });
+  await page.route('**/api/v1/export-profiles/profile-woo/versions', async (route: Route) => {
+    await route.fulfill({
+      json:
+        route.request().method() === 'POST' ? { version: { id: 'version-woo' } } : { items: [] },
+    });
+  });
+  await page.route('**/api/v1/export-batches', async (route: Route) => {
+    if (route.request().method() === 'POST') {
+      created = true;
+      await route.fulfill({ json: { batch: { id: 'batch-failed' } } });
+    } else
+      await route.fulfill({
+        json: {
+          items: created
+            ? [
+                {
+                  id: 'batch-failed',
+                  status: 'failed',
+                  format: 'xlsx',
+                  rowMode: 'line',
+                  orderCount: 1,
+                  rowCount: 0,
+                  error: 'EXPORT_REQUIRED_FIELD_MISSING',
+                },
+              ]
+            : [],
+        },
+      });
+  });
+  await page.route('**/api/v1/selections', async (route: Route) => {
+    await route.fulfill({ json: { selection: { id: 'selection-failed', estimatedCount: 1 } } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'English' }).click();
+  await page.getByTestId('order-row-order-1').getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Export Excel' }).click();
+  await expect(page.getByText('EXPORT_REQUIRED_FIELD_MISSING')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible();
+  expect(downloads).toBe(0);
 });
 
 test('renders bounded Arabic orders workspace and keyboard detail navigation @orders', async ({
