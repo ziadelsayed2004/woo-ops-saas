@@ -2697,6 +2697,52 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0922",
+      "epic": "E09",
+      "title": "Repair live Woo export status detection",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "M",
+      "parallelGroup": "woo-export-live-truth",
+      "dependencies": ["T0921"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/SYNC_AND_CONNECTORS.md",
+        ".agentpack/architecture/TESTING.md",
+        "apps/api/src/woo-sync.ts",
+        "packages/connectors/src/woocommerce.ts",
+        "integrations/wordpress/woo-ops-export-status-bridge/woo-ops-export-status-bridge.php",
+        "packages/connectors/tests/security.test.js",
+        "packages/connectors/tests/woo-orders.test.js"
+      ],
+      "scope": [
+        "Detect legacy exported truth from both Woo order storage APIs and the export extension API without remote mutation",
+        "Return non-sensitive per-order diagnostics that distinguish absent legacy metadata from false values and identify the selected source",
+        "Verify full reconciliation overwrites stale stored export states and produce a replacement bridge artifact"
+      ],
+      "acceptance": [
+        "A known ticked Woo order resolves exported under classic posts storage and HPOS while an unticked order remains not exported",
+        "Bridge diagnostics expose storage presence type extension availability and source without exposing raw metadata or credentials",
+        "Full reconciliation persists the refreshed bridge result for already imported orders",
+        "Connector contract security sync and build checks pass and a versioned bridge ZIP is produced"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
