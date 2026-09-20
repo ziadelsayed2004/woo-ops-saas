@@ -53,6 +53,29 @@ function AppShell() {
           '[dir="rtl"] .MuiFormControl-root:has(.MuiSelect-select) .MuiInputLabel-outlined': {
             right: 14,
           },
+          '[dir="rtl"] .MuiSelect-icon': {
+            left: '14px !important',
+            right: 'auto !important',
+          },
+          '[dir="rtl"] .MuiSelect-select': {
+            paddingLeft: '52px !important',
+            paddingRight: '16px !important',
+          },
+          '[dir="rtl"] .MuiAutocomplete-endAdornment': {
+            left: '10px !important',
+            right: 'auto !important',
+          },
+          '[dir="rtl"] .MuiAutocomplete-inputRoot': {
+            paddingLeft: '48px !important',
+            paddingRight: '12px !important',
+          },
+          '[dir="rtl"] .MuiAutocomplete-input': {
+            paddingLeft: '8px !important',
+            paddingRight: '6px !important',
+          },
+          '[dir="rtl"] .MuiAutocomplete-root .MuiInputLabel-outlined': {
+            maxWidth: 'calc(100% - 70px)',
+          },
         },
       },
       MuiPaper: { styleOverrides: { root: { backgroundImage: 'none' } } },

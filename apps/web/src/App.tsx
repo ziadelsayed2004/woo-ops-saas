@@ -904,6 +904,33 @@ const orderCustomerName = (order: Order): string => {
   return `${valueText(billing.first_name, '')} ${valueText(billing.last_name, '')}`.trim() || '—';
 };
 
+const paymentMethodLabel = (value: unknown, locale: Locale): string => {
+  const raw = valueText(value, '').trim();
+  const normalized = raw.toLowerCase().replace(/[\s_-]+/gu, ' ');
+  const labels: Record<string, readonly [string, string]> = {
+    'mobile wallets': ['المحافظ الإلكترونية', 'Mobile wallets'],
+    'paymob wallet': ['محفظة Paymob', 'Paymob wallet'],
+    'pay with paymob': ['الدفع عبر Paymob', 'Paymob'],
+    bacs: ['تحويل بنكي', 'Bank transfer'],
+    'bank transfer': ['تحويل بنكي', 'Bank transfer'],
+    cod: ['الدفع عند الاستلام', 'Cash on delivery'],
+    cheque: ['شيك', 'Cheque'],
+  };
+  const matched = labels[normalized];
+  return matched ? matched[locale === 'ar' ? 0 : 1] : raw || '—';
+};
+
+const shippingMethodLabel = (value: unknown, locale: Locale): string => {
+  const raw = valueText(value, '').trim();
+  const normalized = raw.toLowerCase().replace(/[\s_-]+/gu, ' ');
+  if (!raw) return '—';
+  if (normalized === 'flat rate') return locale === 'ar' ? 'شحن ثابت' : 'Flat rate';
+  if (normalized === 'free shipping') return locale === 'ar' ? 'شحن مجاني' : 'Free shipping';
+  if (normalized === 'local pickup') return locale === 'ar' ? 'استلام من المتجر' : 'Local pickup';
+  if (/فاتورتك/u.test(raw)) return locale === 'ar' ? 'الشحن عبر فاتورتك' : 'Fatortak shipping';
+  return raw;
+};
+
 const addressLines = (addressValue: unknown, locale: Locale = 'ar'): string[] => {
   const address = asRecord(addressValue);
   return [
@@ -1935,10 +1962,13 @@ function OrderDetail({
               <Fact
                 label={t.method}
                 value={valueText(
-                  payment.title ??
-                    payment.methodTitle ??
-                    order.paymentMethodTitle ??
-                    order.paymentMethod,
+                  paymentMethodLabel(
+                    payment.title ??
+                      payment.methodTitle ??
+                      order.paymentMethodTitle ??
+                      order.paymentMethod,
+                    locale,
+                  ),
                 )}
               />
               <Fact
@@ -1957,7 +1987,10 @@ function OrderDetail({
             <Section title={t.shippingMethod}>
               <Fact
                 label={t.method}
-                value={valueText(shippingMethod.title ?? order.shippingMethodTitle)}
+                value={shippingMethodLabel(
+                  shippingMethod.title ?? order.shippingMethodTitle,
+                  locale,
+                )}
               />
               <Fact
                 label={t.shippingCollected}
@@ -3491,8 +3524,6 @@ function ExportsWorkspace({
   savedViews: SavedOrderView[];
   currentOrderQuery: JsonRecord;
 }) {
-  const [profiles, setProfiles] = useState<ExportProfileSummary[]>([]);
-  const [versions, setVersions] = useState<ExportVersionSummary[]>([]);
   const [batches, setBatches] = useState<ExportBatchSummary[]>([]);
   const [profileId, setProfileId] = useState('');
   const [versionId, setVersionId] = useState('');
@@ -3501,10 +3532,8 @@ function ExportsWorkspace({
   const [documentArtifacts, setDocumentArtifacts] = useState<
     Record<string, DocumentArtifactSummary[]>
   >({});
-  const [profileName, setProfileName] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [preview, setPreview] = useState<JsonRecord | null>(null);
 
   const loadBatches = async (force = false) => {
     const body = await cachedGetJson<{ items?: ExportBatchSummary[] }>(
@@ -3530,14 +3559,28 @@ function ExportsWorkspace({
       60_000,
     );
     const items = body.items ?? [];
-    setProfiles(items);
-    const nextProfile = items.find((item) => item.active) ?? items[0];
-    if (nextProfile) setProfileId((current) => current || nextProfile.id);
+    let nextProfile =
+      items.find((item) => item.name === 'Woo Ops Orders') ??
+      items.find((item) => item.active) ??
+      items[0];
+    if (!nextProfile) {
+      const response = await fetch('/api/v1/export-profiles', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        body: JSON.stringify({
+          name: 'Woo Ops Orders',
+          description: 'Ready-made operational order spreadsheet',
+        }),
+      });
+      if (!response.ok) throw new Error('EXPORT_PROFILE_CREATE_FAILED');
+      nextProfile = ((await response.json()) as { profile: ExportProfileSummary }).profile;
+    }
+    setProfileId(nextProfile.id);
   };
 
   const loadVersions = async (nextProfileId: string) => {
     if (!nextProfileId) {
-      setVersions([]);
       setVersionId('');
       return;
     }
@@ -3546,8 +3589,44 @@ function ExportsWorkspace({
       60_000,
     );
     const items = body.items ?? [];
-    setVersions(items);
-    setVersionId(items[0]?.id ?? '');
+    let version = items.find((item) => item.format === 'xlsx' && item.rowMode === 'order');
+    if (!version) {
+      const response = await fetch(
+        `/api/v1/export-profiles/${encodeURIComponent(nextProfileId)}/versions`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+          body: JSON.stringify({
+            format: 'xlsx',
+            rowMode: 'order',
+            columns: [
+              { key: 'orderNumber', label: t.orderNumber, type: 'text' },
+              { key: 'customerName', label: t.customer, type: 'text' },
+              { key: 'customerPhone', label: t.phone, type: 'text' },
+              { key: 'shipping.address_1', label: t.address, type: 'text' },
+              { key: 'shipping.state', label: t.governorateFilter, type: 'text' },
+              { key: 'shippingMethodTitle', label: t.shippingMethod, type: 'text' },
+              { key: 'paymentMethodTitle', label: t.payment, type: 'text' },
+              { key: 'remoteStatus', label: t.remoteStatus, type: 'text' },
+              {
+                key: 'remoteExportStatus',
+                label: direction === 'rtl' ? 'حالة تصدير Woo' : 'Woo export status',
+                type: 'text',
+              },
+              { key: 'exportState', label: t.exportState, type: 'text' },
+              { key: 'grandTotalMinor', label: t.total, type: 'money' },
+              { key: 'createdAt', label: t.created, type: 'date' },
+            ],
+            filenameTemplate: 'orders-{date}-{format}',
+            config: { required: ['orderNumber', 'customerName', 'customerPhone'] },
+          }),
+        },
+      );
+      if (!response.ok) throw new Error('EXPORT_VERSION_CREATE_FAILED');
+      version = ((await response.json()) as { version: ExportVersionSummary }).version;
+    }
+    setVersionId(version.id);
   };
 
   useEffect(() => {
@@ -3586,97 +3665,6 @@ function ExportsWorkspace({
     if (!response.ok) throw new Error('SELECTION_CREATE_FAILED');
     const body = (await response.json()) as { selection: { id: string } };
     return body.selection.id;
-  };
-
-  const createProfile = async () => {
-    if (!profileName.trim()) return;
-    setLoading(true);
-    try {
-      const response = await fetch('/api/v1/export-profiles', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
-        body: JSON.stringify({ name: profileName.trim() }),
-      });
-      if (!response.ok) throw new Error('EXPORT_PROFILE_CREATE_FAILED');
-      const body = (await response.json()) as { profile: ExportProfileSummary };
-      setProfiles((current) => [body.profile, ...current]);
-      setProfileId(body.profile.id);
-      setProfileName('');
-      setMessage('EXPORT_PROFILE_CREATED');
-    } catch {
-      setMessage('EXPORT_PROFILE_CREATE_FAILED');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const createVersion = async () => {
-    if (!profileId) return;
-    setLoading(true);
-    try {
-      const response = await fetch(
-        `/api/v1/export-profiles/${encodeURIComponent(profileId)}/versions`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
-          body: JSON.stringify({
-            format: 'xlsx',
-            rowMode: 'order',
-            columns: [
-              { key: 'orderNumber', label: t.orderNumber, type: 'text' },
-              { key: 'customerName', label: t.customer, type: 'text' },
-              { key: 'customerPhone', label: t.phone, type: 'text' },
-              { key: 'shipping.state', label: t.governorateFilter, type: 'text' },
-              { key: 'shippingMethodTitle', label: t.shippingMethod, type: 'text' },
-              {
-                key: 'remoteExportStatus',
-                label: direction === 'rtl' ? 'حالة تصدير WooCommerce' : 'WooCommerce export status',
-                type: 'text',
-              },
-              { key: 'exportState', label: t.exportState, type: 'text' },
-              { key: 'grandTotalMinor', label: t.total, type: 'money' },
-            ],
-            filenameTemplate: 'shipping-{date}-{format}',
-            config: { required: ['orderNumber'] },
-          }),
-        },
-      );
-      if (!response.ok) throw new Error('EXPORT_VERSION_CREATE_FAILED');
-      readCache.delete(`/api/v1/export-profiles/${encodeURIComponent(profileId)}/versions`);
-      await loadVersions(profileId);
-      setMessage('EXPORT_VERSION_CREATED');
-    } catch {
-      setMessage('EXPORT_VERSION_CREATE_FAILED');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const previewExport = async () => {
-    if (!profileId || !versionId) return;
-    setLoading(true);
-    try {
-      const nextSelectionId = await createSelectionFromSource();
-      const response = await fetch(
-        `/api/v1/export-profiles/${encodeURIComponent(profileId)}/preview`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ selectionId: nextSelectionId, profileVersionId: versionId }),
-        },
-      );
-      if (!response.ok) throw new Error('EXPORT_PREVIEW_FAILED');
-      const body = (await response.json()) as { preview: JsonRecord };
-      setPreview(body.preview);
-      setMessage('EXPORT_PREVIEW_READY');
-    } catch {
-      setMessage('EXPORT_PREVIEW_FAILED');
-    } finally {
-      setLoading(false);
-    }
   };
 
   const createBatch = async () => {
@@ -3738,54 +3726,6 @@ function ExportsWorkspace({
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack gap={2}>
           <Typography variant="h6" component="h2" fontWeight={800}>
-            {t.exportProfiles}
-          </Typography>
-          <Stack direction={{ xs: 'column', md: 'row' }} gap={2} flexWrap="wrap">
-            <FormControl size="small" sx={{ minWidth: 230 }}>
-              <InputLabel id="export-profile-label">{t.exportProfiles}</InputLabel>
-              <Select
-                labelId="export-profile-label"
-                value={profileId}
-                label={t.exportProfiles}
-                onChange={(event) => setProfileId(event.target.value)}
-              >
-                {profiles.map((profile) => (
-                  <MenuItem key={profile.id} value={profile.id}>
-                    {profile.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <TextField
-              size="small"
-              label={t.exportProfiles}
-              value={profileName}
-              onChange={(event) => setProfileName(event.target.value)}
-              placeholder={t.exportProfiles}
-            />
-            <Button
-              variant="outlined"
-              onClick={() => void createProfile()}
-              disabled={loading || !profileName.trim()}
-            >
-              {t.createExport}
-            </Button>
-            <Button
-              variant="text"
-              onClick={() => void createVersion()}
-              disabled={loading || !profileId}
-            >
-              {t.exportVersion}
-            </Button>
-          </Stack>
-          {profiles.length === 0 && (
-            <Typography color="text.secondary">{t.exportNoProfiles}</Typography>
-          )}
-        </Stack>
-      </Paper>
-      <Paper variant="outlined" sx={{ p: 2 }}>
-        <Stack gap={2}>
-          <Typography variant="h6" component="h2" fontWeight={800}>
             {t.createExport}
           </Typography>
           <Stack direction={{ xs: 'column', md: 'row' }} gap={2} flexWrap="wrap">
@@ -3811,47 +3751,20 @@ function ExportsWorkspace({
                 ))}
               </Select>
             </FormControl>
-            <FormControl size="small" sx={{ minWidth: 240 }}>
-              <InputLabel id="export-version-label">{t.exportVersion}</InputLabel>
-              <Select
-                labelId="export-version-label"
-                value={versionId}
-                label={t.exportVersion}
-                onChange={(event) => setVersionId(event.target.value)}
-              >
-                {versions.map((version) => (
-                  <MenuItem key={version.id} value={version.id}>
-                    v{version.version} · {version.format.toUpperCase()} · {version.rowMode}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <Button
-              variant="outlined"
-              onClick={() => void previewExport()}
-              disabled={loading || !versionId}
-            >
-              {t.exportPreview}
-            </Button>
             <Button
               variant="contained"
               onClick={() => void createBatch()}
               disabled={loading || !versionId}
             >
-              {loading ? <CircularProgress size={18} aria-label={t.loading} /> : t.createExport}
+              {loading ? (
+                <CircularProgress size={18} aria-label={t.loading} />
+              ) : direction === 'rtl' ? (
+                'تصدير Excel'
+              ) : (
+                'Export Excel'
+              )}
             </Button>
           </Stack>
-          {preview && (
-            <Paper
-              variant="outlined"
-              sx={{ p: 1.5, overflow: 'auto' }}
-              data-testid="export-preview"
-            >
-              <Typography variant="body2" component="pre" sx={{ m: 0, whiteSpace: 'pre-wrap' }}>
-                {JSON.stringify(preview, null, 2)}
-              </Typography>
-            </Paper>
-          )}
         </Stack>
       </Paper>
       <Paper variant="outlined" sx={{ p: 2 }}>
@@ -4635,8 +4548,8 @@ export function App({
         : column === 'remoteExportStatus'
           ? order.remoteExportStatus == null
             ? locale === 'ar'
-              ? 'غير متاح عبر Woo REST'
-              : 'Not exposed by Woo REST'
+              ? 'في انتظار مزامنة حالة Woo'
+              : 'Waiting for Woo status sync'
             : valueText(order.remoteExportStatus)
           : column === 'customerName'
             ? valueText(order.customerName ?? orderCustomerName(order))
@@ -4645,9 +4558,15 @@ export function App({
               : column === 'customerPhone'
                 ? valueText(order.customerPhone ?? asRecord(order.billing).phone)
                 : column === 'paymentMethod'
-                  ? valueText(order.paymentMethodTitle ?? asRecord(order.payment).title)
+                  ? paymentMethodLabel(
+                      order.paymentMethodTitle ?? asRecord(order.payment).title,
+                      locale,
+                    )
                   : column === 'shippingMethod'
-                    ? valueText(order.shippingMethodTitle ?? asRecord(order.shippingMethod).title)
+                    ? shippingMethodLabel(
+                        order.shippingMethodTitle ?? asRecord(order.shippingMethod).title,
+                        locale,
+                      )
                     : column === 'posLocation'
                       ? valueText(order.posLocation ?? order.pos)
                       : column === 'quantityTotal'
@@ -5322,7 +5241,7 @@ export function App({
         )}
       </WorkspaceShell>
       <Drawer
-        anchor={direction === 'rtl' ? 'left' : 'right'}
+        anchor={direction === 'rtl' ? 'right' : 'left'}
         open={Boolean(selected)}
         onClose={() => setSelected(null)}
         aria-labelledby="order-detail-title"

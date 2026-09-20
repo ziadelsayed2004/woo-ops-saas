@@ -63,7 +63,7 @@ async function mockExports(page: Page) {
   });
 }
 
-test('renders the export workspace with profile, selection preview, and progress controls @exports', async ({
+test('renders ready-made exports without profile or template controls @exports', async ({
   page,
 }) => {
   await mockExports(page);
@@ -73,8 +73,10 @@ test('renders the export workspace with profile, selection preview, and progress
   await expect(page.getByTestId('exports-workspace')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Order exports' })).toBeVisible();
   await expect(page.getByLabel('Orders to export')).toContainText('Current orders filter');
-  await page.getByRole('button', { name: 'Preview' }).click();
-  await expect(page.getByTestId('export-preview')).toContainText('1001');
+  await expect(page.getByRole('button', { name: 'Export Excel' })).toBeVisible();
+  await expect(page.getByLabel('Saved profiles')).toHaveCount(0);
+  await expect(page.getByLabel('Profile version')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Preview' })).toHaveCount(0);
 });
 
 test('reuses bounded export reads when revisiting the workspace @exports', async ({ page }) => {
