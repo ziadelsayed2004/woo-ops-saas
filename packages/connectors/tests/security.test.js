@@ -187,8 +187,10 @@ test('the WordPress companion registers only an authenticated bounded read route
   assert.match(plugin, /Taxonomies_Handler/u);
   assert.match(plugin, /is_order_exported_globally/u);
   assert.match(plugin, /'source'\s+=>\s+'extension_api'/u);
-  assert.match(plugin, /\$legacy_exported\s+=\s+\(bool\)\s+\$legacy_value/u);
-  assert.match(plugin, /'bridgeVersion'\s+=>\s+'1\.4\.0'/u);
+  assert.match(plugin, /get_post_meta\( \$order_id, WOO_OPS_EXPORT_STATUS_META_KEY, true \)/u);
+  assert.match(plugin, /\(bool\) \$post_meta_value/u);
+  assert.match(plugin, /\(bool\) \$order_meta_value/u);
+  assert.match(plugin, /'bridgeVersion'\s+=>\s+'1\.5\.0'/u);
   assert.match(plugin, /_wc_customer_order_csv_export_is_exported/u);
   assert.match(plugin, /true === \$taxonomy_status/u);
   assert.doesNotMatch(plugin, /WP_REST_Server::(?:CREATABLE|EDITABLE|DELETABLE)/u);
@@ -196,6 +198,7 @@ test('the WordPress companion registers only an authenticated bounded read route
     plugin,
     /(?:update|add|delete)_post_meta|->save\s*\(|wp_delete_post|wc_create_order/u,
   );
+  assert.doesNotMatch(plugin, /'postMetaValue'|'orderMetaValue'/u);
 });
 
 test('schema drift is quarantined and webhook signatures require strict base64', () => {

@@ -101,6 +101,19 @@ test('Woo sync health, resumable checkpoints, retry classification, and reconcil
     if (parsed.pathname.endsWith('/tags')) return response([{ id: 8, name: 'Featured' }]);
     if (parsed.pathname.endsWith('/shipping_classes'))
       return response([{ id: 9, name: 'Standard' }]);
+    if (parsed.pathname.endsWith('/woo-ops/export-status'))
+      return response({
+        version: 1,
+        bridgeVersion: '1.5.0',
+        items: String(parsed.searchParams.get('ids'))
+          .split(',')
+          .map((id) => ({
+            id: Number(id),
+            key: '_wc_customer_order_csv_export_is_exported',
+            status: reconcileMode && id === '1' ? 'exported' : 'not_exported',
+            source: 'legacy_post_meta',
+          })),
+      });
     if (parsed.pathname.endsWith('/orders')) {
       const page = Number(parsed.searchParams.get('page'));
       if (reconcileMode) return response([order(1)]);
@@ -184,6 +197,14 @@ test('Woo sync health, resumable checkpoints, retry classification, and reconcil
   });
   await effect(reconcileJob, execution);
   assert.equal(store.getSyncRun(worker, reconcileJob.id).status, 'succeeded');
+  const reconciledOrder = store.db
+    .prepare('SELECT normalized_json FROM orders WHERE external_order_id = ?')
+    .get('1');
+  assert.equal(JSON.parse(reconciledOrder.normalized_json).remoteExportStatus, 'exported');
+  assert.equal(
+    JSON.parse(reconciledOrder.normalized_json).remoteExportStatusSource,
+    'legacy_post_meta',
+  );
   assert.equal(
     store.db.prepare('SELECT remote_deleted_at FROM orders WHERE external_order_id = ?').get('2')
       .remote_deleted_at !== null,

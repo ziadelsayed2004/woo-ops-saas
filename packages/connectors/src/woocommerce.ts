@@ -43,7 +43,7 @@ type WooRemoteExportStatus = Readonly<{
   id: number;
   key: '_wc_customer_order_csv_export_is_exported';
   status: 'exported' | 'not_exported';
-  source: 'extension_api' | 'taxonomy' | 'legacy_meta';
+  source: 'extension_api' | 'taxonomy' | 'legacy_meta' | 'legacy_order_meta' | 'legacy_post_meta';
   bridgeVersion: string;
 }>;
 export type NormalizedCatalogItem = {
@@ -406,7 +406,13 @@ const parseRemoteExportStatuses = (value: unknown): readonly WooRemoteExportStat
       Number(item.id) <= 0 ||
       item.key !== WOO_REMOTE_EXPORT_META_KEY ||
       (item.status !== 'exported' && item.status !== 'not_exported') ||
-      !['extension_api', 'taxonomy', 'legacy_meta'].includes(String(item.source))
+      ![
+        'extension_api',
+        'taxonomy',
+        'legacy_meta',
+        'legacy_order_meta',
+        'legacy_post_meta',
+      ].includes(String(item.source))
     )
       return null;
     statuses.push({

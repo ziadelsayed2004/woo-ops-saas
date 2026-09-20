@@ -113,13 +113,13 @@ test('overlays protected export status from one bounded companion read per order
         return new Response(
           JSON.stringify({
             version: 1,
-            bridgeVersion: '1.4.0',
+            bridgeVersion: '1.5.0',
             items: [
               {
                 id: 42,
                 key: '_wc_customer_order_csv_export_is_exported',
                 status: 'exported',
-                source: 'legacy_meta',
+                source: 'legacy_post_meta',
               },
             ],
           }),
@@ -141,8 +141,8 @@ test('overlays protected export status from one bounded companion read per order
   assert.equal(calls[1].url.searchParams.get('ids'), '42');
   assert.equal(normalized.remoteExportStatus, 'exported');
   assert.equal(normalized.remoteExportStatusKey, '_wc_customer_order_csv_export_is_exported');
-  assert.equal(normalized.remoteExportStatusSource, 'legacy_meta');
-  assert.equal(normalized.remoteExportBridgeVersion, '1.4.0');
+  assert.equal(normalized.remoteExportStatusSource, 'legacy_post_meta');
+  assert.equal(normalized.remoteExportBridgeVersion, '1.5.0');
 });
 
 test('missing or malformed export-status companion leaves the standard Woo payload untouched', async () => {

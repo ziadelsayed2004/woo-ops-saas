@@ -1,5 +1,9 @@
 # Woo Ops Export Status Bridge
 
+Current version: **1.5.0**. This release reads the legacy export flag from both
+the Woo order object and WordPress post metadata so classic storage and HPOS
+compatibility mode report the same tick shown by the export extension's order column.
+
 This optional companion exposes the protected global export flag maintained by WooCommerce
 Customer / Order / Coupon Export. Standard Woo REST responses omit protected metadata, so Woo Ops
 cannot otherwise distinguish an exported order from a not-exported one.
