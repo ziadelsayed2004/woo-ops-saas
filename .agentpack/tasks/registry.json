@@ -2918,6 +2918,57 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0927",
+      "epic": "E09",
+      "title": "Repair Woo export truth and organize document outputs",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "L",
+      "parallelGroup": "woo-export-documents-analytics",
+      "dependencies": ["T0926"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/TESTING.md",
+        "integrations/wordpress/woo-ops-export-status-bridge/woo-ops-export-status-bridge.php",
+        "packages/connectors/src/woocommerce.ts",
+        "packages/documents/src/index.ts",
+        "apps/api/src/index.ts",
+        "apps/web/src/App.tsx",
+        "apps/web/src/AnalyticsWorkspace.tsx",
+        "tests/e2e/orders.spec.ts",
+        "tests/e2e/analytics.spec.ts"
+      ],
+      "scope": [
+        "Diagnose the live Woo export status end to end and expose exported, not exported, and genuinely unavailable states only from authoritative extension data",
+        "Repair A4 invoice, thermal receipt and shipping-label generation/download flows and present export and print history in compact organized tabs with useful labels, progress, errors, retry and repeat download",
+        "Display normalized Egyptian governorate names beside source codes in analytics while retaining the code for traceability",
+        "Keep all Woo access read-only and preserve local export/document history semantics"
+      ],
+      "acceptance": [
+        "Woo-exported orders no longer render as unavailable or not exported when the authoritative extension marker is present, and unsupported evidence remains explicitly unknown",
+        "XLSX, CSV, A4 PDF, 80mm thermal and 100x150mm label jobs complete or show an actionable per-job failure with retry and working repeat download",
+        "The orders export and print history uses clear tabs, localized format/status labels and a compact responsive layout instead of raw floating tables and filenames",
+        "Analytics governorate rows show the Arabic or English governorate name together with the original Woo code",
+        "Connector contract, document golden/integration, browser, accessibility and build checks pass"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:e2e",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
