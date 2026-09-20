@@ -70,6 +70,12 @@ test('remote order upsert is idempotent and preserves local fields while marking
       .count,
     1,
   );
+  store.upsertRemoteOrder(context, connectionId, {
+    ...order,
+    remoteExportStatus: 'exported',
+    sourceHash: 'hash-exported',
+  });
+  assert.equal(store.getOrder(context, id).remoteExportStatus, 'exported');
 });
 
 test('order details return normalized sections and stay account scoped', () => {
@@ -77,7 +83,7 @@ test('order details return normalized sections and stay account scoped', () => {
   const detail = store.getOrder(context, orderId);
   assert.equal(detail.id, orderId);
   assert.equal(detail.orderNumber, '10042');
-  assert.equal(detail.remoteExportStatus, 'true');
+  assert.equal(detail.remoteExportStatus, 'exported');
   assert.equal(detail.remoteExportStatusKey, '_wc_customer_order_csv_export_is_exported');
   assert.deepEqual(detail.billing, {});
   assert.equal(Array.isArray(detail.lines), true);

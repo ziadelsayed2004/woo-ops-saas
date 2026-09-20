@@ -186,7 +186,7 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
     .filter({ hasText: 'بيانات المنصة' })
     .boundingBox();
   expect(arabicDrawerBox).not.toBeNull();
-  expect(arabicDrawerBox!.x + arabicDrawerBox!.width / 2).toBeGreaterThan(
+  expect(arabicDrawerBox!.x + arabicDrawerBox!.width / 2).toBeLessThan(
     page.viewportSize()!.width / 2,
   );
   await expect(page.getByText('قميص قطني')).toBeVisible();
@@ -212,7 +212,7 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
     .filter({ hasText: 'Platform facts' })
     .boundingBox();
   expect(englishDrawerBox).not.toBeNull();
-  expect(englishDrawerBox!.x + englishDrawerBox!.width / 2).toBeLessThan(
+  expect(englishDrawerBox!.x + englishDrawerBox!.width / 2).toBeGreaterThan(
     page.viewportSize()!.width / 2,
   );
 });

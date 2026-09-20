@@ -120,6 +120,14 @@ type ApiUsage = {
   payloadBytes: number;
 };
 
+type CustomerAnalyticsItem = {
+  key: string;
+  label?: string;
+  currency: string;
+  orderCount: number;
+  totals: { collectedRevenueMinor: string };
+};
+
 const translations = {
   ar: {
     overview: 'نظرة عامة',
@@ -1325,6 +1333,122 @@ function SettingsWorkspace({
   );
 }
 
+function CustomersWorkspace({
+  locale,
+  copy,
+  onSessionExpired,
+}: {
+  locale: AdminLocale;
+  copy: Copy;
+  onSessionExpired: () => void;
+}) {
+  const [items, setItems] = useState<CustomerAnalyticsItem[]>([]);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const load = async () => {
+    setLoading(true);
+    setFailed(false);
+    try {
+      const result = await apiRequest<{ breakdown: { items: CustomerAnalyticsItem[] } }>(
+        '/api/v1/analytics/breakdown',
+        onSessionExpired,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ source: 'woo', dimension: 'customer' }),
+        },
+      );
+      setItems(result.breakdown.items ?? []);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, []);
+  const visible = items.filter((item) =>
+    `${item.label ?? ''} ${item.key}`
+      .toLocaleLowerCase()
+      .includes(search.trim().toLocaleLowerCase()),
+  );
+  const money = (minor: string, currency: string) => {
+    const value = BigInt(/^\d+$/u.test(minor) ? minor : '0');
+    return `${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value) / 100)} ${currency}`;
+  };
+  if (loading) return <StateBlock copy={copy} loading error={false} onRetry={() => void load()} />;
+  return (
+    <Stack gap={3} data-testid="customers-workspace">
+      <Box>
+        <Typography variant="h4" component="h1" fontWeight={800}>
+          {locale === 'ar' ? 'عملاء WooCommerce' : 'WooCommerce customers'}
+        </Typography>
+        <Typography color="text.secondary">
+          {locale === 'ar'
+            ? 'العملاء الفعليون من الطلبات المتزامنة، مع عدد الطلبات وإجمالي الإنفاق.'
+            : 'Customers derived from synchronized WooCommerce orders, with order count and total spend.'}
+        </Typography>
+      </Box>
+      {failed && <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />}
+      <TextField
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        label={locale === 'ar' ? 'بحث عن عميل' : 'Search customers'}
+        sx={{ maxWidth: 520 }}
+      />
+      <Paper variant="outlined">
+        <TableContainer>
+          <Table
+            size="small"
+            aria-label={locale === 'ar' ? 'عملاء WooCommerce' : 'WooCommerce customers'}
+          >
+            <TableHead>
+              <TableRow>
+                <TableCell>{locale === 'ar' ? 'العميل' : 'Customer'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'الطلبات' : 'Orders'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'إجمالي الإنفاق' : 'Total spend'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'متوسط الطلب' : 'Average order'}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {visible.map((item) => {
+                const total = BigInt(
+                  /^\d+$/u.test(item.totals.collectedRevenueMinor)
+                    ? item.totals.collectedRevenueMinor
+                    : '0',
+                );
+                const average =
+                  item.orderCount > 0 ? (total / BigInt(item.orderCount)).toString() : '0';
+                return (
+                  <TableRow key={`${item.currency}:${item.key}`}>
+                    <TableCell>{item.label ?? item.key}</TableCell>
+                    <TableCell>
+                      <span dir="ltr">{item.orderCount}</span>
+                    </TableCell>
+                    <TableCell>
+                      <span dir="ltr">{money(total.toString(), item.currency)}</span>
+                    </TableCell>
+                    <TableCell>
+                      <span dir="ltr">{money(average, item.currency)}</span>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        {visible.length === 0 && (
+          <Typography color="text.secondary" p={3}>
+            {copy.empty}
+          </Typography>
+        )}
+      </Paper>
+    </Stack>
+  );
+}
+
 function MembersWorkspace({
   copy,
   onSessionExpired,
@@ -1731,12 +1855,16 @@ export function AdminWorkspace({
       />
     );
   if (section === 'members')
-    return <MembersWorkspace copy={copy} onSessionExpired={onSessionExpired} />;
+    return <CustomersWorkspace locale={locale} copy={copy} onSessionExpired={onSessionExpired} />;
   return <OperationsWorkspace copy={copy} onSessionExpired={onSessionExpired} />;
 }
 
 export const adminLabel = (section: AdminSection, locale: AdminLocale): string =>
-  translations[locale][section === 'field-mappings' ? 'mappings' : section];
+  section === 'members'
+    ? locale === 'ar'
+      ? 'العملاء'
+      : 'Customers'
+    : translations[locale][section === 'field-mappings' ? 'mappings' : section];
 
 export const sessionExpiredLabel = (locale: AdminLocale): string =>
   translations[locale].sessionExpired;

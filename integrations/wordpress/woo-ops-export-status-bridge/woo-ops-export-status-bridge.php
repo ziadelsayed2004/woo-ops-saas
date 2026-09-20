@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Woo Ops Export Status Bridge
  * Description: Read-only REST exposure for WooCommerce Customer / Order / Coupon Export status.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Requires Plugins: woocommerce
  * Requires PHP: 7.4
  * Author: Woo Ops
@@ -20,7 +20,15 @@ const WOO_OPS_EXPORT_STATUS_GLOBAL_TERM = 'global';
  * taxonomy term. Older releases used order metadata, so keep a read-only
  * fallback for stores that have not migrated yet.
  */
-function woo_ops_is_order_exported( WC_Order $order ): bool {
+function woo_ops_order_export_status( WC_Order $order ): array {
+	$handler_class = '\\SkyVerge\\WooCommerce\\CSV_Export\\Taxonomies_Handler';
+	if ( class_exists( $handler_class ) && is_callable( array( $handler_class, 'is_order_exported_globally' ) ) ) {
+		return array(
+			'exported' => (bool) $handler_class::is_order_exported_globally( (int) $order->get_id() ),
+			'source'   => 'extension_api',
+		);
+	}
+
 	if ( taxonomy_exists( WOO_OPS_EXPORT_STATUS_TAXONOMY ) ) {
 		$taxonomy_status = is_object_in_term(
 			(int) $order->get_id(),
@@ -28,12 +36,18 @@ function woo_ops_is_order_exported( WC_Order $order ): bool {
 			WOO_OPS_EXPORT_STATUS_GLOBAL_TERM
 		);
 
-		return true === $taxonomy_status;
+		return array(
+			'exported' => true === $taxonomy_status,
+			'source'   => 'taxonomy',
+		);
 	}
 
 	$legacy_value = $order->get_meta( WOO_OPS_EXPORT_STATUS_META_KEY, true );
 
-	return in_array( strtolower( trim( (string) $legacy_value ) ), array( '1', 'true', 'yes', 'exported' ), true );
+	return array(
+		'exported' => in_array( strtolower( trim( (string) $legacy_value ) ), array( '1', 'true', 'yes', 'exported' ), true ),
+		'source'   => 'legacy_meta',
+	);
 }
 
 /**
@@ -85,18 +99,20 @@ function woo_ops_read_export_statuses( WP_REST_Request $request ) {
 			continue;
 		}
 
-		$exported = woo_ops_is_order_exported( $order );
+		$export_status = woo_ops_order_export_status( $order );
 		$items[]   = array(
 			'id'     => (int) $order->get_id(),
 			'key'    => WOO_OPS_EXPORT_STATUS_META_KEY,
-			'status' => $exported ? 'exported' : 'not_exported',
+			'status' => $export_status['exported'] ? 'exported' : 'not_exported',
+			'source' => $export_status['source'],
 		);
 	}
 
 	return rest_ensure_response(
 		array(
-			'version' => 1,
-			'items'   => $items,
+			'version'       => 1,
+			'bridgeVersion' => '1.2.0',
+			'items'         => $items,
 		)
 	);
 }

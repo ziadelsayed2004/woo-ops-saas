@@ -773,7 +773,6 @@ const columns = [
   'orderNumber',
   'source',
   'remoteStatus',
-  'localStatus',
   'total',
   'exportState',
   'remoteExportStatus',
@@ -802,7 +801,6 @@ const defaultOrderColumns: readonly (typeof columns)[number][] = [
 type OrderFilters = {
   source: string;
   exportState: string;
-  localStatus: string;
   paymentMethod: string;
   shippingMethod: string;
   governorate: string;
@@ -817,7 +815,6 @@ type OrderFilters = {
 const emptyOrderFilters = (): OrderFilters => ({
   source: '',
   exportState: '',
-  localStatus: '',
   paymentMethod: '',
   shippingMethod: '',
   governorate: '',
@@ -1732,24 +1729,19 @@ function OrderDetail({
   onUpdated?: (order: Order) => void;
 }) {
   const [tab, setTab] = useState(0);
-  const [localStatus, setLocalStatus] = useState(valueText(order.localStatus, 'new'));
-  const [workflowSaving, setWorkflowSaving] = useState(false);
   const [workflowMessage, setWorkflowMessage] = useState('');
   const [timeline, setTimeline] = useState<JsonRecord[]>([]);
   const currency = valueText(order.currency, '');
   const amounts = asRecord(order.amounts);
   const payment = asRecord(order.payment);
   const shippingMethod = asRecord(order.shippingMethod);
-  const workflow = asRecord(order.local);
-  const tags = Array.isArray(order.tags) ? order.tags : [];
   const syncEvents = asList(order.syncEvents ?? order.syncTimeline);
   const auditEvents = asList(order.auditHistory ?? order.auditEvents);
   const exports = asList(order.exports ?? order.exportHistory);
   const documents = asList(order.documents ?? order.documentHistory);
-  const tabLabels = [t.summary, t.items, t.customer, t.finance, t.workflow, t.history, t.raw];
+  const tabLabels = [t.summary, t.items, t.customer, t.finance, t.history, t.raw];
 
   useEffect(() => {
-    setLocalStatus(valueText(order.localStatus, 'new'));
     setWorkflowMessage('');
     let active = true;
     void fetch(`/api/v1/orders/${encodeURIComponent(order.id)}/timeline`, {
@@ -1770,31 +1762,7 @@ function OrderDetail({
     return () => {
       active = false;
     };
-  }, [order.id, order.localStatus]);
-
-  const updateWorkflow = async () => {
-    setWorkflowSaving(true);
-    setWorkflowMessage('');
-    try {
-      const response = await fetch(
-        `/api/v1/orders/${encodeURIComponent(order.id)}/local-workflow`,
-        {
-          method: 'PATCH',
-          credentials: 'include',
-          headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
-          body: JSON.stringify({ version: order.version, localStatus }),
-        },
-      );
-      if (!response.ok) throw new Error('ORDER_WORKFLOW_FAILED');
-      const result = (await response.json()) as { order: Order };
-      onUpdated?.(result.order);
-      setWorkflowMessage(t.workflowSaved);
-    } catch {
-      setWorkflowMessage(t.errors);
-    } finally {
-      setWorkflowSaving(false);
-    }
-  };
+  }, [order.id]);
 
   const requestResync = async () => {
     try {
@@ -1870,30 +1838,6 @@ function OrderDetail({
                 label={t.updated}
                 value={dateText(order.modifiedAt ?? order.updatedAt, locale)}
               />
-            </Section>
-            <Divider />
-            <Section title={t.localFacts}>
-              <Fact label={t.localStatus} value={valueText(order.localStatus)} />
-              <Fact
-                label={t.exportState}
-                value={
-                  valueText(order.exportState) === 'never-exported'
-                    ? t.never
-                    : valueText(order.exportState)
-                }
-              />
-              <Fact label={t.assignee} value={valueText(order.assigneeId ?? workflow.assigneeId)} />
-              <Fact
-                label={t.syncPolicy}
-                value={valueText(order.syncPolicy ?? workflow.syncPolicy)}
-              />
-              <Fact
-                label={t.inventoryPolicy}
-                value={valueText(order.inventoryPolicy ?? workflow.inventoryPolicy)}
-              />
-              {typeof order.staleExportAt === 'string' && (
-                <Fact label={t.updated} value={dateText(order.staleExportAt, locale)} />
-              )}
             </Section>
             <Alert severity="info">{t.platformOnly}</Alert>
             <Section title={t.items}>
@@ -2052,68 +1996,16 @@ function OrderDetail({
         )}
         {tab === 4 && (
           <Stack gap={2}>
-            <Section title={t.workflow}>
-              <Fact label={t.localStatus} value={valueText(order.localStatus)} />
-              <Fact label={t.assignee} value={valueText(order.assigneeId ?? workflow.assigneeId)} />
-              <Fact
-                label={t.syncPolicy}
-                value={valueText(order.syncPolicy ?? workflow.syncPolicy)}
-              />
-              <Fact
-                label={t.inventoryPolicy}
-                value={valueText(order.inventoryPolicy ?? workflow.inventoryPolicy)}
-              />
-              <Fact label={t.notes} value={valueText(order.notesSummary ?? order.notes)} />
-            </Section>
-            <Stack direction="row" gap={1} flexWrap="wrap" aria-label={t.tags}>
-              <Typography color="text.secondary" variant="body2">
-                {t.tags}
-              </Typography>
-              {tags.length === 0 ? (
-                <EmptyValue label={t.noData} />
-              ) : (
-                tags.map((tag) => <Chip key={String(tag)} label={String(tag)} size="small" />)
-              )}
-            </Stack>
-            <Divider />
-            <TextField
-              label={t.localStatusInput}
-              value={localStatus}
-              onChange={(event) => setLocalStatus(event.target.value)}
-              size="small"
-              inputProps={{ 'aria-label': t.localStatusInput }}
-            />
-            {workflowMessage && (
-              <Alert severity={workflowMessage === t.errors ? 'error' : 'success'}>
-                {workflowMessage}
-              </Alert>
-            )}
-            <Stack direction="row" gap={1} flexWrap="wrap">
+            {workflowMessage && <Alert severity="success">{workflowMessage}</Alert>}
+            {order.origin === 'woo' && (
               <Button
-                variant="contained"
-                onClick={() => void updateWorkflow()}
-                disabled={workflowSaving}
+                variant="outlined"
+                onClick={() => void requestResync()}
+                sx={{ alignSelf: 'flex-start' }}
               >
-                {workflowSaving ? (
-                  <CircularProgress size={18} aria-label={t.loading} />
-                ) : (
-                  t.updateWorkflow
-                )}
+                {t.resync}
               </Button>
-              {order.origin === 'woo' && (
-                <Button
-                  variant="outlined"
-                  onClick={() => void requestResync()}
-                  disabled={workflowSaving}
-                >
-                  {t.resync}
-                </Button>
-              )}
-            </Stack>
-          </Stack>
-        )}
-        {tab === 5 && (
-          <Stack gap={2}>
+            )}
             <HistoryList title={t.syncEvents} entries={syncEvents} empty={t.noData} />
             <HistoryList title={t.exports} entries={exports} empty={t.noData} />
             <HistoryList title={t.documents} entries={documents} empty={t.noData} />
@@ -2121,7 +2013,7 @@ function OrderDetail({
             <HistoryList title={t.timeline} entries={timeline} empty={t.noData} />
           </Stack>
         )}
-        {tab === 6 && <Alert severity="warning">{t.restricted}</Alert>}
+        {tab === 5 && <Alert severity="warning">{t.restricted}</Alert>}
       </Box>
     </Stack>
   );
@@ -2442,7 +2334,6 @@ function ManualOrdersWorkspace({ locale, onCreate }: { locale: Locale; onCreate:
               <TableRow>
                 <TableCell>{locale === 'ar' ? 'رقم الطلب' : 'Order'}</TableCell>
                 <TableCell>{locale === 'ar' ? 'العميل' : 'Customer'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'الحالة' : 'Status'}</TableCell>
                 <TableCell>{locale === 'ar' ? 'الإجمالي' : 'Total'}</TableCell>
                 <TableCell>{locale === 'ar' ? 'التصدير' : 'Export'}</TableCell>
                 <TableCell>{locale === 'ar' ? 'إثبات التحويل' : 'Transfer proof'}</TableCell>
@@ -2453,7 +2344,6 @@ function ManualOrdersWorkspace({ locale, onCreate }: { locale: Locale; onCreate:
                 <TableRow key={order.id}>
                   <TableCell>{order.orderNumber}</TableCell>
                   <TableCell>{valueText(order.customerName ?? orderCustomerName(order))}</TableCell>
-                  <TableCell>{order.localStatus}</TableCell>
                   <TableCell>
                     {formatMinor(order.grandTotalMinor, order.currency ?? 'EGP', locale)}
                   </TableCell>
@@ -2527,7 +2417,7 @@ function ManualOrderForm({
   const [discountMinor, setDiscountMinor] = useState('0');
   const [taxMinor, setTaxMinor] = useState('0');
   const [feesMinor, setFeesMinor] = useState('0');
-  const [localStatus, setLocalStatus] = useState('awaiting-payment-proof');
+  const localStatus = 'awaiting-payment-proof';
   const [tags, setTags] = useState('manual');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -3049,12 +2939,6 @@ function ManualOrderForm({
               alignItems: 'start',
             }}
           >
-            <TextField
-              fullWidth
-              label={t.localStatusInput}
-              value={localStatus}
-              onChange={(event) => setLocalStatus(event.target.value)}
-            />
             <TextField
               fullWidth
               label={t.tagsInput}
@@ -3922,14 +3806,7 @@ function ExportsWorkspace({
 }
 
 type AppView =
-  | 'orders'
-  | 'catalog'
-  | 'manual'
-  | 'manual-create'
-  | 'documents'
-  | 'analytics'
-  | 'exports'
-  | AdminSection;
+  'orders' | 'catalog' | 'manual' | 'manual-create' | 'analytics' | 'exports' | AdminSection;
 type AuthStatus = 'checking' | 'authenticated' | 'unauthenticated';
 
 const viewFromPath = (path: string): AppView => {
@@ -3940,7 +3817,6 @@ const viewFromPath = (path: string): AppView => {
     'catalog',
     'manual',
     'manual-create',
-    'documents',
     'analytics',
     'exports',
     'overview',
@@ -4083,8 +3959,6 @@ export function App({
     if (filters.source) leaves.push({ field: 'source', operator: 'equals', value: filters.source });
     if (filters.exportState)
       leaves.push({ field: 'exportState', operator: 'equals', value: filters.exportState });
-    if (filters.localStatus)
-      leaves.push({ field: 'localStatus', operator: 'contains', value: filters.localStatus });
     if (filters.paymentMethod)
       leaves.push({ field: 'paymentMethod', operator: 'contains', value: filters.paymentMethod });
     if (filters.shippingMethod)
@@ -4485,7 +4359,7 @@ export function App({
       });
       if (!response.ok) throw new Error('DOCUMENT_JOB_FAILED');
       clearOrderSelection();
-      setView('documents');
+      setView('exports');
     } catch {
       setSelectionMessage('DOCUMENT_JOB_FAILED');
     }
@@ -4521,7 +4395,6 @@ export function App({
       orderNumber: t.orderNumber,
       source: t.source,
       remoteStatus: t.remoteStatus,
-      localStatus: t.localStatus,
       total: t.total,
       exportState: t.exportState,
       remoteExportStatus:
@@ -4550,7 +4423,13 @@ export function App({
             ? locale === 'ar'
               ? 'في انتظار مزامنة حالة Woo'
               : 'Waiting for Woo status sync'
-            : valueText(order.remoteExportStatus)
+            : order.remoteExportStatus === 'exported'
+              ? locale === 'ar'
+                ? 'تم التصدير في WooCommerce'
+                : 'Exported in WooCommerce'
+              : locale === 'ar'
+                ? 'لم يُصدّر في WooCommerce'
+                : 'Not exported in WooCommerce'
           : column === 'customerName'
             ? valueText(order.customerName ?? orderCustomerName(order))
             : column === 'customerEmail'
@@ -4614,7 +4493,6 @@ export function App({
     },
     { view: 'manual', label: locale === 'ar' ? 'الطلبات اليدوية' : 'Manual orders' },
     { view: 'exports', label: t.exportsNav },
-    { view: 'documents', label: t.documentsNav },
     { view: 'analytics', label: t.analyticsNav },
     { view: 'connections', label: adminLabel('connections', locale) },
     { view: 'settings', label: adminLabel('settings', locale) },
@@ -4640,15 +4518,9 @@ export function App({
         navigation={navigation.map((item) => ({
           id: item.view,
           label: item.label,
-          group: [
-            'overview',
-            'orders',
-            'catalog',
-            'manual',
-            'exports',
-            'documents',
-            'analytics',
-          ].includes(item.view)
+          group: ['overview', 'orders', 'catalog', 'manual', 'exports', 'analytics'].includes(
+            item.view,
+          )
             ? ('workspace' as const)
             : ('management' as const),
         }))}
@@ -4679,8 +4551,6 @@ export function App({
             onLocaleChange={onLocaleChange}
             onSessionExpired={expireSession}
           />
-        ) : view === 'documents' ? (
-          <DocumentsWorkspace direction={direction} t={t} />
         ) : view === 'exports' ? (
           <ExportsWorkspace
             direction={direction}
@@ -5241,7 +5111,7 @@ export function App({
         )}
       </WorkspaceShell>
       <Drawer
-        anchor={direction === 'rtl' ? 'right' : 'left'}
+        anchor={direction === 'rtl' ? 'left' : 'right'}
         open={Boolean(selected)}
         onClose={() => setSelected(null)}
         aria-labelledby="order-detail-title"

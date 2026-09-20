@@ -164,6 +164,24 @@ async function mockAdminApi(page: Page, session: 'authenticated' | 'expired' = '
   await page.route('**/api/v1/members/invitations', async (route: Route) => {
     await route.fulfill({ json: { items: [] } });
   });
+  await page.route('**/api/v1/analytics/breakdown', async (route: Route) => {
+    await route.fulfill({
+      json: {
+        breakdown: {
+          items: [
+            {
+              key: 'customer-1',
+              label: 'Customer One',
+              currency: 'EGP',
+              orderCount: 3,
+              lineCount: 4,
+              totals: { collectedRevenueMinor: '12500' },
+            },
+          ],
+        },
+      },
+    });
+  });
 }
 
 test('admin navigation exposes authenticated operational workspaces and route states @admin', async ({
@@ -178,8 +196,10 @@ test('admin navigation exposes authenticated operational workspaces and route st
   await expect(page.getByTestId('connections-workspace')).toBeVisible();
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.getByTestId('settings-workspace')).toBeVisible();
-  await page.getByRole('button', { name: 'Members' }).click();
-  await expect(page.getByTestId('members-workspace')).toBeVisible();
+  await page.getByRole('button', { name: 'Customers' }).click();
+  await expect(page.getByTestId('customers-workspace')).toBeVisible();
+  await expect(page.getByText('Customer One')).toBeVisible();
+  await expect(page.getByText('125.00 EGP')).toBeVisible();
   await page.getByRole('button', { name: 'System health' }).click();
   await expect(page.getByTestId('operations-workspace')).toBeVisible();
   await expect(page.getByText('analytics.rebuild')).toBeVisible();
