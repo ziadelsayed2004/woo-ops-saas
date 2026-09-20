@@ -34,7 +34,12 @@ const stopApi = async (child) => {
     await new Promise((resolve) => setTimeout(resolve, 250));
     if (child.exitCode === null && child.pid !== undefined && process.platform === 'win32')
       await new Promise((resolve) =>
-        execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, resolve),
+        execFile(
+          'taskkill',
+          ['/PID', String(child.pid), '/T', '/F'],
+          { windowsHide: true },
+          resolve,
+        ),
       );
   }
   child.stdout.destroy();
@@ -192,6 +197,28 @@ test('account administration API enforces CSRF, scopes invitations, and reports 
     });
     assert.equal(reset.response.status, 202);
     assert.deepEqual(reset.body, { accepted: true });
+    const resetWithoutCsrf = await request('/api/v1/account/reset', {
+      method: 'POST',
+      headers: { cookie: ownerCookies },
+      body: JSON.stringify({ confirmation: 'RESET', preserveConnections: true }),
+    });
+    assert.equal(resetWithoutCsrf.response.status, 403);
+    const invalidReset = await request('/api/v1/account/reset', {
+      method: 'POST',
+      headers: writeHeaders,
+      body: JSON.stringify({ confirmation: 'reset', preserveConnections: true }),
+    });
+    assert.equal(invalidReset.response.status, 400);
+    const accountReset = await request('/api/v1/account/reset', {
+      method: 'POST',
+      headers: writeHeaders,
+      body: JSON.stringify({ confirmation: 'RESET', preserveConnections: true }),
+    });
+    assert.equal(accountReset.response.status, 200);
+    assert.equal(accountReset.body.reset, true);
+    const accountAfterReset = await request('/api/v1/account', { headers: readHeaders });
+    assert.equal(accountAfterReset.response.status, 200);
+    assert.equal(accountAfterReset.body.account.name, 'Updated Administration');
     const ready = await request('/ready');
     assert.equal(ready.response.status, 200);
     assert.equal(ready.body.status, 'ok');

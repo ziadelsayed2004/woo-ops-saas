@@ -3593,6 +3593,88 @@ export class SqliteStore {
     return context.actorId as string;
   }
 
+  resetAccountOperationalData(context: AccountContext): {
+    deletedRecords: number;
+    preservedConnections: number;
+  } {
+    const role = this.assertMember(context);
+    if (role !== 'owner') throw new Error('ACCOUNT_OWNER_PERMISSION_DENIED');
+    const actorId = context.actorId as string;
+    return this.db.transaction(() => {
+      const running = this.db
+        .prepare("SELECT COUNT(*) AS count FROM jobs WHERE account_id = ? AND status = 'running'")
+        .get(context.accountId) as { count: number };
+      if (running.count > 0) throw new Error('ACCOUNT_RESET_BUSY');
+      this.db.pragma('defer_foreign_keys = ON');
+      const tables = [
+        'document_artifacts',
+        'document_batch_items',
+        'document_batches',
+        'document_template_revisions',
+        'document_templates',
+        'document_identity_policies',
+        'manual_payment_proofs',
+        'export_batch_snapshots',
+        'order_export_events',
+        'export_batches',
+        'export_profile_versions',
+        'export_profiles',
+        'bulk_job_items',
+        'bulk_jobs',
+        'selection_snapshots',
+        'saved_views',
+        'order_cost_overrides',
+        'order_cost_snapshots',
+        'daily_order_facts',
+        'cost_rules',
+        'order_mapped_fields',
+        'field_mappings',
+        'field_catalogs',
+        'order_timeline_events',
+        'order_refunds',
+        'webhook_inbox',
+        'catalog_sync_runs',
+        'order_sync_runs',
+        'connection_sync_runs',
+        'woo_shipping_rates',
+        'catalog_items',
+        'orders',
+        'jobs',
+        'authorization_states',
+        'account_invitations',
+        'password_reset_tokens',
+        'audit_events',
+      ] as const;
+      let deletedRecords = 0;
+      for (const table of tables)
+        deletedRecords += this.db
+          .prepare(`DELETE FROM ${table} WHERE account_id = ?`)
+          .run(context.accountId).changes;
+      this.db
+        .prepare(
+          `UPDATE connections SET catalog_cursor = NULL, catalog_status = 'idle', catalog_last_error = NULL,
+             catalog_last_success = NULL, catalog_deleted_count = 0, sync_status = 'idle', sync_cursor = NULL,
+             sync_last_success_at = NULL, sync_last_error = NULL, sync_last_error_category = NULL,
+             sync_started_at = NULL, sync_finished_at = NULL, sync_orders_count = 0,
+             sync_catalog_count = 0, sync_deleted_count = 0, updated_at = ?
+           WHERE account_id = ?`,
+        )
+        .run(new Date().toISOString(), context.accountId);
+      this.db
+        .prepare('UPDATE accounts SET manual_order_sequence = 0, updated_at = ? WHERE id = ?')
+        .run(new Date().toISOString(), context.accountId);
+      this.audit(context, 'account.operational-data-reset', 'account', context.accountId, {
+        actorId,
+        deletedRecords,
+        preservedConnections: true,
+      });
+      const connections = this.db
+        .prepare('SELECT COUNT(*) AS count FROM connections WHERE account_id = ?')
+        .get(context.accountId) as { count: number };
+      return { deletedRecords, preservedConnections: connections.count };
+    })();
+  }
+
   private connectionRow(context: AccountContext, connectionId: string): ConnectionRow {
     this.assertContext(context);
     if (!connectionId || connectionId.length > 256) throw new Error('CONNECTION_ID_INVALID');

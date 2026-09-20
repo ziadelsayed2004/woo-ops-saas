@@ -207,6 +207,16 @@ const translations = {
     currentPassword: 'كلمة المرور الحالية',
     newPassword: 'كلمة المرور الجديدة',
     saved: 'تم الحفظ',
+    dangerZone: 'منطقة إعادة التهيئة',
+    resetAccountData: 'مسح بيانات التجربة',
+    resetAccountHelp:
+      'يمسح الطلبات المتزامنة واليدوية والمنتجات والعملاء والتحليلات والفلاتر والتصديرات والمستندات والمهام المحلية. سيبقى الحساب وربط WooCommerce، ولن يتم تعديل أي شيء داخل المتجر.',
+    resetConfirmation: 'اكتب RESET للتأكيد',
+    resetAction: 'إعادة تهيئة الحساب',
+    resetDialogTitle: 'تأكيد مسح بيانات الحساب المحلية',
+    resetDialogBody:
+      'هذا الإجراء نهائي لبيانات Woo Ops المحلية. سيظل تسجيل الدخول وربط WooCommerce متاحين لبدء مزامنة نظيفة.',
+    resetComplete: 'تم تنظيف الحساب. يمكنك الآن بدء مزامنة جديدة من صفحة ربط WooCommerce.',
     membersTitle: 'أعضاء الحساب',
     membersHelper:
       'هذه الصفحة لفريق تشغيل النظام وصلاحياته. إنفاق عملاء المتجر وعدد طلباتهم يظهر في التحليلات ضمن التوزيع حسب العميل.',
@@ -295,6 +305,16 @@ const translations = {
     currentPassword: 'Current password',
     newPassword: 'New password',
     saved: 'Saved',
+    dangerZone: 'Reset and cleanup',
+    resetAccountData: 'Clear test data',
+    resetAccountHelp:
+      'Deletes synchronized and manual orders, catalog, customers, analytics, saved filters, exports, documents and local jobs. The account and WooCommerce connection remain, and nothing in the store is modified.',
+    resetConfirmation: 'Type RESET to confirm',
+    resetAction: 'Reset account data',
+    resetDialogTitle: 'Confirm local account-data reset',
+    resetDialogBody:
+      'This permanently removes local Woo Ops operational data. Your login and WooCommerce connection remain ready for a clean synchronization.',
+    resetComplete: 'Account data was cleared. You can now start a fresh WooCommerce sync.',
     membersTitle: 'Account members',
     membersHelper:
       'This page manages operator access. Store customer spend and order counts are available in Analytics under Customer breakdown.',
@@ -1217,12 +1237,20 @@ function SettingsWorkspace({
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [message, setMessage] = useState('');
+  const [role, setRole] = useState<AuthenticatedUser['role'] | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetConfirmation, setResetConfirmation] = useState('');
+  const [resetting, setResetting] = useState(false);
   const load = async () => {
     setLoading(true);
     setFailed(false);
     try {
-      const body = await apiRequest<{ account: Account }>('/api/v1/account', onSessionExpired);
+      const body = await apiRequest<{ account: Account; user: AuthenticatedUser }>(
+        '/api/v1/account',
+        onSessionExpired,
+      );
       setAccount(body.account);
+      setRole(body.user.role);
       setName(body.account.name);
       setLocale(body.account.locale);
       setTimezone(body.account.timezone);
@@ -1264,6 +1292,21 @@ function SettingsWorkspace({
       setMessage(copy.saved);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'REQUEST_FAILED');
+    }
+  };
+  const resetAccount = async () => {
+    setResetting(true);
+    try {
+      await apiRequest('/api/v1/account/reset', onSessionExpired, {
+        ...writeOptions({ confirmation: 'RESET', preserveConnections: true }),
+      });
+      setResetOpen(false);
+      setResetConfirmation('');
+      setMessage(copy.resetComplete);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'REQUEST_FAILED');
+    } finally {
+      setResetting(false);
     }
   };
   if (loading) return <StateBlock copy={copy} loading error={false} onRetry={() => void load()} />;
@@ -1354,6 +1397,49 @@ function SettingsWorkspace({
           </Button>
         </Stack>
       </Paper>
+      {role === 'owner' && (
+        <Paper
+          variant="outlined"
+          sx={{ p: 2, borderColor: 'error.main' }}
+          data-testid="account-reset-zone"
+        >
+          <Typography variant="h6" component="h2" color="error.main">
+            {copy.dangerZone}
+          </Typography>
+          <Typography color="text.secondary" sx={{ my: 1 }}>
+            {copy.resetAccountHelp}
+          </Typography>
+          <Button color="error" variant="outlined" onClick={() => setResetOpen(true)}>
+            {copy.resetAccountData}
+          </Button>
+        </Paper>
+      )}
+      <Dialog open={resetOpen} onClose={() => !resetting && setResetOpen(false)}>
+        <DialogTitle>{copy.resetDialogTitle}</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 2 }}>{copy.resetDialogBody}</Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            label={copy.resetConfirmation}
+            value={resetConfirmation}
+            onChange={(event) => setResetConfirmation(event.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setResetOpen(false)} disabled={resetting}>
+            {copy.cancel}
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={resetting || resetConfirmation !== 'RESET'}
+            onClick={() => void resetAccount()}
+          >
+            {copy.resetAction}
+          </Button>
+        </DialogActions>
+      </Dialog>
       {!account && <Alert severity="warning">{copy.partial}</Alert>}
     </Stack>
   );

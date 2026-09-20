@@ -41,6 +41,7 @@ import {
   fieldMappingBackfillSchema,
   healthResponseSchema,
   accountUpdateSchema,
+  accountResetSchema,
   memberRoleUpdateSchema,
   invitationCreateSchema,
   invitationAcceptSchema,
@@ -100,6 +101,7 @@ import { createWooSyncEffect, healthCheckWooConnection } from './woo-sync.js';
 import { readPaymentProof, writePaymentProof } from './payment-proof-files.js';
 import { resolveRuntimePaths } from './runtime-paths.js';
 import { migrateLegacyHostingerDatabase } from './legacy-hostinger-migration.js';
+import { purgeAccountPrivateFiles } from './account-reset-files.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const runtimePaths = resolveRuntimePaths();
@@ -1639,6 +1641,34 @@ app.patch('/api/v1/account', (request, response) => {
     response.json({
       account: store.updateAccount(operationContext(user, response), parsed.data),
     });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/account/reset', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  if (user.role !== 'owner' || !auth.csrfValid(request)) {
+    sendApiError(response, 403, 'FORBIDDEN', 'Only the account owner can reset account data');
+    return;
+  }
+  const parsed = accountResetSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(
+      response,
+      400,
+      'ACCOUNT_RESET_CONFIRMATION_INVALID',
+      'Reset confirmation is invalid',
+    );
+    return;
+  }
+  try {
+    const result = store.resetAccountOperationalData(operationContext(user, response));
+    purgeAccountPrivateFiles(
+      [documentStorageRoot, exportStorageRoot, paymentProofStorageRoot],
+      user.accountId,
+    );
+    response.json({ reset: true, ...result });
   } catch (error) {
     sendOperationError(response, error);
   }

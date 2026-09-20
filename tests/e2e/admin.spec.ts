@@ -354,6 +354,36 @@ test('language switch updates text and direction together @admin', async ({ page
   await expect(page.getByRole('heading', { name: 'الإعدادات' })).toBeVisible();
 });
 
+test('owner can deliberately clear local test data from the settings danger zone @admin', async ({
+  page,
+}) => {
+  await mockAdminApi(page);
+  const owner = { ...user, role: 'owner' as const };
+  let resetBody: Record<string, unknown> | null = null;
+  await page.route('**/api/v1/auth/session', (route) => route.fulfill({ json: { user: owner } }));
+  await page.route('**/api/v1/account', async (route) => {
+    await route.fulfill({ json: { account, user: owner } });
+  });
+  await page.route('**/api/v1/account/reset', async (route) => {
+    resetBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      json: { reset: true, deletedRecords: 24, preservedConnections: 1 },
+    });
+  });
+  await page.goto('/settings');
+  await page.getByRole('button', { name: 'English' }).click();
+  await expect(page.getByTestId('account-reset-zone')).toBeVisible();
+  await page.getByRole('button', { name: 'Clear test data' }).click();
+  const confirm = page.getByLabel('Type RESET to confirm');
+  await expect(page.getByRole('button', { name: 'Reset account data' })).toBeDisabled();
+  await confirm.fill('RESET');
+  await page.getByRole('button', { name: 'Reset account data' }).click();
+  await expect(
+    page.getByText('Account data was cleared. You can now start a fresh WooCommerce sync.'),
+  ).toBeVisible();
+  expect(resetBody).toEqual({ confirmation: 'RESET', preserveConnections: true });
+});
+
 test('admin workspaces have no automated accessibility violations @a11y @admin', async ({
   page,
 }) => {

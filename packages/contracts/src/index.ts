@@ -40,6 +40,12 @@ export const accountUpdateSchema = z
       .optional(),
   })
   .strict();
+export const accountResetSchema = z
+  .object({
+    confirmation: z.literal('RESET'),
+    preserveConnections: z.literal(true),
+  })
+  .strict();
 export const memberRoleUpdateSchema = z.object({ role: accountRoleSchema }).strict();
 export const invitationCreateSchema = z
   .object({

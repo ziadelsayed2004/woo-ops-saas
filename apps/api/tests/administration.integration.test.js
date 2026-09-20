@@ -202,6 +202,107 @@ test('account settings validate timezone and health exposes migration and queue 
   }
 });
 
+test('owner reset clears only operational account data and preserves identity and connection', () => {
+  const { directory, store, auth } = fixture();
+  try {
+    const owner = auth.register(
+      'reset-owner@example.test',
+      'correct horse battery staple',
+      'Reset',
+    );
+    const other = auth.register(
+      'reset-other@example.test',
+      'correct horse battery staple',
+      'Other',
+    );
+    const now = new Date().toISOString();
+    const insertConnection = store.db.prepare(
+      `INSERT INTO connections (id, account_id, platform, store_url, status, created_at, updated_at)
+       VALUES (?, ?, 'woocommerce', ?, 'active', ?, ?)`,
+    );
+    insertConnection.run(
+      'connection-reset',
+      owner.accountId,
+      'https://shop.example.test',
+      now,
+      now,
+    );
+    insertConnection.run(
+      'connection-other',
+      other.accountId,
+      'https://other.example.test',
+      now,
+      now,
+    );
+    const insertOrder = store.db.prepare(
+      `INSERT INTO orders (id, account_id, connection_id, origin, order_number, external_order_id,
+         local_status, export_state, currency, grand_total_minor, created_at, updated_at)
+       VALUES (?, ?, ?, 'woo', ?, ?, 'new', 'never-exported', 'EGP', '10000', ?, ?)`,
+    );
+    insertOrder.run('order-reset', owner.accountId, 'connection-reset', '1001', '1', now, now);
+    insertOrder.run('order-other', other.accountId, 'connection-other', '2001', '2', now, now);
+    store.db
+      .prepare(
+        `INSERT INTO catalog_items (id, account_id, connection_id, kind, external_id, name, source_json,
+           source_hash, created_at, updated_at) VALUES (?, ?, ?, 'product', '1', 'Book', '{}', 'hash', ?, ?)`,
+      )
+      .run('catalog-reset', owner.accountId, 'connection-reset', now, now);
+    store.db
+      .prepare(
+        `INSERT INTO jobs (id, account_id, type, idempotency_key, status, created_at, updated_at,
+           payload_json, max_attempts, available_at) VALUES (?, ?, 'sync.initial', 'reset', 'succeeded', ?, ?, '{}', 3, ?)`,
+      )
+      .run('job-reset', owner.accountId, now, now, now);
+
+    const result = store.resetAccountOperationalData(contextFor(owner));
+    assert.equal(result.preservedConnections, 1);
+    assert.equal(result.deletedRecords >= 3, true);
+    assert.equal(
+      store.db
+        .prepare('SELECT COUNT(*) count FROM orders WHERE account_id = ?')
+        .get(owner.accountId).count,
+      0,
+    );
+    assert.equal(
+      store.db
+        .prepare('SELECT COUNT(*) count FROM catalog_items WHERE account_id = ?')
+        .get(owner.accountId).count,
+      0,
+    );
+    assert.equal(
+      store.db.prepare('SELECT COUNT(*) count FROM jobs WHERE account_id = ?').get(owner.accountId)
+        .count,
+      0,
+    );
+    assert.equal(
+      store.db
+        .prepare('SELECT COUNT(*) count FROM orders WHERE account_id = ?')
+        .get(other.accountId).count,
+      1,
+    );
+    assert.equal(store.listConnections(contextFor(owner)).length, 1);
+    assert.equal(store.getAccount(contextFor(owner)).id, owner.accountId);
+    assert.equal(
+      store.db
+        .prepare(
+          "SELECT COUNT(*) count FROM audit_events WHERE account_id = ? AND action = 'account.operational-data-reset'",
+        )
+        .get(owner.accountId).count,
+      1,
+    );
+    store.db
+      .prepare('UPDATE account_memberships SET role = ? WHERE account_id = ? AND user_id = ?')
+      .run('operator', other.accountId, other.id);
+    assert.throws(
+      () => store.resetAccountOperationalData({ ...contextFor(other), role: 'operator' }),
+      /ACCOUNT_OWNER_PERMISSION_DENIED/,
+    );
+  } finally {
+    if (store.db.open) store.db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 const hashSession = (token) => {
   // SHA-256 is deliberately reproduced only for the fixture lookup; production code never
   // exposes or logs the raw session token.
