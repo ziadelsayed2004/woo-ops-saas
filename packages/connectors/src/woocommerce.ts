@@ -39,6 +39,11 @@ export type WooShippingRate = Readonly<{
   amountMinor: string;
   currency: 'EGP';
 }>;
+type WooRemoteExportStatus = Readonly<{
+  id: number;
+  key: '_wc_customer_order_csv_export_is_exported';
+  status: 'exported' | 'not_exported';
+}>;
 export type NormalizedCatalogItem = {
   identity: string;
   kind: 'product' | 'variation' | 'category' | 'tag' | 'shipping_class';
@@ -367,6 +372,62 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
     ? (value as Record<string, unknown>)
     : null;
 
+const WOO_REMOTE_EXPORT_META_KEY = '_wc_customer_order_csv_export_is_exported' as const;
+const WOO_REMOTE_EXPORT_STATUS_PATH = '/wp-json/wc/v3/woo-ops/export-status';
+
+const wooOrderIds = (items: readonly unknown[]): number[] =>
+  items.flatMap((item) => {
+    const record = asRecord(item);
+    return record && Number.isSafeInteger(record.id) && Number(record.id) > 0
+      ? [Number(record.id)]
+      : [];
+  });
+
+const parseRemoteExportStatuses = (value: unknown): readonly WooRemoteExportStatus[] | null => {
+  const body = asRecord(value);
+  if (body?.version !== 1 || !Array.isArray(body.items) || body.items.length > 100) return null;
+  const statuses: WooRemoteExportStatus[] = [];
+  for (const raw of body.items) {
+    const item = asRecord(raw);
+    if (
+      !item ||
+      !Number.isSafeInteger(item.id) ||
+      Number(item.id) <= 0 ||
+      item.key !== WOO_REMOTE_EXPORT_META_KEY ||
+      (item.status !== 'exported' && item.status !== 'not_exported')
+    )
+      return null;
+    statuses.push({
+      id: Number(item.id),
+      key: WOO_REMOTE_EXPORT_META_KEY,
+      status: item.status,
+    });
+  }
+  return statuses;
+};
+
+const overlayRemoteExportStatuses = (
+  items: readonly unknown[],
+  statuses: readonly WooRemoteExportStatus[],
+): readonly unknown[] => {
+  const byId = new Map(statuses.map((status) => [status.id, status]));
+  return items.map((raw) => {
+    const order = asRecord(raw);
+    const status = order && Number.isSafeInteger(order.id) ? byId.get(Number(order.id)) : undefined;
+    if (!order || !status) return raw;
+    const metadata = Array.isArray(order.meta_data)
+      ? order.meta_data.filter((entry) => {
+          const meta = asRecord(entry);
+          return meta?.key !== WOO_REMOTE_EXPORT_META_KEY;
+        })
+      : [];
+    return {
+      ...order,
+      meta_data: [...metadata, { key: status.key, value: status.status }],
+    };
+  });
+};
+
 const requiredInteger = (record: Record<string, unknown>, key: string): number => {
   const value = record[key];
   if (!Number.isInteger(value) || Number(value) < 0) throw new Error(`WOO_SCHEMA_INVALID:${key}`);
@@ -582,9 +643,9 @@ export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
     '_wc_customer_order_xml_export_is_exported',
     'wc_customer_order_xml_export_is_exported',
   ]);
-  const remoteExportMetadata = metadata.find((item) =>
-    remoteExportKeys.has(item.key.trim().toLowerCase()),
-  );
+  const remoteExportMetadata =
+    metadata.find((item) => item.key.trim().toLowerCase() === WOO_REMOTE_EXPORT_META_KEY) ??
+    metadata.find((item) => remoteExportKeys.has(item.key.trim().toLowerCase()));
   const remoteExportValue = asRecord(remoteExportMetadata?.value);
   const remoteExportScalar =
     remoteExportValue?.status ?? remoteExportValue?.state ?? remoteExportMetadata?.value;
@@ -864,7 +925,7 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
     private readonly resolveHost: HostResolver = defaultHostResolver,
   ) {}
 
-  private async requestPage(url: URL): Promise<Response> {
+  private async requestPage(url: URL, retryNotFound = true): Promise<Response> {
     if (!this.storeUrl || !this.credentials) throw new Error('WOO_CONNECTION_NOT_CONFIGURED');
     await assertPublicStoreUrl(this.storeUrl, this.resolveHost);
     const requestOptions: RequestInit = {
@@ -881,7 +942,7 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
     // explicitly supports HTTPS query-string authentication for that environment. Retry
     // only official Woo REST paths, on the same origin, and only after an auth-like failure.
     if (
-      [401, 403, 404].includes(response.status) &&
+      ([401, 403].includes(response.status) || (retryNotFound && response.status === 404)) &&
       url.origin === this.storeUrl.origin &&
       url.pathname.startsWith('/wp-json/wc/v3/')
     ) {
@@ -901,6 +962,25 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
       if (responseUrl.origin !== this.storeUrl.origin) throw new Error('WOO_ORIGIN_CHANGED');
     }
     return response;
+  }
+
+  private async readRemoteExportStatuses(items: readonly unknown[]): Promise<readonly unknown[]> {
+    if (!this.storeUrl || items.length === 0) return items;
+    const ids = wooOrderIds(items);
+    if (ids.length === 0) return items;
+    const url = new URL(WOO_REMOTE_EXPORT_STATUS_PATH, this.storeUrl);
+    url.searchParams.set('ids', ids.slice(0, 100).join(','));
+    try {
+      const response = await this.requestPage(url, false);
+      if (!response.ok) return items;
+      const statuses = parseRemoteExportStatuses((await response.json()) as unknown);
+      return statuses === null ? items : overlayRemoteExportStatuses(items, statuses);
+    } catch {
+      // The companion is optional. Network, authorization, older-plugin and schema
+      // failures leave the standard immutable Woo payload untouched and therefore
+      // surface as "not exposed" rather than inventing an export state.
+      return items;
+    }
   }
   async healthCheck(): Promise<ConnectorHealth> {
     if (!this.storeUrl || !this.credentials) throw new Error('WOO_CONNECTION_NOT_CONFIGURED');
@@ -947,7 +1027,9 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
     const response = await this.requestPage(url);
     if (response.status === 429) throw new Error('WOO_RATE_LIMITED');
     if (!response.ok) throw new Error(`WOO_HTTP_${response.status}`);
-    return response.json() as Promise<unknown>;
+    const order = (await response.json()) as unknown;
+    const [withStatus] = await this.readRemoteExportStatuses([order]);
+    return withStatus ?? order;
   }
   pullProducts(): AsyncIterable<unknown> {
     return this.pullCatalog('products');
@@ -1122,7 +1204,8 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
       const body: unknown = await response.json();
       if (!Array.isArray(body)) throw new Error('WOO_SCHEMA_INVALID:page');
       const totalPages = wooTotalPages(response, page, body.length);
-      yield { kind, page, totalPages, items: body };
+      const items = kind === 'orders' ? await this.readRemoteExportStatuses(body) : body;
+      yield { kind, page, totalPages, items };
       if (page >= totalPages || body.length === 0) return;
     }
   }

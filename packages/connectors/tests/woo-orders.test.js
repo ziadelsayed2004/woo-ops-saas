@@ -84,7 +84,9 @@ test('pulls orders read-only and resumes at a requested page', async () => {
     { key: 'ck', secret: 'cs' },
     async (url) => {
       calls.push(String(url));
-      return new Response(JSON.stringify(calls.length === 1 ? [fixture] : []), {
+      if (new URL(String(url)).pathname.endsWith('/woo-ops/export-status'))
+        return new Response('{}', { status: 404 });
+      return new Response(JSON.stringify([fixture]), {
         headers: { 'x-wp-totalpages': '2' },
       });
     },
@@ -94,7 +96,74 @@ test('pulls orders read-only and resumes at a requested page', async () => {
   for await (const page of connector.pullRemote('orders', 50, 2)) pages.push(page);
   assert.equal(pages.length, 1);
   assert.match(calls[0], /orders\?page=2&per_page=50/);
+  assert.match(calls[1], /woo-ops\/export-status\?ids=42/u);
   assert.equal(connector.capabilities.orders, true);
+});
+
+test('overlays protected export status from one bounded companion read per order page', async () => {
+  const calls = [];
+  const connector = new WooCommerceConnector(
+    '',
+    new URL('https://shop.example.test'),
+    { key: 'ck_read_only', secret: 'cs_read_only' },
+    async (url, init) => {
+      const parsed = new URL(String(url));
+      calls.push({ url: parsed, init });
+      if (parsed.pathname.endsWith('/woo-ops/export-status'))
+        return new Response(
+          JSON.stringify({
+            version: 1,
+            items: [
+              {
+                id: 42,
+                key: '_wc_customer_order_csv_export_is_exported',
+                status: 'exported',
+              },
+            ],
+          }),
+        );
+      return new Response(JSON.stringify([fixture]), {
+        headers: { 'x-wp-totalpages': '1' },
+      });
+    },
+    async () => [{ address: '93.184.216.34' }],
+  );
+
+  const pages = [];
+  for await (const page of connector.pullOrderPages('orders')) pages.push(page);
+  const normalized = normalizeWooOrder(pages[0].items[0]);
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].init.method, 'GET');
+  assert.equal(calls[1].init.method, 'GET');
+  assert.equal(calls[1].url.searchParams.get('ids'), '42');
+  assert.equal(normalized.remoteExportStatus, 'exported');
+  assert.equal(normalized.remoteExportStatusKey, '_wc_customer_order_csv_export_is_exported');
+});
+
+test('missing or malformed export-status companion leaves the standard Woo payload untouched', async () => {
+  for (const companionResponse of [
+    new Response('{}', { status: 404 }),
+    new Response(JSON.stringify({ version: 1, items: [{ id: 42, status: 'maybe' }] })),
+  ]) {
+    const connector = new WooCommerceConnector(
+      '',
+      new URL('https://shop.example.test'),
+      { key: 'ck_read_only', secret: 'cs_read_only' },
+      async (url) =>
+        new URL(String(url)).pathname.endsWith('/woo-ops/export-status')
+          ? companionResponse.clone()
+          : new Response(JSON.stringify([{ ...fixture, meta_data: [] }]), {
+              headers: { 'x-wp-totalpages': '1' },
+            }),
+      async () => [{ address: '93.184.216.34' }],
+    );
+    const pages = [];
+    for await (const page of connector.pullOrderPages('orders')) pages.push(page);
+    const normalized = normalizeWooOrder(pages[0].items[0]);
+    assert.equal(normalized.remoteExportStatus, null);
+    assert.equal(normalized.remoteExportStatusKey, null);
+  }
 });
 
 test('credential and webhook envelopes round-trip without exposing plaintext', () => {
@@ -201,15 +270,17 @@ test('missing pagination headers stop safely at the current order response', asy
     '',
     new URL('https://shop.example.test'),
     { key: 'ck_read_only', secret: 'cs_read_only' },
-    async () => {
+    async (url) => {
       calls += 1;
+      if (new URL(String(url)).pathname.endsWith('/woo-ops/export-status'))
+        return new Response('{}', { status: 404 });
       return new Response(JSON.stringify([fixture]));
     },
     async () => [{ address: '93.184.216.34' }],
   );
   const pages = [];
   for await (const page of connector.pullOrderPages('orders', 100, 3)) pages.push(page);
-  assert.equal(calls, 1);
+  assert.equal(calls, 2);
   assert.equal(pages[0].totalPages, 3);
 });
 

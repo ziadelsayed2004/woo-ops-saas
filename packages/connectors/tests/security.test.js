@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   canonicalizeStoreUrl,
@@ -112,6 +113,8 @@ test('connector retries Woo authentication for shared hosts that strip Authoriza
     async (url, init) => {
       calls.push({ url: new URL(String(url)), init });
       if (calls.length === 1) return new Response('{}', { status: 401 });
+      if (new URL(String(url)).pathname.endsWith('/woo-ops/export-status'))
+        return new Response('{}', { status: 404 });
       return new Response(JSON.stringify([orderFixture]), {
         status: 200,
         headers: { 'x-wp-totalpages': '1' },
@@ -122,13 +125,66 @@ test('connector retries Woo authentication for shared hosts that strip Authoriza
 
   for await (const _page of connector.pullRemote('orders')) break;
 
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   assert.match(String(calls[0].init.headers.authorization), /^Basic /u);
   assert.equal(calls[0].url.searchParams.has('consumer_key'), false);
   assert.equal(calls[1].init.headers.authorization, undefined);
   assert.equal(calls[1].url.searchParams.get('consumer_key'), 'ck_read');
   assert.equal(calls[1].url.searchParams.get('consumer_secret'), 'cs_read');
   assert.equal(calls[1].init.redirect, 'manual');
+  assert.equal(calls[2].init.method, 'GET');
+  assert.equal(calls[2].url.pathname, '/wp-json/wc/v3/woo-ops/export-status');
+});
+
+test('the export-status companion integration is read-only and bounded', async () => {
+  const calls = [];
+  const connector = new WooCommerceConnector(
+    '',
+    new URL('https://shop.example.test'),
+    { key: 'ck_read', secret: 'cs_read' },
+    async (url, init) => {
+      const parsed = new URL(String(url));
+      calls.push({ url: parsed, init });
+      if (parsed.pathname.endsWith('/woo-ops/export-status'))
+        return new Response(JSON.stringify({ version: 1, items: [] }));
+      return new Response(
+        JSON.stringify(
+          Array.from({ length: 100 }, (_, index) => ({ ...orderFixture, id: index + 1 })),
+        ),
+        { headers: { 'x-wp-totalpages': '1' } },
+      );
+    },
+    publicResolver,
+  );
+
+  for await (const _page of connector.pullOrderPages('orders')) break;
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].init.method, 'GET');
+  assert.equal(calls[1].init.body, undefined);
+  assert.equal(calls[1].url.searchParams.get('ids').split(',').length, 100);
+  assert.equal(typeof connector.createOrder, 'undefined');
+  assert.equal(typeof connector.updateOrder, 'undefined');
+});
+
+test('the WordPress companion registers only an authenticated bounded read route', () => {
+  const plugin = readFileSync(
+    new URL(
+      '../../../integrations/wordpress/woo-ops-export-status-bridge/woo-ops-export-status-bridge.php',
+      import.meta.url,
+    ),
+    'utf8',
+  );
+
+  assert.match(plugin, /WP_REST_Server::READABLE/u);
+  assert.match(plugin, /current_user_can\( 'manage_woocommerce' \)/u);
+  assert.match(plugin, /current_user_can\( 'edit_shop_orders' \)/u);
+  assert.match(plugin, /\{0,99\}/u);
+  assert.doesNotMatch(plugin, /WP_REST_Server::(?:CREATABLE|EDITABLE|DELETABLE)/u);
+  assert.doesNotMatch(
+    plugin,
+    /(?:update|add|delete)_post_meta|->save\s*\(|wp_delete_post|wc_create_order/u,
+  );
 });
 
 test('schema drift is quarantined and webhook signatures require strict base64', () => {
