@@ -4,11 +4,18 @@ This optional companion exposes the protected global export flag maintained by W
 Customer / Order / Coupon Export. Standard Woo REST responses omit protected metadata, so Woo Ops
 cannot otherwise distinguish an exported order from a not-exported one.
 
+Version 1.1 reads the current plugin's private `wc_export_is_order_exported` taxonomy and its
+`global` term. It retains read-only compatibility with the legacy
+`_wc_customer_order_csv_export_is_exported` metadata flag.
+
 ## Install
 
 1. Zip the `woo-ops-export-status-bridge` directory.
 2. In WordPress, open **Plugins > Add New > Upload Plugin**, upload the ZIP, and activate it.
 3. In Woo Ops, run a normal synchronization or safe reinitialization.
+
+When upgrading from 1.0, upload the replacement ZIP and approve replacing the installed plugin,
+then activate it if WordPress does not keep it active automatically.
 
 The existing WooCommerce read-only consumer key authenticates requests. The plugin adds only:
 

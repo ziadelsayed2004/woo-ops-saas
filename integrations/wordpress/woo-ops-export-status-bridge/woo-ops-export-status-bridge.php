@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Woo Ops Export Status Bridge
  * Description: Read-only REST exposure for WooCommerce Customer / Order / Coupon Export status.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Requires Plugins: woocommerce
  * Requires PHP: 7.4
  * Author: Woo Ops
@@ -12,6 +12,29 @@
 defined( 'ABSPATH' ) || exit;
 
 const WOO_OPS_EXPORT_STATUS_META_KEY = '_wc_customer_order_csv_export_is_exported';
+const WOO_OPS_EXPORT_STATUS_TAXONOMY = 'wc_export_is_order_exported';
+const WOO_OPS_EXPORT_STATUS_GLOBAL_TERM = 'global';
+
+/**
+ * Customer / Order / Coupon Export 5.0+ stores the global flag as a private
+ * taxonomy term. Older releases used order metadata, so keep a read-only
+ * fallback for stores that have not migrated yet.
+ */
+function woo_ops_is_order_exported( WC_Order $order ): bool {
+	if ( taxonomy_exists( WOO_OPS_EXPORT_STATUS_TAXONOMY ) ) {
+		$taxonomy_status = is_object_in_term(
+			(int) $order->get_id(),
+			WOO_OPS_EXPORT_STATUS_TAXONOMY,
+			WOO_OPS_EXPORT_STATUS_GLOBAL_TERM
+		);
+
+		return true === $taxonomy_status;
+	}
+
+	$legacy_value = $order->get_meta( WOO_OPS_EXPORT_STATUS_META_KEY, true );
+
+	return in_array( strtolower( trim( (string) $legacy_value ) ), array( '1', 'true', 'yes', 'exported' ), true );
+}
 
 /**
  * Keep the route inside Woo's authenticated namespace so existing read-only
@@ -62,8 +85,7 @@ function woo_ops_read_export_statuses( WP_REST_Request $request ) {
 			continue;
 		}
 
-		$raw_value = $order->get_meta( WOO_OPS_EXPORT_STATUS_META_KEY, true );
-		$exported  = in_array( strtolower( trim( (string) $raw_value ) ), array( '1', 'true', 'yes', 'exported' ), true );
+		$exported = woo_ops_is_order_exported( $order );
 		$items[]   = array(
 			'id'     => (int) $order->get_id(),
 			'key'    => WOO_OPS_EXPORT_STATUS_META_KEY,
