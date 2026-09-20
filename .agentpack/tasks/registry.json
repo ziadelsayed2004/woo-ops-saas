@@ -2743,6 +2743,54 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0923",
+      "epic": "E09",
+      "title": "Match Woo order sheet and keep export history in orders",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "L",
+      "parallelGroup": "order-export-output",
+      "dependencies": ["T0922"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/TESTING.md",
+        "apps/web/src/App.tsx",
+        "apps/api/src/index.ts",
+        "apps/api/src/export-effect.ts",
+        "packages/exports/src/index.ts",
+        "packages/documents/src/index.ts",
+        "tests/e2e/orders.spec.ts"
+      ],
+      "scope": [
+        "Diagnose and surface actual export creation errors instead of the generic EXPORT_CREATE_FAILED message",
+        "Use the supplied Woo workbook's ordered line-item columns plus readable billing and shipping governorate names as the default Excel output",
+        "Show export history, progress, retry and repeat download within the orders workspace and remove the redundant standalone export navigation",
+        "Ensure A4 invoices and shipping labels include order line details"
+      ],
+      "acceptance": [
+        "Export creation succeeds for selected orders or displays a specific actionable API error",
+        "Default Excel has the Woo reference columns in order with order lines and governorate names",
+        "Operator can create, monitor, retry and download an export again from orders without navigating away",
+        "A4 and shipping label PDFs show order items and quantities",
+        "Unit integration contract browser and build checks pass"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:e2e",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
