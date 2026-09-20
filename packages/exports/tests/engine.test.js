@@ -107,6 +107,43 @@ test('Egypt governorate codes are exported as readable Arabic names', async () =
   assert.equal(workbook.worksheets[0].getCell('A2').value, 'الشرقية');
 });
 
+test('Woo-style order-line sheet keeps state codes and adds readable governorates', async () => {
+  const result = await generateExport({
+    profile: {
+      ...profile('xlsx'),
+      filenameTemplate: 'orders-{date}-{format}',
+      columns: [
+        { key: 'woo.orderNumber', label: 'Order Number', type: 'text' },
+        { key: 'woo.billingState', label: 'State Code (Billing)', type: 'text' },
+        { key: 'woo.billingStateName', label: 'Governorate (Billing)', type: 'text' },
+        { key: 'woo.shippingState', label: 'State Code (Shipping)', type: 'text' },
+        { key: 'woo.shippingStateName', label: 'Governorate (Shipping)', type: 'text' },
+        { key: 'woo.itemName', label: 'Item Name', type: 'text' },
+        { key: 'woo.quantity', label: 'Quantity (- Refund)', type: 'text' },
+        { key: 'woo.orderTotal', label: 'Order Total Amount', type: 'text' },
+      ],
+      config: { required: ['woo.orderNumber'] },
+    },
+    orders: [{ ...order, billing: { state: 'EGSHR' }, shipping: { state: 'EGC' } }],
+  });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(result.bytes);
+  const sheet = workbook.worksheets[0];
+  assert.equal(result.rowCount, 2);
+  assert.equal(result.filename, 'orders-export-xlsx.xlsx');
+  assert.deepEqual(sheet.getRow(1).values.slice(1), [
+    'Order Number', 'State Code (Billing)', 'Governorate (Billing)',
+    'State Code (Shipping)', 'Governorate (Shipping)', 'Item Name',
+    'Quantity (- Refund)', 'Order Total Amount',
+  ]);
+  assert.equal(sheet.getCell('B2').value, 'EGSHR');
+  assert.equal(sheet.getCell('C2').value, 'الشرقية');
+  assert.equal(sheet.getCell('D2').value, 'EGC');
+  assert.equal(sheet.getCell('E2').value, 'القاهرة');
+  assert.equal(sheet.getCell('F3').value, "'=2+2");
+  assert.equal(sheet.getCell('H2').value, '1250.50');
+});
+
 test('row modes and chunking are bounded and resumable', async () => {
   const orderWithPackages = { ...order, packages: [{ tracking: 'A' }, { tracking: 'B' }] };
   assert.equal(materializeRows([order], { ...profile('csv'), rowMode: 'line' }).length, 2);

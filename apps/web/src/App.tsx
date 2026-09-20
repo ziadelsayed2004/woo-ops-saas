@@ -40,6 +40,7 @@ import {
   type AuthenticatedUser,
 } from './AdminWorkspaces';
 import { WorkspaceShell } from './WorkspaceShell';
+import { wooOrderExportColumns } from './wooExportColumns';
 import {
   EGYPTIAN_GOVERNORATES,
   egyptianGovernorate,
@@ -3402,11 +3403,13 @@ function ExportsWorkspace({
   t,
   savedViews,
   currentOrderQuery,
+  historyOnly = false,
 }: {
   direction: Direction;
   t: (typeof copy)[Locale];
   savedViews: SavedOrderView[];
   currentOrderQuery: JsonRecord;
+  historyOnly?: boolean;
 }) {
   const [batches, setBatches] = useState<ExportBatchSummary[]>([]);
   const [profileId, setProfileId] = useState('');
@@ -3515,7 +3518,11 @@ function ExportsWorkspace({
 
   useEffect(() => {
     setLoading(true);
-    void Promise.all([loadProfiles(), loadBatches(), loadDocumentBatches()])
+    void Promise.all([
+      ...(historyOnly ? [] : [loadProfiles()]),
+      loadBatches(historyOnly),
+      loadDocumentBatches(historyOnly),
+    ])
       .catch(() => setMessage('EXPORT_LOAD_FAILED'))
       .finally(() => setLoading(false));
   }, []);
@@ -3600,57 +3607,67 @@ function ExportsWorkspace({
 
   return (
     <Stack gap={3} data-testid="exports-workspace" dir={direction}>
-      <Box>
-        <Typography variant="h4" component="h1" fontWeight={800}>
-          {t.exportsTitle}
-        </Typography>
-        <Typography color="text.secondary">{t.exportsSubtitle}</Typography>
-      </Box>
-      {message && <Alert severity={message.endsWith('FAILED') ? 'error' : 'info'}>{message}</Alert>}
-      <Paper variant="outlined" sx={{ p: 2 }}>
-        <Stack gap={2}>
-          <Typography variant="h6" component="h2" fontWeight={800}>
-            {t.createExport}
+      {!historyOnly && (
+        <Box>
+          <Typography
+            variant={historyOnly ? 'h6' : 'h4'}
+            component={historyOnly ? 'h2' : 'h1'}
+            fontWeight={800}
+          >
+            {historyOnly ? t.exportBatches : t.exportsTitle}
           </Typography>
-          <Stack direction={{ xs: 'column', md: 'row' }} gap={2} flexWrap="wrap">
-            <FormControl size="small" sx={{ minWidth: 260 }}>
-              <InputLabel id="export-source-label">
-                {direction === 'rtl' ? 'الطلبات المطلوب تصديرها' : 'Orders to export'}
-              </InputLabel>
-              <Select
-                labelId="export-source-label"
-                label={direction === 'rtl' ? 'الطلبات المطلوب تصديرها' : 'Orders to export'}
-                value={selectionSource}
-                onChange={(event) => setSelectionSource(event.target.value)}
-              >
-                <MenuItem value="current">
-                  {direction === 'rtl' ? 'الفلتر الحالي في الطلبات' : 'Current orders filter'}
-                </MenuItem>
-                <MenuItem value="all">{direction === 'rtl' ? 'كل الطلبات' : 'All orders'}</MenuItem>
-                {savedViews.map((saved) => (
-                  <MenuItem key={saved.id} value={`saved:${saved.id}`}>
-                    {direction === 'rtl' ? 'فلتر محفوظ: ' : 'Saved filter: '}
-                    {saved.name}
+          {!historyOnly && <Typography color="text.secondary">{t.exportsSubtitle}</Typography>}
+        </Box>
+      )}
+      {message && <Alert severity={message.endsWith('FAILED') ? 'error' : 'info'}>{message}</Alert>}
+      {!historyOnly && (
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Stack gap={2}>
+            <Typography variant="h6" component="h2" fontWeight={800}>
+              {t.createExport}
+            </Typography>
+            <Stack direction={{ xs: 'column', md: 'row' }} gap={2} flexWrap="wrap">
+              <FormControl size="small" sx={{ minWidth: 260 }}>
+                <InputLabel id="export-source-label">
+                  {direction === 'rtl' ? 'الطلبات المطلوب تصديرها' : 'Orders to export'}
+                </InputLabel>
+                <Select
+                  labelId="export-source-label"
+                  label={direction === 'rtl' ? 'الطلبات المطلوب تصديرها' : 'Orders to export'}
+                  value={selectionSource}
+                  onChange={(event) => setSelectionSource(event.target.value)}
+                >
+                  <MenuItem value="current">
+                    {direction === 'rtl' ? 'الفلتر الحالي في الطلبات' : 'Current orders filter'}
                   </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <Button
-              variant="contained"
-              onClick={() => void createBatch()}
-              disabled={loading || !versionId}
-            >
-              {loading ? (
-                <CircularProgress size={18} aria-label={t.loading} />
-              ) : direction === 'rtl' ? (
-                'تصدير Excel'
-              ) : (
-                'Export Excel'
-              )}
-            </Button>
+                  <MenuItem value="all">
+                    {direction === 'rtl' ? 'كل الطلبات' : 'All orders'}
+                  </MenuItem>
+                  {savedViews.map((saved) => (
+                    <MenuItem key={saved.id} value={`saved:${saved.id}`}>
+                      {direction === 'rtl' ? 'فلتر محفوظ: ' : 'Saved filter: '}
+                      {saved.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Button
+                variant="contained"
+                onClick={() => void createBatch()}
+                disabled={loading || !versionId}
+              >
+                {loading ? (
+                  <CircularProgress size={18} aria-label={t.loading} />
+                ) : direction === 'rtl' ? (
+                  'تصدير Excel'
+                ) : (
+                  'Export Excel'
+                )}
+              </Button>
+            </Stack>
           </Stack>
-        </Stack>
-      </Paper>
+        </Paper>
+      )}
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
           <Typography variant="h6" component="h2" fontWeight={800}>
@@ -3826,6 +3843,7 @@ const viewFromPath = (path: string): AppView => {
     'members',
     'operations',
   ];
+  if (value === 'exports') return 'orders';
   return supported.includes(value as AppView) ? (value as AppView) : 'orders';
 };
 
@@ -3861,6 +3879,8 @@ export function App({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [selectAllMatching, setSelectAllMatching] = useState(false);
   const [selectionMessage, setSelectionMessage] = useState('');
+  const [selectionError, setSelectionError] = useState(false);
+  const [exportHistoryRevision, setExportHistoryRevision] = useState(0);
   const [viewName, setViewName] = useState('');
   const [savedViews, setSavedViews] = useState<SavedOrderView[]>([]);
   const [selectedSavedViewId, setSelectedSavedViewId] = useState('');
@@ -4188,32 +4208,45 @@ export function App({
   const ensureOrderExportVersion = async (
     format: 'xlsx' | 'csv',
   ): Promise<ExportVersionSummary> => {
+    const failed = async (response: Response, fallback: string): Promise<never> => {
+      const body = (await response.json().catch(() => null)) as {
+        error?: { code?: string };
+      } | null;
+      throw new Error(body?.error?.code ?? `${fallback} (${response.status})`);
+    };
     const profilesResponse = await fetch('/api/v1/export-profiles', { credentials: 'include' });
-    if (!profilesResponse.ok) throw new Error('EXPORT_PROFILES_LOAD_FAILED');
+    if (!profilesResponse.ok) return failed(profilesResponse, 'EXPORT_PROFILES_LOAD_FAILED');
     const profiles =
       ((await profilesResponse.json()) as { items?: ExportProfileSummary[] }).items ?? [];
-    let profile = profiles.find((item) => item.name === `Orders ${format.toUpperCase()}`);
+    let profile = profiles.find((item) => item.name === `Woo Orders ${format.toUpperCase()} v2`);
     if (!profile) {
       const createProfileResponse = await fetch('/api/v1/export-profiles', {
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
         body: JSON.stringify({
-          name: `Orders ${format.toUpperCase()}`,
-          description: 'Default shipping operations export',
+          name: `Woo Orders ${format.toUpperCase()} v2`,
+          description: 'WooCommerce order-line layout with governorate names',
         }),
       });
-      if (!createProfileResponse.ok) throw new Error('EXPORT_PROFILE_CREATE_FAILED');
+      if (!createProfileResponse.ok)
+        return failed(createProfileResponse, 'EXPORT_PROFILE_CREATE_FAILED');
       profile = ((await createProfileResponse.json()) as { profile: ExportProfileSummary }).profile;
     }
     const versionsResponse = await fetch(
       `/api/v1/export-profiles/${encodeURIComponent(profile.id)}/versions`,
       { credentials: 'include' },
     );
-    if (!versionsResponse.ok) throw new Error('EXPORT_VERSIONS_LOAD_FAILED');
+    if (!versionsResponse.ok) return failed(versionsResponse, 'EXPORT_VERSIONS_LOAD_FAILED');
     const versions =
       ((await versionsResponse.json()) as { items?: ExportVersionSummary[] }).items ?? [];
-    const existing = versions.find((item) => item.format === format && item.rowMode === 'order');
+    const existing = versions.find(
+      (item) =>
+        item.format === format &&
+        item.rowMode === 'line' &&
+        item.columns?.length === wooOrderExportColumns.length &&
+        item.columns.every((column, index) => column.key === wooOrderExportColumns[index]?.key),
+    );
     if (existing) return existing;
     const createVersionResponse = await fetch(
       `/api/v1/export-profiles/${encodeURIComponent(profile.id)}/versions`,
@@ -4223,31 +4256,15 @@ export function App({
         headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
         body: JSON.stringify({
           format,
-          rowMode: 'order',
-          columns: [
-            { key: 'orderNumber', label: t.orderNumber, type: 'text' },
-            { key: 'customerName', label: t.customerName, type: 'text' },
-            { key: 'customerPhone', label: t.phone, type: 'text' },
-            { key: 'shipping.address_1', label: t.address, type: 'text' },
-            { key: 'shipping.state', label: t.governorateFilter, type: 'text' },
-            { key: 'shippingMethodTitle', label: t.shippingMethod, type: 'text' },
-            { key: 'paymentMethodTitle', label: t.payment, type: 'text' },
-            { key: 'remoteStatus', label: t.remoteStatus, type: 'text' },
-            {
-              key: 'remoteExportStatus',
-              label: locale === 'ar' ? 'حالة تصدير Woo' : 'Woo export status',
-              type: 'text',
-            },
-            { key: 'exportState', label: t.exportState, type: 'text' },
-            { key: 'grandTotalMinor', label: t.total, type: 'money' },
-            { key: 'createdAt', label: t.created, type: 'date' },
-          ],
-          filenameTemplate: `orders-{date}-${format}`,
-          config: { required: ['orderNumber', 'customerName', 'customerPhone'] },
+          rowMode: 'line',
+          columns: wooOrderExportColumns,
+          filenameTemplate: 'orders-{date}-{format}',
+          config: { required: ['woo.orderNumber'] },
         }),
       },
     );
-    if (!createVersionResponse.ok) throw new Error('EXPORT_VERSION_CREATE_FAILED');
+    if (!createVersionResponse.ok)
+      return failed(createVersionResponse, 'EXPORT_VERSION_CREATE_FAILED');
     return ((await createVersionResponse.json()) as { version: ExportVersionSummary }).version;
   };
 
@@ -4266,12 +4283,22 @@ export function App({
           idempotencyKey: `orders-${format}:${selectionId}:${crypto.randomUUID()}`,
         }),
       });
-      if (!response.ok) throw new Error('EXPORT_CREATE_FAILED');
+      if (!response.ok) {
+        const errorBody = (await response.json().catch(() => null)) as {
+          error?: { code?: string };
+          code?: string;
+        } | null;
+        throw new Error(
+          errorBody?.error?.code ?? errorBody?.code ?? `EXPORT_HTTP_${response.status}`,
+        );
+      }
       clearOrderSelection();
+      setSelectionError(false);
       setSelectionMessage(locale === 'ar' ? 'جاري تجهيز ملف التصدير' : 'Export is being prepared');
-      setView('exports');
-    } catch {
-      setSelectionMessage('EXPORT_CREATE_FAILED');
+      setExportHistoryRevision((value) => value + 1);
+    } catch (error) {
+      setSelectionError(true);
+      setSelectionMessage(error instanceof Error ? error.message : 'EXPORT_CREATE_FAILED');
     }
   };
 
@@ -4359,7 +4386,7 @@ export function App({
       });
       if (!response.ok) throw new Error('DOCUMENT_JOB_FAILED');
       clearOrderSelection();
-      setView('exports');
+      setExportHistoryRevision((value) => value + 1);
     } catch {
       setSelectionMessage('DOCUMENT_JOB_FAILED');
     }
@@ -4492,7 +4519,6 @@ export function App({
       label: locale === 'ar' ? 'المنتجات والمخزون' : 'Products & stock',
     },
     { view: 'manual', label: locale === 'ar' ? 'الطلبات اليدوية' : 'Manual orders' },
-    { view: 'exports', label: t.exportsNav },
     { view: 'analytics', label: t.analyticsNav },
     { view: 'connections', label: adminLabel('connections', locale) },
     { view: 'settings', label: adminLabel('settings', locale) },
@@ -4923,12 +4949,12 @@ export function App({
             )}
             {selectionMessage && (
               <Alert
-                severity={selectionMessage.endsWith('_FAILED') ? 'error' : 'success'}
+                severity={
+                  selectionError || selectionMessage.endsWith('_FAILED') ? 'error' : 'success'
+                }
                 sx={{ mb: 2 }}
               >
-                {selectionMessage.endsWith('_FAILED')
-                  ? selectionMessage
-                  : `${t.savedViews}: ${selectionMessage}`}
+                {selectionMessage}
               </Alert>
             )}
             {error && (
@@ -5107,6 +5133,14 @@ export function App({
                 </Box>
               )}
             </Paper>
+            <ExportsWorkspace
+              key={exportHistoryRevision}
+              direction={direction}
+              t={t}
+              savedViews={savedViews}
+              currentOrderQuery={currentOrderQuery}
+              historyOnly
+            />
           </>
         )}
       </WorkspaceShell>

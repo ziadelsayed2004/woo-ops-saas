@@ -65,6 +65,7 @@ export type NormalizedOrder = {
   externalCustomerId: string | null;
   currency: string;
   grandTotalMinor: string;
+  customerNote?: string | null;
   amounts: Readonly<{
     merchandiseSubtotalMinor: string;
     discountMinor: string;
@@ -779,6 +780,7 @@ export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
         : '0',
     },
     createdAt: isoOrNull(record.date_created_gmt ?? record.date_created),
+    customerNote: textOrNull(record.customer_note),
     modifiedAt: isoOrNull(record.date_modified_gmt ?? record.date_modified),
     customer: normalizeAddress(record.billing),
     billing: normalizeAddress(record.billing),

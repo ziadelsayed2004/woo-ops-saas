@@ -22,5 +22,6 @@ test('keeps document generation in order and export workflows without a standalo
   await page.goto('/');
   await page.getByRole('button', { name: 'English' }).click();
   await expect(page.getByRole('button', { name: 'Documents' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Exports' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Exports' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Invoice and print commands' })).toBeVisible();
 });

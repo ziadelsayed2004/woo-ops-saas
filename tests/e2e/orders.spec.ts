@@ -101,8 +101,86 @@ async function mockOrderApi(page: Page) {
       body: JSON.stringify({ order }),
     });
   });
+  await page.route('**/api/v1/export-batches', async (route: Route) => {
+    await route.fulfill({ json: { items: [] } });
+  });
+  await page.route('**/api/v1/document-jobs?limit=30', async (route: Route) => {
+    await route.fulfill({ json: { items: [] } });
+  });
   return queryBodies;
 }
+
+test('creates the Woo-layout XLSX and offers repeat download in orders @orders @exports', async ({
+  page,
+}) => {
+  await mockOrderApi(page);
+  let createdVersion: Record<string, unknown> | null = null;
+  let batchCreated = false;
+  await page.route('**/api/v1/export-profiles', async (route: Route) => {
+    await route.fulfill({
+      json:
+        route.request().method() === 'POST'
+          ? { profile: { id: 'profile-woo', name: 'Woo Orders XLSX v2', active: true } }
+          : { items: [] },
+    });
+  });
+  await page.route('**/api/v1/export-profiles/profile-woo/versions', async (route: Route) => {
+    if (route.request().method() === 'POST') {
+      createdVersion = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>;
+      await route.fulfill({
+        json: { version: { id: 'version-woo', profileId: 'profile-woo', ...createdVersion } },
+      });
+    } else await route.fulfill({ json: { items: [] } });
+  });
+  await page.route('**/api/v1/export-batches', async (route: Route) => {
+    if (route.request().method() === 'POST') {
+      batchCreated = true;
+      await route.fulfill({ json: { batch: { id: 'batch-woo' } } });
+    } else
+      await route.fulfill({
+        json: {
+          items: batchCreated
+            ? [
+                {
+                  id: 'batch-woo',
+                  status: 'completed',
+                  format: 'xlsx',
+                  rowMode: 'line',
+                  orderCount: 1,
+                  rowCount: 1,
+                },
+              ]
+            : [],
+        },
+      });
+  });
+  await page.route('**/api/v1/document-jobs?limit=30', async (route: Route) => {
+    await route.fulfill({ json: { items: [] } });
+  });
+  await page.route('**/api/v1/selections', async (route: Route) => {
+    await route.fulfill({ json: { selection: { id: 'selection-woo', estimatedCount: 1 } } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'English' }).click();
+  await page.getByTestId('order-row-order-1').getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Export Excel' }).click();
+  await expect(page.getByText('Export is being prepared')).toBeVisible();
+  const columns = (createdVersion?.columns ?? []) as Array<{ key: string; label: string }>;
+  expect(createdVersion?.filenameTemplate).toBe('orders-{date}-{format}');
+  expect(createdVersion?.rowMode).toBe('line');
+  expect(columns).toHaveLength(40);
+  expect(columns.map((column) => column.label).slice(0, 4)).toEqual([
+    'Order Number',
+    'Order Status',
+    'Order Date',
+    'Customer Note',
+  ]);
+  expect(columns.map((column) => column.label)).toContain('Governorate (Shipping)');
+  await expect(page.getByRole('link', { name: 'Download' })).toHaveAttribute(
+    'href',
+    '/api/v1/export-batches/batch-woo/download',
+  );
+});
 
 test('renders bounded Arabic orders workspace and keyboard detail navigation @orders', async ({
   page,

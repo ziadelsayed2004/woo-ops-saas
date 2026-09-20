@@ -119,6 +119,90 @@ const pathValue = (source: unknown, path: string): unknown => {
   return current;
 };
 
+const majorUnits = (minor: unknown): string => {
+  const value = text(minor);
+  if (!/^-?\d+$/u.test(value)) return '';
+  const amount = BigInt(value);
+  const absolute = amount < 0n ? -amount : amount;
+  return `${amount < 0n ? '-' : ''}${absolute / 100n}.${String(absolute % 100n).padStart(2, '0')}`;
+};
+
+const addMinor = (...values: unknown[]): string => {
+  const amounts = values.map(text);
+  return amounts.every((value) => /^-?\d+$/u.test(value))
+    ? majorUnits(amounts.reduce((sum, value) => sum + BigInt(value), 0n))
+    : '';
+};
+
+/** Woo's order/line export columns, using immutable normalized order snapshots. */
+const wooColumnValue = (row: ExportOrder, key: string): unknown => {
+  const line = pathValue(row, 'line');
+  const quantity = Number(pathValue(line, 'quantity'));
+  const subtotal = pathValue(line, 'subtotalMinor');
+  const coupon = Array.isArray(row.couponLines) ? row.couponLines[0] : undefined;
+  const fields: Record<string, () => unknown> = {
+    orderNumber: () => row.orderNumber,
+    orderStatus: () => row.remoteStatus,
+    orderDate: () => row.createdAt,
+    customerNote: () => row.customerNote,
+    billingFirstName: () => pathValue(row, 'billing.first_name'),
+    billingLastName: () => pathValue(row, 'billing.last_name'),
+    billingCompany: () => pathValue(row, 'billing.company'),
+    billingAddress: () =>
+      [pathValue(row, 'billing.address_1'), pathValue(row, 'billing.address_2')]
+        .filter(Boolean)
+        .join(' '),
+    billingCity: () => pathValue(row, 'billing.city'),
+    billingState: () => pathValue(row, 'billing.state'),
+    billingStateName: () => egyptianGovernorateName(pathValue(row, 'billing.state'), 'ar'),
+    billingPostcode: () => pathValue(row, 'billing.postcode'),
+    billingCountry: () => pathValue(row, 'billing.country'),
+    billingEmail: () => pathValue(row, 'billing.email'),
+    billingPhone: () => pathValue(row, 'billing.phone'),
+    shippingFirstName: () => pathValue(row, 'shipping.first_name'),
+    shippingLastName: () => pathValue(row, 'shipping.last_name'),
+    shippingAddress: () =>
+      [pathValue(row, 'shipping.address_1'), pathValue(row, 'shipping.address_2')]
+        .filter(Boolean)
+        .join(' '),
+    shippingCity: () => pathValue(row, 'shipping.city'),
+    shippingState: () => pathValue(row, 'shipping.state'),
+    shippingStateName: () => egyptianGovernorateName(pathValue(row, 'shipping.state'), 'ar'),
+    shippingPostcode: () => pathValue(row, 'shipping.postcode'),
+    shippingCountry: () => pathValue(row, 'shipping.country'),
+    paymentTitle: () => row.paymentMethodTitle,
+    cartDiscount: () => majorUnits(pathValue(row, 'amounts.discountMinor')),
+    cartDiscountInclTax: () =>
+      addMinor(
+        pathValue(row, 'amounts.discountMinor'),
+        Array.isArray(row.couponLines)
+          ? row.couponLines.reduce(
+              (sum, item) => sum + BigInt(text(pathValue(item, 'discountTaxMinor')) || '0'),
+              0n,
+            )
+          : 0n,
+      ),
+    orderSubtotal: () => majorUnits(pathValue(row, 'amounts.merchandiseSubtotalMinor')),
+    shippingTitle: () => row.shippingMethodTitle,
+    shippingAmount: () => majorUnits(pathValue(row, 'amounts.shippingCollectedMinor')),
+    refundAmount: () => majorUnits(pathValue(row, 'amounts.refundMinor')),
+    orderTotal: () => majorUnits(row.grandTotalMinor),
+    orderTax: () => majorUnits(pathValue(row, 'amounts.taxMinor')),
+    sku: () => pathValue(line, 'sku'),
+    itemNumber: () => pathValue(line, 'externalLineId'),
+    itemName: () => pathValue(line, 'name'),
+    quantity: () => pathValue(line, 'quantity'),
+    itemCost: () =>
+      Number.isSafeInteger(quantity) && quantity > 0 && /^-?\d+$/u.test(text(subtotal))
+        ? majorUnits(BigInt(text(subtotal)) / BigInt(quantity))
+        : '',
+    couponCode: () => pathValue(coupon, 'code'),
+    discountAmount: () => majorUnits(pathValue(coupon, 'discountMinor')),
+    discountTax: () => majorUnits(pathValue(coupon, 'discountTaxMinor')),
+  };
+  return fields[key]?.() ?? '';
+};
+
 /** Prefixes spreadsheet formula-like values while keeping phone/SKU/IDs as text. */
 export const sanitizeSpreadsheetValue = (value: unknown): string => {
   const stringValue = latinDigits(text(value));
@@ -298,7 +382,9 @@ const configuredValue = (
   column: ExportColumn,
   profile: ExportProfile,
 ): unknown => {
-  let value = pathValue(row, column.key);
+  let value = column.key.startsWith('woo.')
+    ? wooColumnValue(row, column.key.slice(4))
+    : pathValue(row, column.key);
   if (/(?:^|\.)(?:state|stateCode|governorate)$/iu.test(column.key)) {
     value = egyptianGovernorateName(value, 'ar');
   }

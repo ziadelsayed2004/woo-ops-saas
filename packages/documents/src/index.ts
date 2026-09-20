@@ -129,6 +129,12 @@ const orderValue = (order: DocumentOrder, ...paths: string[]): string => {
   }
   return '';
 };
+const displayMoney = (minor: string, currency: string): string => {
+  if (!/^-?\d+$/u.test(minor)) return minor;
+  const value = BigInt(minor);
+  const positive = value < 0n ? -value : value;
+  return `${value < 0n ? '-' : ''}${positive / 100n}.${String(positive % 100n).padStart(2, '0')} ${currency}`;
+};
 export type SafeTemplateAnalysis = Readonly<{
   source: string;
   tokens: readonly string[];
@@ -479,6 +485,55 @@ const drawDocument = async (
       direction,
       size,
     );
+  const governorate = orderValue(
+    normalized.order,
+    'shipping.governorateNameAr',
+    'shipping.state',
+    'billing.governorateNameAr',
+    'billing.state',
+  );
+  if (governorate)
+    y -= drawPair(
+      page,
+      direction === 'rtl' ? 'المحافظة' : 'Governorate',
+      governorate,
+      margin,
+      y,
+      width - margin * 2,
+      font,
+      direction,
+      size,
+    );
+  const shippingMethod = orderValue(
+    normalized.order,
+    'shippingMethodTitle',
+    'shippingMethod.title',
+  );
+  if (shippingMethod)
+    y -= drawPair(
+      page,
+      direction === 'rtl' ? 'الشحن' : 'Shipping',
+      shippingMethod,
+      margin,
+      y,
+      width - margin * 2,
+      font,
+      direction,
+      size,
+    );
+  const paymentMethod = orderValue(normalized.order, 'paymentMethodTitle', 'payment.title');
+  if (paymentMethod)
+    y -= drawPair(
+      page,
+      direction === 'rtl' ? 'الدفع' : 'Payment',
+      paymentMethod,
+      margin,
+      y,
+      width - margin * 2,
+      font,
+      direction,
+      size,
+    );
   y -= 8;
   const lines = Array.isArray(normalized.order.lines)
     ? normalized.order.lines.slice(0, MAX_LINES)
@@ -487,7 +542,8 @@ const drawDocument = async (
   y -= size + 5;
   for (const line of lines) {
     const item = isRecord(line) ? line : {};
-    const textLine = `${orderValue(item, 'name', 'title')} × ${orderValue(item, 'quantity')}  ${orderValue(item, 'totalMinor', 'total')}`;
+    const lineTotal = orderValue(item, 'totalMinor', 'total');
+    const textLine = `${orderValue(item, 'name', 'title')} × ${orderValue(item, 'quantity')}  ${displayMoney(lineTotal, orderValue(normalized.order, 'currency'))}`;
     y -= drawWrapped(page, textLine, margin, y, width - margin * 2, font, size, direction);
     if (y < margin + 80) break;
   }
@@ -496,7 +552,7 @@ const drawDocument = async (
   y -= drawPair(
     page,
     direction === 'rtl' ? 'الإجمالي' : 'Total',
-    total,
+    displayMoney(total, orderValue(normalized.order, 'currency')),
     margin,
     y,
     width - margin * 2,
