@@ -2443,6 +2443,61 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0917",
+      "epic": "E09",
+      "title": "Polish RTL order operations and ready-made exports",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "L",
+      "parallelGroup": "woo-order-operations-polish",
+      "dependencies": ["T0915", "T0916"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/TESTING.md",
+        "apps/web/src/App.tsx",
+        "apps/web/src/main.tsx",
+        "apps/api/src/index.ts",
+        "packages/contracts/src/index.ts",
+        "packages/persistence/src/index.ts",
+        "tests/e2e/orders.spec.ts"
+      ],
+      "scope": [
+        "Unify Arabic select and autocomplete geometry so indicators occupy the edge opposite labels and never overlap governorate, product or filter text",
+        "Replace technical Woo export capability copy with concise operator-facing availability while preserving the honest unavailable state",
+        "Simplify spreadsheet and document export actions into ready-made operational choices without exposing template or profile terminology",
+        "Normalize useful payment and shipping labels in order rows, filters, details and ready-made exports",
+        "Make the order details drawer enter and exit from the language-appropriate physical edge without reversed or jumping animation"
+      ],
+      "acceptance": [
+        "Every Arabic select and autocomplete used by orders and manual orders places its indicator at the left edge with reserved spacing and no collision with labels or values",
+        "Remote Woo export availability is understandable to operators and remains distinct from local export state and payment metadata",
+        "Operators choose ready-made Excel, invoice, thermal receipt or shipping-label actions without selecting a template/profile",
+        "Payment and shipping values use normalized useful labels consistently across the order grid, details and generated export inputs",
+        "The order details drawer opens from the right in Arabic and from the left in English with stable close animation and responsive width",
+        "RTL/LTR visual, accessibility, end-to-end, account-isolation and regression checks pass"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run test:e2e",
+        "npm run test:a11y",
+        "npm run test:visual",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
