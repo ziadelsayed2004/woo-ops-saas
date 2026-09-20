@@ -146,6 +146,14 @@ Author and POS values may come from:
 The field mapper must support all of these without hardcoding one plugin. If a required field is not
 REST-visible, an optional companion WordPress bridge may expose an allowlisted, read-only field.
 
+The optional Woo Ops Export Status Bridge is the certified path for SkyVerge/WooCommerce Customer /
+Order / Coupon Export's protected `_wc_customer_order_csv_export_is_exported` order metadata. It
+registers only `GET /wp-json/wc/v3/woo-ops/export-status`, reuses Woo's consumer-key authentication,
+requires a WooCommerce-capable user, accepts at most 100 explicit order IDs and returns no customer
+or order content. The connector performs one bounded companion read per order page and overlays the
+result before normalization. A missing, unauthorized or incompatible bridge leaves the standard Woo
+snapshot unchanged, which is displayed as unavailable; local export history remains independent.
+
 ## Rate and failure handling
 
 - Connection-specific concurrency and page size.
