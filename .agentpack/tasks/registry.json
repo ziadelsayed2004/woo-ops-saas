@@ -2873,6 +2873,51 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0926",
+      "epic": "E09",
+      "title": "Add owner-controlled clean account reset",
+      "type": "feat",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "L",
+      "parallelGroup": "account-reset",
+      "dependencies": ["T0925"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/TESTING.md",
+        "apps/api/src/index.ts",
+        "packages/persistence/src/index.ts",
+        "apps/web/src/App.tsx",
+        "apps/api/tests/administration.integration.test.js",
+        "tests/e2e/admin.spec.ts"
+      ],
+      "scope": [
+        "Add an owner-only destructive reset that removes account-scoped synchronized commerce data and all local operational test data while preserving account identity and optionally the Woo connection",
+        "Cancel or invalidate queued work before deletion, remove private generated artifacts, and make reset transactional, audited, and idempotent",
+        "Expose a clearly separated danger-zone workflow with typed confirmation, an explicit reset summary, and a clean post-reset state that can start a fresh Woo synchronization"
+      ],
+      "acceptance": [
+        "Only the authenticated account owner can reset their own account and cross-account records are never touched",
+        "Reset removes imported and manual orders, catalog, customers, analytics, saved filters, exports, documents, jobs, audit-derived operational data and generated files without mutating WooCommerce",
+        "The user account, membership, secure session and chosen connection retention behavior remain explicit and usable after reset",
+        "The UI requires deliberate typed confirmation, reports success/failure, and shows empty workspaces ready for a fresh sync",
+        "Repository, API integration, account-isolation, browser and build checks pass"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:integration",
+        "npm run test:e2e",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
