@@ -2940,7 +2940,6 @@
         "packages/documents/src/index.ts",
         "apps/api/src/index.ts",
         "apps/web/src/App.tsx",
-        "apps/web/src/AnalyticsWorkspace.tsx",
         "tests/e2e/orders.spec.ts",
         "tests/e2e/analytics.spec.ts"
       ],
