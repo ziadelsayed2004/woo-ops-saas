@@ -246,16 +246,23 @@ test('Arabic outlined selects use right-hand labels and notches @admin', async (
     const field = select.closest('.MuiFormControl-root')!;
     const label = field.querySelector('label')!;
     const legend = field.querySelector('legend')!;
+    const icon = field.querySelector('.MuiSelect-icon')!;
     return {
       selectAlign: getComputedStyle(select).textAlign,
       fieldRight: field.getBoundingClientRect().right,
       labelRight: label.getBoundingClientRect().right,
       legendRight: legend.getBoundingClientRect().right,
+      iconRight: icon.getBoundingClientRect().right,
+      iconLeft: icon.getBoundingClientRect().left,
+      labelLeft: label.getBoundingClientRect().left,
     };
   });
   expect(positions.selectAlign).toBe('right');
-  expect(positions.fieldRight - positions.labelRight).toBeLessThan(40);
-  expect(positions.fieldRight - positions.legendRight).toBeLessThan(40);
+  expect(positions.fieldRight - positions.iconRight).toBeGreaterThanOrEqual(12);
+  expect(positions.fieldRight - positions.iconRight).toBeLessThanOrEqual(18);
+  expect(positions.iconLeft - positions.labelRight).toBeGreaterThanOrEqual(8);
+  expect(positions.fieldRight - positions.labelRight).toBeGreaterThanOrEqual(48);
+  expect(positions.fieldRight - positions.legendRight).toBeGreaterThanOrEqual(40);
 });
 
 test('language switch updates text and direction together @admin', async ({ page }) => {

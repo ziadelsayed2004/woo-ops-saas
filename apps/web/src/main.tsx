@@ -50,6 +50,13 @@ function AppShell() {
               marginInlineStart: 6,
               paddingInline: 5,
             },
+          '[dir="rtl"] .MuiFormControl-root:has(.MuiSelect-select) .MuiInputLabel-outlined': {
+            right: 52,
+          },
+          '[dir="rtl"] .MuiFormControl-root:has(.MuiSelect-select) .MuiInputLabel-shrink + .MuiOutlinedInput-root legend':
+            {
+              marginInlineStart: 44,
+            },
         },
       },
       MuiPaper: { styleOverrides: { root: { backgroundImage: 'none' } } },
@@ -62,8 +69,11 @@ function AppShell() {
       },
       MuiSelect: {
         styleOverrides: {
-          select: { paddingInlineStart: 16, paddingInlineEnd: 44 },
-          icon: { right: 'auto', insetInlineEnd: 12, pointerEvents: 'none' },
+          select:
+            direction === 'rtl'
+              ? { paddingRight: 52, paddingLeft: 16, textAlign: 'right' }
+              : { paddingLeft: 16, paddingRight: 44, textAlign: 'left' },
+          icon: { right: 14, left: 'auto', pointerEvents: 'none' },
         },
       },
       MuiAutocomplete: {
