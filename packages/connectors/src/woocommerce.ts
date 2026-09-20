@@ -43,6 +43,8 @@ type WooRemoteExportStatus = Readonly<{
   id: number;
   key: '_wc_customer_order_csv_export_is_exported';
   status: 'exported' | 'not_exported';
+  source: 'extension_api' | 'taxonomy' | 'legacy_meta';
+  bridgeVersion: string;
 }>;
 export type NormalizedCatalogItem = {
   identity: string;
@@ -106,6 +108,8 @@ export type NormalizedOrder = {
   metadata: readonly Record<string, unknown>[];
   remoteExportStatus: string | null;
   remoteExportStatusKey: string | null;
+  remoteExportStatusSource: string | null;
+  remoteExportBridgeVersion: string | null;
   exceptionState: string | null;
   sourceTimezone: string | null;
   sourceJson: string;
@@ -385,7 +389,14 @@ const wooOrderIds = (items: readonly unknown[]): number[] =>
 
 const parseRemoteExportStatuses = (value: unknown): readonly WooRemoteExportStatus[] | null => {
   const body = asRecord(value);
-  if (body?.version !== 1 || !Array.isArray(body.items) || body.items.length > 100) return null;
+  if (
+    body?.version !== 1 ||
+    typeof body.bridgeVersion !== 'string' ||
+    !/^\d+\.\d+\.\d+$/u.test(body.bridgeVersion) ||
+    !Array.isArray(body.items) ||
+    body.items.length > 100
+  )
+    return null;
   const statuses: WooRemoteExportStatus[] = [];
   for (const raw of body.items) {
     const item = asRecord(raw);
@@ -394,13 +405,16 @@ const parseRemoteExportStatuses = (value: unknown): readonly WooRemoteExportStat
       !Number.isSafeInteger(item.id) ||
       Number(item.id) <= 0 ||
       item.key !== WOO_REMOTE_EXPORT_META_KEY ||
-      (item.status !== 'exported' && item.status !== 'not_exported')
+      (item.status !== 'exported' && item.status !== 'not_exported') ||
+      !['extension_api', 'taxonomy', 'legacy_meta'].includes(String(item.source))
     )
       return null;
     statuses.push({
       id: Number(item.id),
       key: WOO_REMOTE_EXPORT_META_KEY,
       status: item.status,
+      source: item.source as WooRemoteExportStatus['source'],
+      bridgeVersion: body.bridgeVersion,
     });
   }
   return statuses;
@@ -423,7 +437,17 @@ const overlayRemoteExportStatuses = (
       : [];
     return {
       ...order,
-      meta_data: [...metadata, { key: status.key, value: status.status }],
+      meta_data: [
+        ...metadata,
+        {
+          key: status.key,
+          value: {
+            status: status.status,
+            source: status.source,
+            bridgeVersion: status.bridgeVersion,
+          },
+        },
+      ],
     };
   });
 };
@@ -656,6 +680,8 @@ export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
       ? String(remoteExportScalar).trim() || null
       : null;
   const remoteExportStatusKey = remoteExportMetadata?.key ?? null;
+  const remoteExportStatusSource = textOrNull(remoteExportValue?.source);
+  const remoteExportBridgeVersion = textOrNull(remoteExportValue?.bridgeVersion);
   const merchandiseSubtotalMinor = sumMinor(lines, 'subtotalMinor');
   const discountMinor =
     typeof record.discount_total === 'string'
@@ -789,6 +815,8 @@ export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
     metadata,
     remoteExportStatus,
     remoteExportStatusKey,
+    remoteExportStatusSource,
+    remoteExportBridgeVersion,
     exceptionState,
     sourceTimezone,
     sourceJson: JSON.stringify(record),

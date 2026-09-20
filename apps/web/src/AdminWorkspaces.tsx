@@ -8,6 +8,10 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControl,
   InputLabel,
   LinearProgress,
@@ -120,6 +124,28 @@ type ApiUsage = {
   payloadBytes: number;
 };
 
+type CustomerCurrencySummary = {
+  currency: string;
+  orderCount: number;
+  totalSpendMinor: string;
+};
+type CustomerDirectoryItem = {
+  key: string;
+  externalCustomerId: string | null;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  orderCount: number;
+  firstOrderAt: string | null;
+  lastOrderAt: string | null;
+  currencies: CustomerCurrencySummary[];
+};
+type CustomerProfile = CustomerDirectoryItem & {
+  customer: Record<string, unknown>;
+  billing: Record<string, unknown>;
+  shipping: Record<string, unknown>;
+  recentOrders: Array<Record<string, unknown>>;
+};
 type CustomerAnalyticsItem = {
   key: string;
   label?: string;
@@ -1449,6 +1475,257 @@ function CustomersWorkspace({
   );
 }
 
+function CompleteCustomersWorkspace({
+  locale,
+  copy,
+  onSessionExpired,
+}: {
+  locale: AdminLocale;
+  copy: Copy;
+  onSessionExpired: () => void;
+}) {
+  const [items, setItems] = useState<CustomerDirectoryItem[]>([]);
+  const [search, setSearch] = useState('');
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [selected, setSelected] = useState<CustomerProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const money = (minor: string, currency: string) => {
+    const value = BigInt(/^-?\d+$/u.test(minor) ? minor : '0');
+    return `${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value) / 100)} ${currency}`;
+  };
+  const load = async (cursor: string | null = null) => {
+    setLoading(true);
+    setFailed(false);
+    try {
+      const query = new URLSearchParams({ limit: '100' });
+      if (search.trim()) query.set('search', search.trim());
+      if (cursor) query.set('cursor', cursor);
+      const result = await apiRequest<{
+        items: CustomerDirectoryItem[];
+        nextCursor: string | null;
+      }>(`/api/v1/customers?${query.toString()}`, onSessionExpired);
+      setItems((current) =>
+        cursor ? [...current, ...(result.items ?? [])] : (result.items ?? []),
+      );
+      setNextCursor(result.nextCursor ?? null);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    const timeout = window.setTimeout(() => void load(), 250);
+    return () => window.clearTimeout(timeout);
+  }, [search]);
+  const openCustomer = async (item: CustomerDirectoryItem) => {
+    setDetailsLoading(true);
+    try {
+      const result = await apiRequest<{ customer: CustomerProfile }>(
+        `/api/v1/customers/${encodeURIComponent(item.key)}?limit=25`,
+        onSessionExpired,
+      );
+      setSelected(result.customer);
+    } catch {
+      setFailed(true);
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+  const visible = items;
+  const addressText = (value: Record<string, unknown>) =>
+    [
+      value.first_name,
+      value.last_name,
+      value.company,
+      value.address_1,
+      value.address_2,
+      value.city,
+      value.governorateNameAr ?? value.governorateNameEn ?? value.state,
+      value.postcode,
+      value.country,
+    ]
+      .filter((part) => typeof part === 'string' && part.trim())
+      .join('، ');
+  if (loading && items.length === 0)
+    return <StateBlock copy={copy} loading error={false} onRetry={() => void load()} />;
+  return (
+    <Stack gap={3} data-testid="customers-workspace">
+      <Box>
+        <Typography variant="h4" component="h1" fontWeight={800}>
+          {locale === 'ar' ? 'عملاء WooCommerce' : 'WooCommerce customers'}
+        </Typography>
+        <Typography color="text.secondary">
+          {locale === 'ar'
+            ? 'دليل العملاء من الطلبات المتزامنة، ويشمل الاتصال والعناوين والإنفاق وسجل الطلبات.'
+            : 'Customer directory from synchronized orders, including contact, addresses, spend and order history.'}
+        </Typography>
+      </Box>
+      {failed && <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />}
+      <TextField
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        label={locale === 'ar' ? 'بحث بالاسم أو البريد أو الهاتف' : 'Search name, email or phone'}
+        sx={{ maxWidth: 520 }}
+      />
+      {detailsLoading && <LinearProgress aria-label={copy.loading} />}
+      <Paper variant="outlined">
+        <TableContainer>
+          <Table
+            size="small"
+            aria-label={locale === 'ar' ? 'عملاء WooCommerce' : 'WooCommerce customers'}
+          >
+            <TableHead>
+              <TableRow>
+                <TableCell>{locale === 'ar' ? 'العميل' : 'Customer'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'بيانات الاتصال' : 'Contact'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'الطلبات' : 'Orders'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'إجمالي الإنفاق' : 'Total spend'}</TableCell>
+                <TableCell>{locale === 'ar' ? 'آخر طلب' : 'Last order'}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {visible.map((item) => (
+                <TableRow
+                  key={item.key}
+                  hover
+                  tabIndex={0}
+                  role="button"
+                  sx={{ cursor: 'pointer' }}
+                  onClick={() => void openCustomer(item)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') void openCustomer(item);
+                  }}
+                >
+                  <TableCell>
+                    {item.name ?? (locale === 'ar' ? 'عميل بدون اسم' : 'Unnamed customer')}
+                  </TableCell>
+                  <TableCell>
+                    <Stack gap={0.25}>
+                      <span dir="ltr">{item.email ?? '—'}</span>
+                      <span dir="ltr">{item.phone ?? '—'}</span>
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <span dir="ltr">{item.orderCount}</span>
+                  </TableCell>
+                  <TableCell>
+                    <Stack gap={0.25}>
+                      {item.currencies.map((entry) => (
+                        <span dir="ltr" key={entry.currency}>
+                          {money(entry.totalSpendMinor, entry.currency)}
+                        </span>
+                      ))}
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <span dir="ltr">
+                      {item.lastOrderAt
+                        ? new Date(item.lastOrderAt).toLocaleDateString('en-CA')
+                        : '—'}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        {visible.length === 0 && (
+          <Typography color="text.secondary" p={3}>
+            {copy.empty}
+          </Typography>
+        )}
+      </Paper>
+      {nextCursor && (
+        <Button variant="outlined" onClick={() => void load(nextCursor)} disabled={loading}>
+          {locale === 'ar' ? 'تحميل المزيد' : 'Load more'}
+        </Button>
+      )}
+      <Dialog open={selected !== null} onClose={() => setSelected(null)} fullWidth maxWidth="md">
+        <DialogTitle>
+          {selected?.name ?? (locale === 'ar' ? 'بيانات العميل' : 'Customer details')}
+        </DialogTitle>
+        {selected && (
+          <DialogContent dividers>
+            <Stack gap={3}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} flexWrap="wrap">
+                <Chip label={`${locale === 'ar' ? 'الطلبات' : 'Orders'}: ${selected.orderCount}`} />
+                {selected.externalCustomerId && (
+                  <Chip label={`Woo ID: ${selected.externalCustomerId}`} />
+                )}
+                <Typography dir="ltr">{selected.email ?? '—'}</Typography>
+                <Typography dir="ltr">{selected.phone ?? '—'}</Typography>
+              </Stack>
+              <Box>
+                <Typography fontWeight={800}>{locale === 'ar' ? 'الإنفاق' : 'Spend'}</Typography>
+                {selected.currencies.map((entry) => (
+                  <Typography dir="ltr" key={entry.currency}>
+                    {money(entry.totalSpendMinor, entry.currency)} · {entry.orderCount}{' '}
+                    {locale === 'ar' ? 'طلب' : 'orders'}
+                  </Typography>
+                ))}
+              </Box>
+              <Box>
+                <Typography fontWeight={800}>
+                  {locale === 'ar' ? 'عنوان الفوترة' : 'Billing address'}
+                </Typography>
+                <Typography>{addressText(selected.billing) || '—'}</Typography>
+              </Box>
+              <Box>
+                <Typography fontWeight={800}>
+                  {locale === 'ar' ? 'عنوان الشحن' : 'Shipping address'}
+                </Typography>
+                <Typography>{addressText(selected.shipping) || '—'}</Typography>
+              </Box>
+              <Box>
+                <Typography fontWeight={800} mb={1}>
+                  {locale === 'ar' ? 'أحدث الطلبات' : 'Recent orders'}
+                </Typography>
+                <TableContainer>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>{locale === 'ar' ? 'رقم الطلب' : 'Order'}</TableCell>
+                        <TableCell>{locale === 'ar' ? 'الحالة' : 'Status'}</TableCell>
+                        <TableCell>{locale === 'ar' ? 'الإجمالي' : 'Total'}</TableCell>
+                        <TableCell>{locale === 'ar' ? 'التاريخ' : 'Date'}</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {selected.recentOrders.map((order) => (
+                        <TableRow key={String(order.id)}>
+                          <TableCell dir="ltr">{String(order.orderNumber ?? '—')}</TableCell>
+                          <TableCell>{String(order.remoteStatus ?? '—')}</TableCell>
+                          <TableCell dir="ltr">
+                            {money(
+                              String(order.grandTotalMinor ?? '0'),
+                              String(order.currency ?? 'EGP'),
+                            )}
+                          </TableCell>
+                          <TableCell dir="ltr">
+                            {order.remoteCreatedAt
+                              ? new Date(String(order.remoteCreatedAt)).toLocaleDateString('en-CA')
+                              : '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
+            </Stack>
+          </DialogContent>
+        )}
+        <DialogActions>
+          <Button onClick={() => setSelected(null)}>{locale === 'ar' ? 'إغلاق' : 'Close'}</Button>
+        </DialogActions>
+      </Dialog>
+    </Stack>
+  );
+}
+
 function MembersWorkspace({
   copy,
   onSessionExpired,
@@ -1855,7 +2132,9 @@ export function AdminWorkspace({
       />
     );
   if (section === 'members')
-    return <CustomersWorkspace locale={locale} copy={copy} onSessionExpired={onSessionExpired} />;
+    return (
+      <CompleteCustomersWorkspace locale={locale} copy={copy} onSessionExpired={onSessionExpired} />
+    );
   return <OperationsWorkspace copy={copy} onSessionExpired={onSessionExpired} />;
 }
 

@@ -182,6 +182,55 @@ async function mockAdminApi(page: Page, session: 'authenticated' | 'expired' = '
       },
     });
   });
+  await page.route('**/api/v1/customers?limit=100', async (route: Route) => {
+    await route.fulfill({
+      json: {
+        items: [
+          {
+            key: 'woo:1',
+            externalCustomerId: '1',
+            name: 'Customer One',
+            email: 'customer@example.test',
+            phone: '01000000000',
+            orderCount: 3,
+            firstOrderAt: '2026-08-01T00:00:00.000Z',
+            lastOrderAt: '2026-08-31T00:00:00.000Z',
+            currencies: [{ currency: 'EGP', orderCount: 3, totalSpendMinor: '12500' }],
+          },
+        ],
+      },
+    });
+  });
+  await page.route('**/api/v1/customers/woo%3A1?limit=25', async (route: Route) => {
+    await route.fulfill({
+      json: {
+        customer: {
+          key: 'woo:1',
+          externalCustomerId: '1',
+          name: 'Customer One',
+          email: 'customer@example.test',
+          phone: '01000000000',
+          orderCount: 3,
+          firstOrderAt: '2026-08-01T00:00:00.000Z',
+          lastOrderAt: '2026-08-31T00:00:00.000Z',
+          currencies: [{ currency: 'EGP', orderCount: 3, totalSpendMinor: '12500' }],
+          customer: {},
+          billing: { address_1: '1 Main Street', city: 'Cairo' },
+          shipping: { address_1: '1 Main Street', city: 'Cairo' },
+          recentOrders: [
+            {
+              id: 'order-1',
+              orderNumber: '1001',
+              remoteStatus: 'processing',
+              grandTotalMinor: '12500',
+              currency: 'EGP',
+              remoteCreatedAt: '2026-08-31T00:00:00.000Z',
+            },
+          ],
+        },
+      },
+    });
+  });
 }
 
 test('admin navigation exposes authenticated operational workspaces and route states @admin', async ({
@@ -200,6 +249,10 @@ test('admin navigation exposes authenticated operational workspaces and route st
   await expect(page.getByTestId('customers-workspace')).toBeVisible();
   await expect(page.getByText('Customer One')).toBeVisible();
   await expect(page.getByText('125.00 EGP')).toBeVisible();
+  await page.getByText('Customer One').click();
+  await expect(page.getByText('Billing address')).toBeVisible();
+  await expect(page.getByText('1 Main Street، Cairo').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Close' }).click();
   await page.getByRole('button', { name: 'System health' }).click();
   await expect(page.getByTestId('operations-workspace')).toBeVisible();
   await expect(page.getByText('analytics.rebuild')).toBeVisible();

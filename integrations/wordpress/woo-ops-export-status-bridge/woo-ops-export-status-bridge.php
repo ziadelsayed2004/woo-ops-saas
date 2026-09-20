@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Woo Ops Export Status Bridge
  * Description: Read-only REST exposure for WooCommerce Customer / Order / Coupon Export status.
- * Version: 1.2.0
+ * Version: 1.3.0
  * Requires Plugins: woocommerce
  * Requires PHP: 7.4
  * Author: Woo Ops
@@ -21,6 +21,19 @@ const WOO_OPS_EXPORT_STATUS_GLOBAL_TERM = 'global';
  * fallback for stores that have not migrated yet.
  */
 function woo_ops_order_export_status( WC_Order $order ): array {
+	$legacy_value    = $order->get_meta( WOO_OPS_EXPORT_STATUS_META_KEY, true );
+	$legacy_exported = in_array( strtolower( trim( (string) $legacy_value ) ), array( '1', 'true', 'yes', 'exported' ), true );
+
+	// Customer / Order / Coupon Export versions before 5.0 render the admin
+	// column from this order meta value. Prefer a positive legacy value even
+	// when a partially-migrated store also has the newer handler loaded.
+	if ( $legacy_exported ) {
+		return array(
+			'exported' => true,
+			'source'   => 'legacy_meta',
+		);
+	}
+
 	$handler_class = '\\SkyVerge\\WooCommerce\\CSV_Export\\Taxonomies_Handler';
 	if ( class_exists( $handler_class ) && is_callable( array( $handler_class, 'is_order_exported_globally' ) ) ) {
 		return array(
@@ -42,10 +55,8 @@ function woo_ops_order_export_status( WC_Order $order ): array {
 		);
 	}
 
-	$legacy_value = $order->get_meta( WOO_OPS_EXPORT_STATUS_META_KEY, true );
-
 	return array(
-		'exported' => in_array( strtolower( trim( (string) $legacy_value ) ), array( '1', 'true', 'yes', 'exported' ), true ),
+		'exported' => false,
 		'source'   => 'legacy_meta',
 	);
 }
@@ -111,7 +122,7 @@ function woo_ops_read_export_statuses( WP_REST_Request $request ) {
 	return rest_ensure_response(
 		array(
 			'version'       => 1,
-			'bridgeVersion' => '1.2.0',
+			'bridgeVersion' => '1.3.0',
 			'items'         => $items,
 		)
 	);

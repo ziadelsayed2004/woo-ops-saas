@@ -197,6 +197,8 @@ export type NormalizedOrderInput = {
   metadata?: readonly Record<string, unknown>[] | undefined;
   remoteExportStatus?: string | null | undefined;
   remoteExportStatusKey?: string | null | undefined;
+  remoteExportStatusSource?: string | null | undefined;
+  remoteExportBridgeVersion?: string | null | undefined;
   exceptionState?: string | null | undefined;
   sourceTimezone?: string | null | undefined;
   sourceJson: string;
@@ -1536,6 +1538,18 @@ const collectionDefinition = (column: string): FilterDefinition => ({
   operators: collectionOperators,
   collectionColumn: column,
 });
+
+// Registered Woo customers are keyed by their immutable remote ID. Guest
+// checkouts fall back to normalized email, then phone; an order-scoped key is
+// used last so unrelated guests are never merged merely because names match.
+const wooCustomerKeyExpression = `CASE
+  WHEN NULLIF(TRIM(o.external_customer_id), '') IS NOT NULL AND o.external_customer_id <> '0'
+    THEN 'woo:' || TRIM(o.external_customer_id)
+  WHEN NULLIF(TRIM(LOWER(o.customer_email)), '') IS NOT NULL
+    THEN 'email:' || TRIM(LOWER(o.customer_email))
+  WHEN NULLIF(TRIM(o.customer_phone), '') IS NOT NULL
+    THEN 'phone:' || REPLACE(REPLACE(REPLACE(REPLACE(TRIM(o.customer_phone), ' ', ''), '-', ''), '(', ''), ')', '')
+  ELSE 'order:' || o.id END`;
 
 const filterDefinitions: Record<OrderFilterField, FilterDefinition> = {
   orderNumber: textDefinition('o.order_number'),
@@ -8785,6 +8799,154 @@ export class SqliteStore {
     })();
     this.audit(context, 'bulk-job.cancelled-by-worker', 'bulk_job', jobId, {});
     return this.bulkJobSummary(this.bulkJobRow(context, jobId));
+  }
+
+  listWooCustomers(
+    context: AccountContext,
+    input: { search?: string; cursor?: string | null; limit?: number } = {},
+  ): { items: readonly Record<string, unknown>[]; nextCursor: string | null; hasMore: boolean } {
+    this.assertMember(context);
+    const limit = input.limit ?? 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error('CUSTOMER_LIMIT_INVALID');
+    if (
+      input.search !== undefined &&
+      (typeof input.search !== 'string' || input.search.length > 200)
+    )
+      throw new Error('CUSTOMER_SEARCH_INVALID');
+    const clauses = ['o.account_id = ?', "o.origin = 'woo'"];
+    const params: (string | number)[] = [context.accountId];
+    if (input.search?.trim()) {
+      const search = `%${escapeLike(input.search.trim().toLowerCase())}%`;
+      clauses.push(
+        `(LOWER(COALESCE(o.customer_name, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(o.customer_email, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(o.customer_phone, '')) LIKE ? ESCAPE '\\')`,
+      );
+      params.push(search, search, search);
+    }
+    if (input.cursor) {
+      clauses.push(`${wooCustomerKeyExpression} > ?`);
+      params.push(readSelectionCursor(input.cursor));
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT ${wooCustomerKeyExpression} AS customer_key,
+          MAX(COALESCE(o.customer_name, '')) AS customer_name,
+          MAX(COALESCE(o.customer_email, '')) AS customer_email,
+          MAX(COALESCE(o.customer_phone, '')) AS customer_phone,
+          MAX(NULLIF(o.external_customer_id, '0')) AS external_customer_id,
+          COUNT(*) AS order_count,
+          MIN(COALESCE(o.remote_created_at, o.created_at)) AS first_order_at,
+          MAX(COALESCE(o.remote_created_at, o.created_at)) AS last_order_at
+         FROM orders o WHERE ${clauses.join(' AND ')}
+         GROUP BY customer_key ORDER BY customer_key ASC LIMIT ?`,
+      )
+      .all(...params, limit + 1) as Array<Record<string, unknown>>;
+    const hasMore = rows.length > limit;
+    const visible = rows.slice(0, limit);
+    const keys = visible.map((row) => String(row.customer_key));
+    const totals = new Map<
+      string,
+      Array<{ currency: string; orderCount: number; totalSpendMinor: string }>
+    >();
+    if (keys.length > 0) {
+      const placeholders = keys.map(() => '?').join(', ');
+      const totalRows = this.db
+        .prepare(
+          `SELECT ${wooCustomerKeyExpression} AS customer_key, o.currency,
+            COUNT(*) AS order_count,
+            CAST(SUM(CAST(COALESCE(json_extract(o.normalized_json, '$.amounts.collectedMinor'), o.grand_total_minor, '0') AS INTEGER)) AS TEXT) AS total_spend_minor
+           FROM orders o WHERE o.account_id = ? AND o.origin = 'woo'
+             AND ${wooCustomerKeyExpression} IN (${placeholders})
+           GROUP BY customer_key, o.currency ORDER BY o.currency ASC`,
+        )
+        .all(context.accountId, ...keys) as Array<Record<string, unknown>>;
+      for (const row of totalRows) {
+        const key = String(row.customer_key);
+        const values = totals.get(key) ?? [];
+        values.push({
+          currency: String(row.currency),
+          orderCount: Number(row.order_count),
+          totalSpendMinor: String(row.total_spend_minor ?? '0'),
+        });
+        totals.set(key, values);
+      }
+    }
+    const items = visible.map((row) => ({
+      key: String(row.customer_key),
+      externalCustomerId: row.external_customer_id ?? null,
+      name: row.customer_name || null,
+      email: row.customer_email || null,
+      phone: row.customer_phone || null,
+      orderCount: Number(row.order_count),
+      firstOrderAt: row.first_order_at ?? null,
+      lastOrderAt: row.last_order_at ?? null,
+      currencies: totals.get(String(row.customer_key)) ?? [],
+    }));
+    return {
+      items,
+      hasMore,
+      nextCursor:
+        hasMore && visible.length > 0
+          ? selectionCursor(String(visible.at(-1)!.customer_key))
+          : null,
+    };
+  }
+
+  getWooCustomer(
+    context: AccountContext,
+    customerKey: string,
+    input: { limit?: number } = {},
+  ): Record<string, unknown> | null {
+    this.assertMember(context);
+    if (!customerKey || customerKey.length > 500) return null;
+    const limit = input.limit ?? 25;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error('CUSTOMER_LIMIT_INVALID');
+    const rows = this.db
+      .prepare(
+        `SELECT o.* FROM orders o WHERE o.account_id = ? AND o.origin = 'woo'
+          AND ${wooCustomerKeyExpression} = ?
+         ORDER BY COALESCE(o.remote_created_at, o.created_at) DESC, o.id DESC LIMIT ?`,
+      )
+      .all(context.accountId, customerKey, limit) as Array<Record<string, unknown>>;
+    if (rows.length === 0) return null;
+    const latest = rows[0]!;
+    const normalized = parseJsonRecord(latest.normalized_json);
+    const summary = this.db
+      .prepare(
+        `SELECT o.currency, COUNT(*) AS order_count,
+          CAST(SUM(CAST(COALESCE(json_extract(o.normalized_json, '$.amounts.collectedMinor'), o.grand_total_minor, '0') AS INTEGER)) AS TEXT) AS total_spend_minor,
+          MIN(COALESCE(o.remote_created_at, o.created_at)) AS first_order_at,
+          MAX(COALESCE(o.remote_created_at, o.created_at)) AS last_order_at
+         FROM orders o WHERE o.account_id = ? AND o.origin = 'woo'
+           AND ${wooCustomerKeyExpression} = ? GROUP BY o.currency ORDER BY o.currency ASC`,
+      )
+      .all(context.accountId, customerKey) as Array<Record<string, unknown>>;
+    return {
+      key: customerKey,
+      externalCustomerId: latest.external_customer_id ?? null,
+      name: latest.customer_name ?? null,
+      email: latest.customer_email ?? null,
+      phone: latest.customer_phone ?? null,
+      customer: publicOrderValue(normalized.customer ?? {}),
+      billing: publicOrderValue(normalized.billing ?? {}),
+      shipping: publicOrderValue(normalized.shipping ?? {}),
+      orderCount: summary.reduce((count, item) => count + Number(item.order_count), 0),
+      firstOrderAt: summary.map((item) => String(item.first_order_at)).sort()[0] ?? null,
+      lastOrderAt:
+        summary
+          .map((item) => String(item.last_order_at))
+          .sort()
+          .at(-1) ?? null,
+      currencies: summary.map((item) => ({
+        currency: String(item.currency),
+        orderCount: Number(item.order_count),
+        totalSpendMinor: String(item.total_spend_minor ?? '0'),
+      })),
+      recentOrders: rows.map((row) =>
+        orderOutput(row, parseJsonRecord(row.normalized_json), parseJsonArray(row.tags_json)),
+      ),
+    };
   }
 
   listBulkFailures(

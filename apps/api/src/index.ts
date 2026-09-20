@@ -633,6 +633,41 @@ app.get('/api/v1/orders/filter-catalog', (request, response) => {
     ],
   });
 });
+app.get('/api/v1/customers', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const limit = request.query.limit === undefined ? undefined : Number(request.query.limit);
+  try {
+    response.json(
+      store.listWooCustomers(operationContext(user, response), {
+        ...(request.query.search === undefined ? {} : { search: String(request.query.search) }),
+        ...(request.query.cursor === undefined ? {} : { cursor: String(request.query.cursor) }),
+        ...(limit === undefined ? {} : { limit }),
+      }),
+    );
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/customers/:customerKey', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const limit = request.query.limit === undefined ? undefined : Number(request.query.limit);
+  try {
+    const customer = store.getWooCustomer(
+      operationContext(user, response),
+      request.params.customerKey,
+      limit === undefined ? {} : { limit },
+    );
+    if (!customer) {
+      sendApiError(response, 404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
+      return;
+    }
+    response.json({ customer });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
 app.get('/api/v1/orders/:orderId', (request, response) => {
   const user = auth.current(request);
   if (!user) {
