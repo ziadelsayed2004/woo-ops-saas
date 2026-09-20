@@ -2831,6 +2831,48 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0925",
+      "epic": "E09",
+      "title": "Derive Woo export status from authoritative extension data",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "M",
+      "parallelGroup": "woo-export-status",
+      "dependencies": ["T0924"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/TESTING.md",
+        "integrations/wordpress/woo-ops-export-status-bridge/woo-ops-export-status-bridge.php",
+        "packages/connectors/src/woocommerce.ts",
+        "packages/connectors/tests/woo-orders.test.js",
+        "apps/web/src/App.tsx"
+      ],
+      "scope": [
+        "Read the same authoritative global export marker used by WooCommerce Customer Order Coupon Export",
+        "Represent unavailable remote status as unknown instead of inventing not-exported",
+        "Preserve read-only connector direction and refresh imported orders through normal synchronization"
+      ],
+      "acceptance": [
+        "Orders marked exported by the Woo extension normalize as exported",
+        "Orders proven unexported normalize as not_exported",
+        "Missing bridge or unsupported storage renders an explicit unavailable state",
+        "Connector contract, browser, typecheck and affected repository checks pass"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:contract",
+        "npm run test:e2e",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
