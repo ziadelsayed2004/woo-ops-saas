@@ -72,8 +72,25 @@ test('retains allowlisted export metadata when REST exposes it without using Pay
       { id: 2, key: '_wc_customer_order_csv_export_is_exported', value: true },
     ],
   });
-  assert.equal(normalized.remoteExportStatus, 'true');
+  assert.equal(normalized.remoteExportStatus, 'exported');
   assert.equal(normalized.remoteExportStatusKey, '_wc_customer_order_csv_export_is_exported');
+});
+
+test('canonicalizes only proven Woo export values and refuses ambiguous metadata', () => {
+  for (const [value, expected] of [
+    [1, 'exported'],
+    ['yes', 'exported'],
+    [false, 'not_exported'],
+    ['not-exported', 'not_exported'],
+    ['unknown', 'unknown'],
+    ['17899841207_3563', null],
+  ]) {
+    const normalized = normalizeWooOrder({
+      ...fixture,
+      meta_data: [{ key: '_wc_customer_order_csv_export_is_exported', value }],
+    });
+    assert.equal(normalized.remoteExportStatus, expected);
+  }
 });
 
 test('pulls orders read-only and resumes at a requested page', async () => {
@@ -168,6 +185,39 @@ test('missing or malformed export-status companion leaves the standard Woo paylo
     assert.equal(normalized.remoteExportStatus, null);
     assert.equal(normalized.remoteExportStatusKey, null);
   }
+});
+
+test('preserves an explicit unknown status instead of inventing not exported', async () => {
+  const connector = new WooCommerceConnector(
+    '',
+    new URL('https://shop.example.test'),
+    { key: 'ck_read_only', secret: 'cs_read_only' },
+    async (url) =>
+      new URL(String(url)).pathname.endsWith('/woo-ops/export-status')
+        ? new Response(
+            JSON.stringify({
+              version: 1,
+              bridgeVersion: '1.6.0',
+              items: [
+                {
+                  id: 42,
+                  key: '_wc_customer_order_csv_export_is_exported',
+                  status: 'unknown',
+                  source: 'unavailable',
+                },
+              ],
+            }),
+          )
+        : new Response(JSON.stringify([{ ...fixture, meta_data: [] }]), {
+            headers: { 'x-wp-totalpages': '1' },
+          }),
+    async () => [{ address: '93.184.216.34' }],
+  );
+  const pages = [];
+  for await (const page of connector.pullOrderPages('orders')) pages.push(page);
+  const normalized = normalizeWooOrder(pages[0].items[0]);
+  assert.equal(normalized.remoteExportStatus, 'unknown');
+  assert.equal(normalized.remoteExportStatusSource, 'unavailable');
 });
 
 test('credential and webhook envelopes round-trip without exposing plaintext', () => {

@@ -42,8 +42,14 @@ export type WooShippingRate = Readonly<{
 type WooRemoteExportStatus = Readonly<{
   id: number;
   key: '_wc_customer_order_csv_export_is_exported';
-  status: 'exported' | 'not_exported';
-  source: 'extension_api' | 'taxonomy' | 'legacy_meta' | 'legacy_order_meta' | 'legacy_post_meta';
+  status: 'exported' | 'not_exported' | 'unknown';
+  source:
+    | 'extension_api'
+    | 'taxonomy'
+    | 'legacy_meta'
+    | 'legacy_order_meta'
+    | 'legacy_post_meta'
+    | 'unavailable';
   bridgeVersion: string;
 }>;
 export type NormalizedCatalogItem = {
@@ -406,13 +412,14 @@ const parseRemoteExportStatuses = (value: unknown): readonly WooRemoteExportStat
       !Number.isSafeInteger(item.id) ||
       Number(item.id) <= 0 ||
       item.key !== WOO_REMOTE_EXPORT_META_KEY ||
-      (item.status !== 'exported' && item.status !== 'not_exported') ||
+      (item.status !== 'exported' && item.status !== 'not_exported' && item.status !== 'unknown') ||
       ![
         'extension_api',
         'taxonomy',
         'legacy_meta',
         'legacy_order_meta',
         'legacy_post_meta',
+        'unavailable',
       ].includes(String(item.source))
     )
       return null;
@@ -457,6 +464,22 @@ const overlayRemoteExportStatuses = (
       ],
     };
   });
+};
+
+const canonicalRemoteExportStatus = (
+  value: unknown,
+): 'exported' | 'not_exported' | 'unknown' | null => {
+  if (typeof value === 'boolean') return value ? 'exported' : 'not_exported';
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const normalized = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/gu, '_');
+  if (['1', 'true', 'yes', 'exported'].includes(normalized)) return 'exported';
+  if (['0', 'false', 'no', 'not_exported', 'unexported'].includes(normalized))
+    return 'not_exported';
+  if (['unknown', 'unavailable', 'not_exposed'].includes(normalized)) return 'unknown';
+  return null;
 };
 
 const requiredInteger = (record: Record<string, unknown>, key: string): number => {
@@ -680,12 +703,7 @@ export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
   const remoteExportValue = asRecord(remoteExportMetadata?.value);
   const remoteExportScalar =
     remoteExportValue?.status ?? remoteExportValue?.state ?? remoteExportMetadata?.value;
-  const remoteExportStatus =
-    typeof remoteExportScalar === 'string' ||
-    typeof remoteExportScalar === 'number' ||
-    typeof remoteExportScalar === 'boolean'
-      ? String(remoteExportScalar).trim() || null
-      : null;
+  const remoteExportStatus = canonicalRemoteExportStatus(remoteExportScalar);
   const remoteExportStatusKey = remoteExportMetadata?.key ?? null;
   const remoteExportStatusSource = textOrNull(remoteExportValue?.source);
   const remoteExportBridgeVersion = textOrNull(remoteExportValue?.bridgeVersion);

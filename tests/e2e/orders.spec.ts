@@ -376,6 +376,43 @@ test('has no automated accessibility violations in the orders workspace @a11y @o
   expect(results.violations).toEqual([]);
 });
 
+test('shows Woo export status only when the connector supplies authoritative evidence', async ({
+  page,
+}) => {
+  await mockOrderApi(page);
+  await page.route('**/api/v1/orders/query', async (route) => {
+    const baseOrder = order;
+    await route.fulfill({
+      json: {
+        items: [
+          {
+            ...baseOrder,
+            id: 'order-exported',
+            orderNumber: '1001',
+            remoteExportStatus: 'exported',
+          },
+          {
+            ...baseOrder,
+            id: 'order-not-exported',
+            orderNumber: '1002',
+            remoteExportStatus: 'not_exported',
+          },
+          { ...baseOrder, id: 'order-unknown', orderNumber: '1003', remoteExportStatus: 'unknown' },
+        ],
+        nextCursor: null,
+        hasMore: false,
+        facets: [],
+      },
+    });
+  });
+  await page.goto('/');
+  await expect(page.getByTestId('orders-table')).toBeVisible();
+  await page.getByRole('button', { name: 'English' }).click();
+  await expect(page.getByText('Exported in WooCommerce', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('Not exported in WooCommerce', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('Woo status unavailable', { exact: true })).toHaveCount(1);
+});
+
 test('keeps a saved filter selected, applies its exact query and deletes it', async ({ page }) => {
   const queryBodies = await mockOrderApi(page);
   let deleted = false;

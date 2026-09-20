@@ -190,7 +190,9 @@ test('the WordPress companion registers only an authenticated bounded read route
   assert.match(plugin, /get_post_meta\( \$order_id, WOO_OPS_EXPORT_STATUS_META_KEY, true \)/u);
   assert.match(plugin, /\(bool\) \$post_meta_value/u);
   assert.match(plugin, /\(bool\) \$order_meta_value/u);
-  assert.match(plugin, /'bridgeVersion'\s+=>\s+'1\.5\.0'/u);
+  assert.match(plugin, /'bridgeVersion'\s+=>\s+'1\.6\.0'/u);
+  assert.match(plugin, /'status'\s+=>\s+'unknown'/u);
+  assert.match(plugin, /'source'\s+=>\s+'unavailable'/u);
   assert.match(plugin, /_wc_customer_order_csv_export_is_exported/u);
   assert.match(plugin, /true === \$taxonomy_status/u);
   assert.doesNotMatch(plugin, /WP_REST_Server::(?:CREATABLE|EDITABLE|DELETABLE)/u);

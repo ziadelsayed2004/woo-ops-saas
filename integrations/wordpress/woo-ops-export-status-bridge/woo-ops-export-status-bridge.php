@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Woo Ops Export Status Bridge
  * Description: Read-only REST exposure for WooCommerce Customer / Order / Coupon Export status.
- * Version: 1.5.0
+ * Version: 1.6.0
  * Requires Plugins: woocommerce
  * Requires PHP: 7.4
  * Author: Woo Ops
@@ -35,6 +35,7 @@ function woo_ops_order_export_status( WC_Order $order ): array {
 		'extensionAvailable' => false,
 		'taxonomyAvailable'  => taxonomy_exists( WOO_OPS_EXPORT_STATUS_TAXONOMY ),
 	);
+	$order_meta_exists = (bool) $diagnostics['orderMetaPresent'];
 
 	// Customer / Order / Coupon Export versions before 5.0 render the admin
 	// column from post metadata. Reading both APIs is required on stores where
@@ -42,7 +43,7 @@ function woo_ops_order_export_status( WC_Order $order ): array {
 	// post table. Never return either raw value in diagnostics.
 	if ( (bool) $post_meta_value ) {
 		return array(
-			'exported'    => true,
+			'status'      => 'exported',
 			'source'      => 'legacy_post_meta',
 			'diagnostics' => $diagnostics,
 		);
@@ -50,20 +51,34 @@ function woo_ops_order_export_status( WC_Order $order ): array {
 
 	if ( (bool) $order_meta_value ) {
 		return array(
-			'exported'    => true,
+			'status'      => 'exported',
 			'source'      => 'legacy_order_meta',
 			'diagnostics' => $diagnostics,
 		);
 	}
 
 	$handler_class = '\\SkyVerge\\WooCommerce\\CSV_Export\\Taxonomies_Handler';
+	$extension_status = null;
 	if ( class_exists( $handler_class ) && is_callable( array( $handler_class, 'is_order_exported_globally' ) ) ) {
 		$diagnostics['extensionAvailable'] = true;
-		return array(
-			'exported'    => (bool) $handler_class::is_order_exported_globally( $order_id ),
-			'source'      => 'extension_api',
-			'diagnostics' => $diagnostics,
-		);
+		try {
+			$method     = new ReflectionMethod( $handler_class, 'is_order_exported_globally' );
+			$parameters = $method->getParameters();
+			$parameter  = isset( $parameters[0] ) ? $parameters[0]->getType() : null;
+			$argument   = $parameter instanceof ReflectionNamedType && ! $parameter->isBuiltin()
+				? $order
+				: $order_id;
+			$extension_status = (bool) $handler_class::is_order_exported_globally( $argument );
+		} catch ( Throwable $error ) {
+			$extension_status = null;
+		}
+		if ( true === $extension_status ) {
+			return array(
+				'status'      => 'exported',
+				'source'      => 'extension_api',
+				'diagnostics' => $diagnostics,
+			);
+		}
 	}
 
 	if ( taxonomy_exists( WOO_OPS_EXPORT_STATUS_TAXONOMY ) ) {
@@ -74,15 +89,23 @@ function woo_ops_order_export_status( WC_Order $order ): array {
 		);
 
 		return array(
-			'exported'    => true === $taxonomy_status,
+			'status'      => true === $taxonomy_status ? 'exported' : 'not_exported',
 			'source'      => 'taxonomy',
 			'diagnostics' => $diagnostics,
 		);
 	}
 
+	if ( false === $extension_status || $post_meta_exists || $order_meta_exists ) {
+		return array(
+			'status'      => 'not_exported',
+			'source'      => $post_meta_exists ? 'legacy_post_meta' : ( $order_meta_exists ? 'legacy_order_meta' : 'extension_api' ),
+			'diagnostics' => $diagnostics,
+		);
+	}
+
 	return array(
-		'exported'    => false,
-		'source'      => $post_meta_exists ? 'legacy_post_meta' : 'legacy_order_meta',
+		'status'      => 'unknown',
+		'source'      => 'unavailable',
 		'diagnostics' => $diagnostics,
 	);
 }
@@ -140,7 +163,7 @@ function woo_ops_read_export_statuses( WP_REST_Request $request ) {
 		$items[]   = array(
 			'id'          => (int) $order->get_id(),
 			'key'         => WOO_OPS_EXPORT_STATUS_META_KEY,
-			'status'      => $export_status['exported'] ? 'exported' : 'not_exported',
+			'status'      => $export_status['status'],
 			'source'      => $export_status['source'],
 			'diagnostics' => $export_status['diagnostics'],
 		);
@@ -149,7 +172,7 @@ function woo_ops_read_export_statuses( WP_REST_Request $request ) {
 	return rest_ensure_response(
 		array(
 			'version'       => 1,
-			'bridgeVersion' => '1.5.0',
+			'bridgeVersion' => '1.6.0',
 			'items'         => $items,
 		)
 	);
