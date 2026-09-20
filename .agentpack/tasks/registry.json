@@ -2401,6 +2401,48 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0916",
+      "epic": "E09",
+      "title": "Repair Woo analytics customer and line dimensions",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "S",
+      "parallelGroup": "woo-analytics-facts",
+      "dependencies": ["T0914"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/TESTING.md",
+        "packages/persistence/src/index.ts",
+        "packages/persistence/tests/analytics-facts.test.js",
+        "packages/analytics/src/index.ts"
+      ],
+      "scope": [
+        "Repair normalized customer identity extraction used by Woo customer analytics",
+        "Repair immutable line quantity and sales dimensions used by product and category reports",
+        "Keep money in integer minor units and preserve excluded-status and account isolation behavior"
+      ],
+      "acceptance": [
+        "Customer reports use the normalized customer email or name rather than unknown when source data exists",
+        "Product and category reports aggregate line quantity, subtotal and net line sales without repeating order totals or returning zero",
+        "Existing deterministic analytics, currency separation and account-scoped tests pass"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:contract",
+        "npm run test:security",
+        "npm run test:tenant-isolation",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
