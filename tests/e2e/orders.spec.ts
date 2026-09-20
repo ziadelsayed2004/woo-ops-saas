@@ -154,8 +154,8 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
   const filterGrid = page.getByTestId('advanced-order-filters');
   await expect(filterGrid).toBeVisible();
   await expect(page.getByLabel('المحافظة / المنطقة')).toBeVisible();
-  await page.getByLabel('المحافظة / المنطقة').fill('Cairo');
-  await page.getByRole('option', { name: 'Cairo' }).click();
+  await page.getByLabel('المحافظة / المنطقة').click();
+  await page.getByRole('option', { name: 'القاهرة' }).click();
   await page.getByRole('button', { name: 'بحث', exact: true }).click();
   await expect
     .poll(() => queryBodies.at(-1))
@@ -196,6 +196,44 @@ test('has no automated accessibility violations in the orders workspace @a11y @o
   await page.goto('/');
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
+});
+
+test('keeps a saved filter selected, applies its exact query and deletes it', async ({ page }) => {
+  const queryBodies = await mockOrderApi(page);
+  let deleted = false;
+  await page.route('**/api/v1/saved-views', async (route) => {
+    await route.fulfill({
+      json: {
+        items: [
+          {
+            id: 'saved-processing',
+            name: 'Processing orders',
+            query: {
+              search: 'Ahmed',
+              filter: { field: 'remoteStatus', operator: 'equals', value: 'processing' },
+            },
+            sort: { field: 'remoteCreatedAt', direction: 'desc' },
+            columns: ['orderNumber', 'remoteStatus'],
+          },
+        ],
+      },
+    });
+  });
+  await page.route('**/api/v1/saved-views/saved-processing', async (route) => {
+    deleted = route.request().method() === 'DELETE';
+    await route.fulfill({ status: 204, body: '' });
+  });
+  await page.goto('/');
+  await page.locator('button[aria-controls="saved-order-filters"]').click();
+  await page.getByTestId('saved-order-filters').getByRole('combobox').click();
+  await page.getByRole('option', { name: 'Processing orders' }).click();
+  await expect(page.getByTestId('saved-order-filters').getByRole('combobox')).toContainText(
+    'Processing orders',
+  );
+  await expect.poll(() => queryBodies.at(-1)?.search).toBe('Ahmed');
+  await page.locator('#saved-order-filters button.MuiButton-colorError').click();
+  await expect.poll(() => deleted).toBe(true);
+  await expect(page.getByText('Processing orders')).toHaveCount(0);
 });
 
 test('keeps a deterministic visual baseline for the Arabic workspace @visual @orders', async ({

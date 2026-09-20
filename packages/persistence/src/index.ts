@@ -195,6 +195,8 @@ export type NormalizedOrderInput = {
   tags?: readonly string[] | undefined;
   couponCodes?: readonly string[] | undefined;
   metadata?: readonly Record<string, unknown>[] | undefined;
+  remoteExportStatus?: string | null | undefined;
+  remoteExportStatusKey?: string | null | undefined;
   exceptionState?: string | null | undefined;
   sourceTimezone?: string | null | undefined;
   sourceJson: string;
@@ -6190,17 +6192,60 @@ export class SqliteStore {
     const rows = this.analyticsFactRows(context, input);
     const values = new Map<
       string,
-      { key: string; currency: string; orderCount: number; lineCount: number; totals: MetricTotals }
+      {
+        key: string;
+        label?: string;
+        currency: string;
+        orderCount: number;
+        lineCount: number;
+        totals: MetricTotals;
+      }
     >();
     for (const row of rows) {
       const dimensions = dailyAnalyticsFact(row).dimensions;
-      const productValues = Array.isArray(dimensions.products)
-        ? dimensions.products.flatMap((item) => {
-            if (!isRecord(item)) return [];
-            const value = item.product ?? item.variation ?? item.sku ?? item.name;
-            return value === null || value === undefined ? [] : [String(value)];
-          })
-        : [];
+      if (dimension === 'product' || dimension === 'category') {
+        const products = Array.isArray(dimensions.products) ? dimensions.products : [];
+        const countedOrders = new Set<string>();
+        for (const item of products) {
+          if (!isRecord(item)) continue;
+          const keys =
+            dimension === 'product'
+              ? [item.product ?? item.variation ?? item.name]
+              : Array.isArray(item.categories)
+                ? item.categories
+                : [];
+          const gross = analyticsMinor(String(item.subtotalMinor ?? '0'));
+          const net = analyticsMinor(String(item.totalMinor ?? '0'));
+          for (const rawKey of new Set(keys.map(String).filter(Boolean))) {
+            const mapKey = `${row.currency}|${rawKey}`;
+            const current = values.get(mapKey) ?? {
+              key: rawKey,
+              ...(dimension === 'product' && typeof item.name === 'string'
+                ? { label: item.name }
+                : {}),
+              currency: row.currency,
+              orderCount: 0,
+              lineCount: 0,
+              totals: emptyAnalyticsTotals(),
+            };
+            // A line report must never repeat the entire order's shipping, tax or sales for each product.
+            const lineTotals = {
+              ...emptyAnalyticsTotals(),
+              grossSalesMinor: gross.toString(),
+              discountMinor: (gross - net).toString(),
+              netMerchandiseMinor: net.toString(),
+            };
+            current.totals = addAnalyticsTotals(current.totals, lineTotals);
+            current.lineCount += Number.isSafeInteger(item.quantity) ? Number(item.quantity) : 0;
+            if (!countedOrders.has(mapKey)) {
+              current.orderCount += row.order_count;
+              countedOrders.add(mapKey);
+            }
+            values.set(mapKey, current);
+          }
+        }
+        continue;
+      }
       const listDimension = dimensions[`${dimension}s`];
       const dimensionValues =
         dimension === 'source'
@@ -6215,13 +6260,11 @@ export class SqliteStore {
                   ? [String(dimensions.localStatus ?? 'unknown')]
                   : dimension === 'exportState'
                     ? [String(dimensions.exportState ?? 'never-exported')]
-                    : dimension === 'product'
-                      ? productValues
-                      : dimension === 'category' || dimension === 'author'
-                        ? Array.isArray(listDimension)
-                          ? listDimension.map(String)
-                          : []
-                        : [String(dimensions[dimension] ?? 'unknown')];
+                    : dimension === 'author'
+                      ? Array.isArray(listDimension)
+                        ? listDimension.map(String)
+                        : []
+                      : [String(dimensions[dimension] ?? 'unknown')];
       for (const value of dimensionValues.length > 0 ? dimensionValues : ['unknown']) {
         const mapKey = `${row.currency}|${value}`;
         const current = values.get(mapKey) ?? {

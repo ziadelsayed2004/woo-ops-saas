@@ -7,7 +7,7 @@ import {
 } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import { egyptianGovernorate } from '@woo-ops/domain';
+import { EGYPTIAN_GOVERNORATES, egyptianGovernorate } from '@woo-ops/domain';
 import type {
   ConnectorCapabilities,
   ConnectorDiscovery,
@@ -573,6 +573,14 @@ export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
     'export_status',
     '_order_exported',
     'order_exported',
+    '_wc_order_exported',
+    'wc_order_exported',
+    '_woo_order_exported',
+    'woo_order_exported',
+    '_wc_customer_order_csv_export_is_exported',
+    'wc_customer_order_csv_export_is_exported',
+    '_wc_customer_order_xml_export_is_exported',
+    'wc_customer_order_xml_export_is_exported',
   ]);
   const remoteExportMetadata = metadata.find((item) =>
     remoteExportKeys.has(item.key.trim().toLowerCase()),
@@ -1046,12 +1054,18 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
       const locations: unknown = await locationsResponse.json();
       const methods: unknown = await methodsResponse.json();
       if (!Array.isArray(locations) || !Array.isArray(methods)) continue;
-      const stateCodes = locations.flatMap((rawLocation) => {
-        const location = asRecord(rawLocation);
-        if (location?.type !== 'state' || typeof location.code !== 'string') return [];
-        const match = /^EG:([A-Z]{1,4})$/u.exec(location.code.toUpperCase());
-        return match?.[1] ? [`EG${match[1]}`] : [];
-      });
+      const stateCodes = [
+        ...new Set(
+          locations.flatMap((rawLocation) => {
+            const location = asRecord(rawLocation);
+            if (location?.type === 'country' && location.code === 'EG')
+              return EGYPTIAN_GOVERNORATES.map((item) => item.code);
+            if (location?.type !== 'state' || typeof location.code !== 'string') return [];
+            const match = /^EG:(EG)?([A-Z]{1,4})$/u.exec(location.code.toUpperCase());
+            return match?.[2] ? [`EG${match[2]}`] : [];
+          }),
+        ),
+      ];
       for (const rawMethod of methods) {
         const method = asRecord(rawMethod);
         const settings = asRecord(method?.settings);

@@ -64,6 +64,18 @@ test('never mistakes Paymob identifiers for a Woo export status', () => {
   assert.equal(normalized.remoteExportStatusKey, null);
 });
 
+test('retains allowlisted export metadata when REST exposes it without using Paymob identifiers', () => {
+  const normalized = normalizeWooOrder({
+    ...fixture,
+    meta_data: [
+      { id: 1, key: 'Paymob Merchant Order ID', value: '1799875497' },
+      { id: 2, key: '_wc_customer_order_csv_export_is_exported', value: true },
+    ],
+  });
+  assert.equal(normalized.remoteExportStatus, 'true');
+  assert.equal(normalized.remoteExportStatusKey, '_wc_customer_order_csv_export_is_exported');
+});
+
 test('pulls orders read-only and resumes at a requested page', async () => {
   const calls = [];
   const connector = new WooCommerceConnector(

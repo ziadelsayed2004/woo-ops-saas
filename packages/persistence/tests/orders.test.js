@@ -33,6 +33,8 @@ const order = {
   shipping: {},
   lines: [],
   refunds: [{ externalRefundId: '3', amountMinor: '-1000', reason: 'returned' }],
+  remoteExportStatus: 'true',
+  remoteExportStatusKey: '_wc_customer_order_csv_export_is_exported',
   sourceJson: '{"id":42}',
   sourceHash: 'hash-v1',
 };
@@ -75,6 +77,8 @@ test('order details return normalized sections and stay account scoped', () => {
   const detail = store.getOrder(context, orderId);
   assert.equal(detail.id, orderId);
   assert.equal(detail.orderNumber, '10042');
+  assert.equal(detail.remoteExportStatus, 'true');
+  assert.equal(detail.remoteExportStatusKey, '_wc_customer_order_csv_export_is_exported');
   assert.deepEqual(detail.billing, {});
   assert.equal(Array.isArray(detail.lines), true);
   assert.equal(Array.isArray(detail.refunds), true);

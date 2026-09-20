@@ -238,7 +238,7 @@ test('Arabic login fields, labels and notches align right while headings stay ce
   expect(Math.abs(positions.subtitleCenter - positions.paperCenter)).toBeLessThan(5);
 });
 
-test('Arabic outlined selects use right-hand labels and notches @admin', async ({ page }) => {
+test('Arabic outlined selects keep arrows opposite right-hand labels @admin', async ({ page }) => {
   await mockAdminApi(page);
   await page.goto('/settings');
   const positions = await page.getByTestId('settings-workspace').evaluate((workspace) => {
@@ -249,6 +249,7 @@ test('Arabic outlined selects use right-hand labels and notches @admin', async (
     const icon = field.querySelector('.MuiSelect-icon')!;
     return {
       selectAlign: getComputedStyle(select).textAlign,
+      fieldLeft: field.getBoundingClientRect().left,
       fieldRight: field.getBoundingClientRect().right,
       labelRight: label.getBoundingClientRect().right,
       legendRight: legend.getBoundingClientRect().right,
@@ -258,11 +259,11 @@ test('Arabic outlined selects use right-hand labels and notches @admin', async (
     };
   });
   expect(positions.selectAlign).toBe('right');
-  expect(positions.fieldRight - positions.iconRight).toBeGreaterThanOrEqual(12);
-  expect(positions.fieldRight - positions.iconRight).toBeLessThanOrEqual(18);
-  expect(positions.iconLeft - positions.labelRight).toBeGreaterThanOrEqual(8);
-  expect(positions.fieldRight - positions.labelRight).toBeGreaterThanOrEqual(48);
-  expect(positions.fieldRight - positions.legendRight).toBeGreaterThanOrEqual(40);
+  expect(positions.iconLeft - positions.fieldLeft).toBeGreaterThanOrEqual(12);
+  expect(positions.iconLeft - positions.fieldLeft).toBeLessThanOrEqual(18);
+  expect(positions.labelLeft - positions.iconRight).toBeGreaterThanOrEqual(8);
+  expect(positions.fieldRight - positions.labelRight).toBeGreaterThanOrEqual(12);
+  expect(positions.fieldRight - positions.legendRight).toBeGreaterThanOrEqual(8);
 });
 
 test('language switch updates text and direction together @admin', async ({ page }) => {

@@ -275,6 +275,20 @@ category, and author. Summary responses expose the latest fact rebuild timestamp
 cost-snapshot coverage (`scope: account`) so clients can show freshness and partial-cost states
 explicitly without implying that coverage is a date/facet-level estimate.
 
+The Woo-only analytics screen requests `source: woo`. Product and category breakdowns use
+individual immutable order-line quantity, subtotal and discounted total, not a copy of each
+order's shipping, tax or profit for every product. Product rows also return an optional `label`
+from the line snapshot. A category can legitimately include the same item as another category;
+category rows must not be summed into account revenue. These snapshots attribute refunds to the
+original order date and do not expose a line-level refund allocation, so date-filtered and
+product/category figures are not represented as exact Woo Analytics report exports.
+
+`remoteExportStatus` and `remoteExportStatusKey` are populated only when an explicitly recognized
+export metadata field appears in the Woo order REST response. A missing field means unknown/not
+exposed, not “not exported”; protected extension metadata may require a separate read-only
+WordPress endpoint. Paymob identifiers are never inferred as export status. Local `exportState`
+remains independent and is never overwritten by remote synchronization.
+
 ## Operations
 
 ```text

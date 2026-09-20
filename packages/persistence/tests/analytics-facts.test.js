@@ -207,6 +207,37 @@ test('cost rules are effective-dated and analytics facts rebuild deterministical
   assert.equal(store.listAnalyticsFacts(otherContext).length, 0);
 });
 
+test('product breakdown counts line sales rather than repeating whole order totals', () => {
+  store.createManualOrder(context, {
+    currency: 'EGP',
+    lines: [
+      { productId: 'book-a', name: 'Book A', quantity: 2, unitPriceMinor: '1000' },
+      { productId: 'book-b', name: 'Book B', quantity: 1, unitPriceMinor: '500' },
+    ],
+    shippingCollectedMinor: '300',
+  });
+  store.createManualOrder(context, {
+    currency: 'EGP',
+    lines: [{ productId: 'book-a', name: 'Book A', quantity: 1, unitPriceMinor: '1000' }],
+  });
+  store.rebuildAnalyticsFacts(context, { source: 'manual' });
+  const byProduct = store.getAnalyticsBreakdown(context, {
+    source: 'manual',
+    dimension: 'product',
+  });
+  const bookA = byProduct.items.find((item) => item.key === 'book-a');
+  const bookB = byProduct.items.find((item) => item.key === 'book-b');
+  assert.equal(bookA?.totals.grossSalesMinor, '3000');
+  assert.equal(bookA?.lineCount, 3);
+  assert.equal(bookA?.orderCount, 2);
+  assert.equal(bookA?.label, 'Book A');
+  assert.equal(bookB?.totals.grossSalesMinor, '500');
+  assert.equal(bookB?.lineCount, 1);
+  assert.equal(bookA?.totals.shippingCollectedMinor, '0');
+  assert.equal(bookB?.totals.shippingCollectedMinor, '0');
+  assert.equal(store.getAnalyticsBreakdown(otherContext, { dimension: 'product' }).items.length, 0);
+});
+
 test.after(() => {
   store.db.close();
   rmSync(directory, { recursive: true, force: true });
