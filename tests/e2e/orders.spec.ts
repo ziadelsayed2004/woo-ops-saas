@@ -171,8 +171,13 @@ test('creates the Woo-layout XLSX and offers repeat download in orders @orders @
   await page.goto('/');
   await page.getByRole('button', { name: 'English' }).click();
   await page.getByTestId('order-row-order-1').getByRole('checkbox').check();
-  await expect(page.getByRole('button', { name: 'Print thermal now' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Print shipping label now' })).toBeVisible();
+  await page.getByRole('button', { name: 'Export & print', exact: true }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('tab', { name: 'Print', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Print Thermal receipt' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Print Shipping label' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Export Excel' })).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Download files' }).click();
   const automaticDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export Excel' }).click();
   expect((await automaticDownload).suggestedFilename()).toBe('orders-export-xlsx.xlsx');
@@ -251,6 +256,7 @@ test('shows an export job failure with retry instead of claiming a download @ord
   await page.goto('/');
   await page.getByRole('button', { name: 'English' }).click();
   await page.getByTestId('order-row-order-1').getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Export & print', exact: true }).click();
   await page.getByRole('button', { name: 'Export Excel' }).click();
   await expect.poll(() => created).toBe(true);
   await page.locator('[data-testid="navigation-exports"]:visible').click();
@@ -298,11 +304,13 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
   await expect(page.getByText('لم يُصدّر', { exact: true })).toBeVisible();
 
   await page.getByTestId('order-row-order-1').getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'تصدير وطباعة', exact: true }).click();
   await expect(page.getByRole('button', { name: 'تصدير Excel' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'تصدير CSV' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'فاتورة A4' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'إيصال حراري' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'بوليصة شحن' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'تحميل فاتورة A4' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'تحميل إيصال حراري' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'تحميل بوليصة شحن' })).toBeVisible();
+  await page.getByRole('button', { name: 'إغلاق', exact: true }).click();
   await page.getByTestId('order-row-order-1').getByRole('checkbox').uncheck();
 
   await page.getByRole('button', { name: 'فلاتر متقدمة' }).click();
@@ -370,6 +378,29 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
   expect(englishDrawerBox!.x + englishDrawerBox!.width / 2).toBeGreaterThan(
     page.viewportSize()!.width / 2,
   );
+});
+
+test('separates download and print in an accessible RTL dialog @orders', async ({ page }) => {
+  await mockOrderApi(page);
+  await page.goto('/');
+  await page.getByTestId('order-row-order-1').getByRole('checkbox').check();
+  const launcher = page.getByRole('button', { name: 'تصدير وطباعة', exact: true });
+  await launcher.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toHaveAttribute('dir', 'rtl');
+  await expect(dialog.getByRole('button', { name: 'تحميل فاتورة A4' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'طباعة فاتورة A4' })).toHaveCount(0);
+  await dialog.screenshot({ path: 'output/ui/output-dialog-download.png' });
+  await dialog.getByRole('tab', { name: 'الطباعة', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'طباعة إيصال حراري' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'تصدير Excel' })).toHaveCount(0);
+  await dialog.screenshot({ path: 'output/ui/output-dialog-print.png' });
+  const results = await new AxeBuilder({ page }).include('[role="dialog"]').analyze();
+  expect(results.violations).toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(launcher).toBeFocused();
+  await expect(page.getByTestId('order-row-order-1').getByRole('checkbox')).toBeChecked();
 });
 
 test('has no automated accessibility violations in the orders workspace @a11y @orders', async ({

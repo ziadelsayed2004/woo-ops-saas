@@ -131,61 +131,60 @@ const address = (order: Readonly<Record<string, unknown>>): string =>
     .filter(Boolean)
     .join('، ');
 
-const htmlDocument = (request: DocumentRequest, assets: RenderAssets): string => {
+export const htmlDocument = (request: DocumentRequest, assets: RenderAssets): string => {
   const order = request.order;
   const arabic = request.template.direction === 'rtl';
   const locale = request.template.locale ?? (arabic ? 'ar-EG' : 'en-US');
   const t = translations(arabic);
   const currency = text(order, 'currency') || 'EGP';
+  const compact = request.format === 'thermal-80mm' || request.format === 'label-100x150mm';
+  const shippingLabel = request.format === 'label-100x150mm';
   const orderNumber = request.documentNumber ?? text(order, 'orderNumber', 'number', 'id');
   const customer =
     [text(order, 'billing.first_name'), text(order, 'billing.last_name')]
       .filter(Boolean)
       .join(' ') || text(order, 'customer.name', 'billing.name');
-  const created = text(order, 'createdAt', 'remoteCreatedAt');
+  const recipient =
+    [text(order, 'shipping.first_name'), text(order, 'shipping.last_name')]
+      .filter(Boolean)
+      .join(' ') || customer;
+  const created = text(order, 'remoteCreatedAt', 'createdAt');
   const createdLabel =
     created && !Number.isNaN(Date.parse(created))
-      ? new Intl.DateTimeFormat(locale, { dateStyle: 'medium', numberingSystem: 'latn' }).format(
-          new Date(created),
-        )
+      ? new Intl.DateTimeFormat(locale, {
+          dateStyle: 'medium',
+          numberingSystem: 'latn',
+          timeZone: 'Africa/Cairo',
+        }).format(new Date(created))
       : created;
+  const governorate = text(
+    order,
+    arabic ? 'shipping.governorateNameAr' : 'shipping.governorateNameEn',
+    'shipping.state',
+    'billing.state',
+  );
+  const phone = text(order, 'shipping.phone', 'billing.phone', 'customer.phone');
+  const email = text(order, 'billing.email', 'customer.email');
+  const payment = text(order, 'paymentMethodTitle', 'payment.title');
+  const shipping = text(order, 'shippingMethodTitle', 'shippingMethod.title');
+  const field = (label: string, value: string, direction = 'auto') =>
+    value
+      ? `<div class="detail"><dt>${escapeHtml(label)}</dt><dd><bdi dir="${direction}">${escapeHtml(value)}</bdi></dd></div>`
+      : '';
+  const title = shippingLabel ? t.label : compact ? t.receipt : t.invoice;
   const lines = Array.isArray(order.lines) ? order.lines : [];
-  const lineRows = lines
+  const rows = lines
     .map((raw, index) => {
       const line = isRecord(raw) ? raw : {};
       const quantity = text(line, 'quantity') || '1';
-      const totalMinor = text(line, 'totalMinor', 'total') || '0';
-      const unitMinor =
+      const total = text(line, 'totalMinor', 'total') || '0';
+      const unit =
         text(line, 'unitPriceMinor') ||
-        (/^\d+$/u.test(totalMinor) && /^\d+$/u.test(quantity) && Number(quantity) > 0
-          ? String(BigInt(totalMinor) / BigInt(quantity))
-          : totalMinor);
-      return `<tr><td class="index">${index + 1}</td><td class="product"><strong>${escapeHtml(text(line, 'name', 'title'))}</strong></td><td>${escapeHtml(quantity)}</td><td>${escapeHtml(money(unitMinor, currency, locale))}</td><td>${escapeHtml(money(totalMinor, currency, locale))}</td></tr>`;
+        (/^\d+$/u.test(total) && /^\d+$/u.test(quantity) && BigInt(quantity) > 0n
+          ? String(BigInt(total) / BigInt(quantity))
+          : total);
+      return `<tr><td class="index">${index + 1}</td><td class="product"><bdi>${escapeHtml(text(line, 'name', 'title'))}</bdi></td><td class="quantity"><bdi dir="ltr">${escapeHtml(quantity)}</bdi></td>${compact ? '' : `<td class="amount"><bdi dir="ltr">${escapeHtml(money(unit, currency, locale))}</bdi></td>`}${shippingLabel ? '' : `<td class="amount"><bdi dir="ltr">${escapeHtml(money(total, currency, locale))}</bdi></td>`}</tr>`;
     })
-    .join('');
-  const facts = [
-    [t.customer, customer],
-    [t.phone, text(order, 'billing.phone', 'customer.phone')],
-    [t.email, text(order, 'billing.email', 'customer.email')],
-    [t.address, address(order)],
-    [
-      t.governorate,
-      text(
-        order,
-        'shipping.governorateNameAr',
-        'shipping.governorateNameEn',
-        'shipping.state',
-        'billing.state',
-      ),
-    ],
-    [t.payment, text(order, 'paymentMethodTitle', 'payment.title')],
-    [t.shipping, text(order, 'shippingMethodTitle', 'shippingMethod.title')],
-  ].filter(([, value]) => value);
-  const factCards = facts
-    .map(
-      ([label, value]) =>
-        `<div class="fact"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`,
-    )
     .join('');
   const totals = [
     [t.subtotal, text(order, 'amounts.merchandiseNetMinor', 'subtotalMinor')],
@@ -193,25 +192,38 @@ const htmlDocument = (request: DocumentRequest, assets: RenderAssets): string =>
     [t.shippingFee, text(order, 'amounts.shippingCollectedMinor')],
     [t.tax, text(order, 'amounts.taxMinor')],
     [t.fees, text(order, 'amounts.feesMinor')],
-    [t.grandTotal, text(order, 'grandTotalMinor', 'amounts.collectedMinor', 'total')],
-  ].filter(([, value], index) => value && (index === 5 || value !== '0'));
+  ].filter(([, value]) => value && value !== '0');
   const totalRows = totals
     .map(
-      ([label, value], index) =>
-        `<div class="total-row ${index === totals.length - 1 ? 'grand' : ''}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(money(value ?? '0', currency, locale))}</strong></div>`,
+      ([label, value]) =>
+        `<div class="total-row"><span>${escapeHtml(label)}</span><bdi dir="ltr">${escapeHtml(money(value ?? '0', currency, locale))}</bdi></div>`,
     )
     .join('');
-  const title =
-    request.format === 'thermal-80mm'
-      ? t.receipt
-      : request.format === 'label-100x150mm'
-        ? t.label
-        : t.invoice;
-  const compact = request.format === 'thermal-80mm' || request.format === 'label-100x150mm';
+  const total = money(
+    text(order, 'grandTotalMinor', 'amounts.collectedMinor', 'total') || '0',
+    currency,
+    locale,
+  );
   const logo = dataUrl('image/svg+xml', COLOR_LOGO);
-  const formatClass = request.format.replaceAll('-', '_');
-  return `<!doctype html><html lang="${arabic ? 'ar' : 'en'}" dir="${arabic ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><style>
-${embeddedFonts}\n${documentStyles}\n${compact ? '@page{margin:0}' : ''}\n</style></head><body class="${formatClass} ${compact ? 'roll' : ''}"><main class="page"><header class="brand"><div class="brand-identity"><div class="logo-window"><img class="brand-logo" src="${logo}" alt="${escapeHtml(request.template.companyName)}"></div>${request.template.companyAddress ? `<p>${escapeHtml(request.template.companyAddress)}</p>` : ''}</div><div class="doc-title"><h2>${escapeHtml(title)}</h2><span class="pill">#${escapeHtml(orderNumber)}</span>${createdLabel ? `<p>${escapeHtml(createdLabel)}</p>` : ''}</div></header><section class="facts">${factCards}</section><section><h3 class="section-title">${escapeHtml(t.items)}</h3><table class="items"><thead><tr><th>#</th><th>${escapeHtml(t.item)}</th><th>${escapeHtml(t.qty)}</th><th>${escapeHtml(t.unit)}</th><th>${escapeHtml(t.total)}</th></tr></thead><tbody>${lineRows}</tbody></table></section><section class="summary">${totalRows}</section><section class="codes"><div>${assets.barcode ? `<img class="barcode" src="${dataUrl('image/png', assets.barcode)}"><div class="code-caption">#${escapeHtml(orderNumber)}</div>` : ''}</div>${assets.qr ? `<div><img class="qr" src="${dataUrl('image/png', assets.qr)}"><div class="code-caption">${STORE_URL}</div></div>` : ''}</section><section class="support"><span>${escapeHtml(SUPPORT_PHONE)}</span><span>${escapeHtml(SUPPORT_EMAIL)}</span></section>${request.template.body ? `<div class="footer">${escapeHtml(request.template.body)}</div>` : ''}<footer class="footer">${escapeHtml(request.template.footerText || t.thankYou)}</footer></main></body></html>`;
+  const customerTitle = shippingLabel
+    ? arabic
+      ? 'بيانات المستلم'
+      : 'Recipient'
+    : arabic
+      ? 'بيانات العميل'
+      : 'Customer details';
+  const addressTitle = arabic ? 'التوصيل والدفع' : 'Delivery & payment';
+  const notes = text(order, 'customerNote', 'notesSummary');
+  const customerInfo = `<section class="info-card"><h3>${customerTitle}</h3><p class="customer-name"><bdi>${escapeHtml(shippingLabel ? recipient : customer)}</bdi></p><dl>${field(t.phone, phone, 'ltr')}${!shippingLabel ? field(t.email, email, 'ltr') : ''}</dl></section>`;
+  const deliveryInfo = `<section class="info-card delivery"><h3>${addressTitle}</h3><dl>${field(t.governorate, governorate)}${field(t.address, address(order))}${field(t.shipping, shipping)}${field(t.payment, payment)}</dl></section>`;
+  const codes = `<section class="document-footer"><div class="scan">${assets.qr ? `<img class="qr" src="${dataUrl('image/png', assets.qr)}" alt="Store QR">` : ''}<div class="contact"><strong>${escapeHtml(arabic ? 'للاستفسارات وخدمة العملاء' : 'Questions & customer care')}</strong><bdi dir="ltr">${SUPPORT_PHONE}</bdi><bdi dir="ltr">${SUPPORT_EMAIL}</bdi><bdi dir="ltr">wasatalbalad.store</bdi></div></div><div class="tracking">${assets.barcode ? `<img class="barcode" src="${dataUrl('image/png', assets.barcode)}" alt="Order barcode">` : ''}<bdi dir="ltr">#${escapeHtml(orderNumber)}</bdi></div></section>`;
+  return `<!doctype html><html lang="${arabic ? 'ar' : 'en'}" dir="${arabic ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><style>${embeddedFonts}\n${documentStyles}\n${compact ? '@page{margin:0}' : ''}</style></head><body class="${compact ? 'roll' : 'invoice'} ${shippingLabel ? 'shipping-label' : ''}"><main class="page">
+    <header class="brand"><div class="brand-identity"><img class="brand-logo" src="${logo}" alt="${escapeHtml(request.template.companyName)}"><p class="brand-site" dir="ltr">wasatalbalad.store</p></div><div class="document-identity"><span class="eyebrow">${arabic ? 'وسط البلد ستور' : 'WASAT AL BALAD STORE'}</span><h1>${escapeHtml(title)}</h1><div class="order-reference"><span>${t.order}</span><bdi dir="ltr">#${escapeHtml(orderNumber)}</bdi></div>${createdLabel ? `<p class="date"><bdi>${escapeHtml(createdLabel)}</bdi></p>` : ''}</div></header>
+    <div class="information">${customerInfo}${deliveryInfo}</div>
+    <section class="order-items"><div class="section-heading"><h2>${t.items}</h2><span>${lines.length} ${arabic ? 'صنف' : 'items'}</span></div><table class="items"><thead><tr><th class="index">#</th><th class="product">${t.item}</th><th class="quantity">${t.qty}</th>${compact ? '' : `<th class="amount">${t.unit}</th>`}${shippingLabel ? '' : `<th class="amount">${t.total}</th>`}</tr></thead><tbody>${rows}</tbody></table></section>
+    <section class="closing"><div class="order-note"><h3>${arabic ? 'ملاحظات الطلب' : 'Order notes'}</h3><p><bdi>${escapeHtml(notes || (arabic ? 'شكرًا لاختياركم وسط البلد ستور.' : 'Thank you for choosing Wasat Al Balad Store.'))}</bdi></p></div><div class="summary">${shippingLabel ? '' : totalRows}<div class="grand"><span>${arabic ? 'إجمالي الطلب' : 'Order total'}</span><bdi dir="ltr">${escapeHtml(total)}</bdi></div></div></section>
+    ${codes}${request.template.body ? `<p class="custom-note">${escapeHtml(request.template.body)}</p>` : ''}<footer class="thanks">${escapeHtml(request.template.footerText || t.thankYou)}</footer>
+  </main></body></html>`;
 };
 
 export const renderHtmlPdf = async (
@@ -263,7 +275,7 @@ export const renderHtmlPdf = async (
     pdf.setAuthor(request.template.companyName);
     pdf.setSubject(`Woo Ops ${request.format}`);
     pdf.setProducer('Woo Ops HTML PDF renderer');
-    pdf.setCreator('Woo Ops HTML layouts v3');
+    pdf.setCreator('Woo Ops HTML layouts v4');
     pdf.setCreationDate(new Date(0));
     pdf.setModificationDate(new Date(0));
     const bytes = await pdf.save({ useObjectStreams: false, addDefaultPage: false });

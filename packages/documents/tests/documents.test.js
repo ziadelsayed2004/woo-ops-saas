@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { PDFDocument } from 'pdf-lib';
 import test from 'node:test';
+import { htmlDocument } from '../dist/html-renderer.js';
 import {
   documentPageSize,
   createZipArchive,
@@ -37,6 +38,27 @@ const template = {
   direction: 'rtl',
   ...(fontBytes ? { fontBytes } : {}),
 };
+
+test('brand HTML isolates identifiers and uses a dedicated shipping contents table', () => {
+  const html = htmlDocument(
+    {
+      order: { ...order, billing: { name: '<script>bad</script>', phone: '+201001234567' } },
+      format: 'a4',
+      template,
+    },
+    {},
+  );
+  assert.match(html, /dir="rtl"/);
+  assert.match(html, /&lt;script&gt;bad&lt;\/script&gt;/);
+  assert.match(html, /<bdi dir="ltr">\+201001234567<\/bdi>/);
+  assert.match(html, /#1e4899/);
+  assert.match(html, /#f8af28/);
+  assert.match(html, /data:image\/svg\+xml;base64/);
+  const shipping = htmlDocument({ order, format: 'label-100x150mm', template }, {});
+  assert.match(shipping, /بيانات المستلم/);
+  assert.match(shipping, /class="roll shipping-label"/);
+  assert.doesNotMatch(shipping, /<th class="amount">/);
+});
 
 test('document page presets use exact physical dimensions', () => {
   const mm = 72 / 25.4;
@@ -188,7 +210,7 @@ test('legacy portable setting cannot bypass the branded HTML renderer', async (t
         qrValue: 'https://wasatalbalad.store/',
       });
       const pdf = await PDFDocument.load(result.bytes);
-      assert.equal(pdf.getCreator(), 'Woo Ops HTML layouts v3');
+      assert.equal(pdf.getCreator(), 'Woo Ops HTML layouts v4');
       assert.equal(pdf.getPageCount(), 1);
       assert.ok(result.bytes.length > 1_000);
       assert.equal(pdf.getPage(0).getWidth(), result.widthPoints);

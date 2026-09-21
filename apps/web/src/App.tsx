@@ -40,6 +40,7 @@ import {
   type AuthenticatedUser,
 } from './AdminWorkspaces';
 import { WorkspaceShell } from './WorkspaceShell';
+import { OrderOutputDialog } from './OrderOutputDialog';
 import { wooOrderExportColumns, wooShippingExportColumns } from './wooExportColumns';
 import {
   EGYPTIAN_GOVERNORATES,
@@ -4016,6 +4017,7 @@ export function App({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [selectAllMatching, setSelectAllMatching] = useState(false);
   const [selectionMessage, setSelectionMessage] = useState('');
+  const [outputDialogOpen, setOutputDialogOpen] = useState(false);
   const [selectionError, setSelectionError] = useState(false);
   const [exportHistoryRevision, setExportHistoryRevision] = useState(0);
   const [viewName, setViewName] = useState('');
@@ -4514,6 +4516,15 @@ export function App({
     printAfterGeneration = false,
   ) => {
     const printWindow = printAfterGeneration ? window.open('', '_blank') : null;
+    if (printAfterGeneration && !printWindow) {
+      setSelectionError(true);
+      setSelectionMessage(
+        locale === 'ar'
+          ? 'اسمح بفتح نافذة الطباعة في المتصفح ثم حاول مرة أخرى.'
+          : 'Allow the print popup in your browser, then try again.',
+      );
+      return;
+    }
     if (printWindow) {
       printWindow.opener = null;
       printWindow.document.title =
@@ -5163,55 +5174,9 @@ export function App({
                   <Button
                     size="small"
                     variant="contained"
-                    onClick={() => void createSelectionExport('xlsx')}
+                    onClick={() => setOutputDialogOpen(true)}
                   >
-                    {locale === 'ar' ? 'تصدير Excel' : 'Export Excel'}
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => void createSelectionExport('xlsx', 'shipping')}
-                  >
-                    {locale === 'ar' ? 'شيت الشحن' : 'Shipping sheet'}
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => void createSelectionDocuments('generate-invoice')}
-                  >
-                    {locale === 'ar' ? 'فاتورة A4' : 'A4 invoice'}
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => void createSelectionDocuments('generate-thermal')}
-                  >
-                    {locale === 'ar' ? 'إيصال حراري' : 'Thermal receipt'}
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    onClick={() => void createSelectionDocuments('generate-thermal', true)}
-                  >
-                    {locale === 'ar'
-                      ? '\u0637\u0628\u0627\u0639\u0629 \u062d\u0631\u0627\u0631\u064a\u0629 \u0645\u0628\u0627\u0634\u0631\u0629'
-                      : 'Print thermal now'}
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => void createSelectionDocuments('generate-label')}
-                  >
-                    {locale === 'ar' ? 'بوليصة شحن حرارية 80mm' : '80mm thermal shipping label'}
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    onClick={() => void createSelectionDocuments('generate-label', true)}
-                  >
-                    {locale === 'ar'
-                      ? '\u0637\u0628\u0627\u0639\u0629 \u0627\u0644\u0628\u0648\u0644\u064a\u0635\u0629 \u0645\u0628\u0627\u0634\u0631\u0629'
-                      : 'Print shipping label now'}
+                    {locale === 'ar' ? 'تصدير وطباعة' : 'Export & print'}
                   </Button>
                   {!selectAllMatching && selectedIds.size === 1 && (
                     <Button
@@ -5228,6 +5193,16 @@ export function App({
                 </Stack>
               </Paper>
             )}
+            <OrderOutputDialog
+              open={outputDialogOpen}
+              locale={locale}
+              count={selectAllMatching ? totalCount : selectedIds.size}
+              onClose={() => setOutputDialogOpen(false)}
+              onExcel={(shipping) =>
+                void createSelectionExport('xlsx', shipping ? 'shipping' : 'orders')
+              }
+              onDocument={(action, print) => void createSelectionDocuments(action, print)}
+            />
             {selectionMessage && (
               <Alert
                 severity={

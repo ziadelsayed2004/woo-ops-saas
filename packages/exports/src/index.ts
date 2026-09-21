@@ -458,8 +458,8 @@ export const generateXlsx = async (
   sheet.addRow(headers);
   const headerRow = sheet.getRow(1);
   headerRow.height = 24;
-  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF96588A' } };
+  headerRow.font = { name: 'Arial', bold: true, color: { argb: 'FF263238' }, size: 11 };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F3F5' } };
   headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
   for (const [index, column] of normalized.columns.entries()) {
     const cell = headerRow.getCell(index + 1);
