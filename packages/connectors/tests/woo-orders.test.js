@@ -162,6 +162,43 @@ test('overlays protected export status from one bounded companion read per order
   assert.equal(normalized.remoteExportBridgeVersion, '1.5.0');
 });
 
+test('accepts the AlgolPlus bridge 1.8 key and source without downgrading status to unknown', async () => {
+  for (const status of ['exported', 'not_exported']) {
+    const connector = new WooCommerceConnector(
+      '',
+      new URL('https://shop.example.test'),
+      { key: 'ck_read_only', secret: 'cs_read_only' },
+      async (url) =>
+        new URL(String(url)).pathname.endsWith('/woo-ops/export-status')
+          ? new Response(
+              JSON.stringify({
+                version: 1,
+                bridgeVersion: '1.8.0',
+                items: [
+                  {
+                    id: 42,
+                    key: 'woe_order_exported',
+                    status,
+                    source: 'algolplus_order_meta',
+                  },
+                ],
+              }),
+            )
+          : new Response(JSON.stringify([{ ...fixture, meta_data: [] }]), {
+              headers: { 'x-wp-totalpages': '1' },
+            }),
+      async () => [{ address: '93.184.216.34' }],
+    );
+    const pages = [];
+    for await (const page of connector.pullOrderPages('orders')) pages.push(page);
+    const normalized = normalizeWooOrder(pages[0].items[0]);
+    assert.equal(normalized.remoteExportStatus, status);
+    assert.equal(normalized.remoteExportStatusKey, 'woe_order_exported');
+    assert.equal(normalized.remoteExportStatusSource, 'algolplus_order_meta');
+    assert.equal(normalized.remoteExportBridgeVersion, '1.8.0');
+  }
+});
+
 test('missing or malformed export-status companion leaves the standard Woo payload untouched', async () => {
   for (const companionResponse of [
     new Response('{}', { status: 404 }),

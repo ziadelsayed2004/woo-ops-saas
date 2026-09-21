@@ -41,7 +41,7 @@ export type WooShippingRate = Readonly<{
 }>;
 type WooRemoteExportStatus = Readonly<{
   id: number;
-  key: '_wc_customer_order_csv_export_is_exported';
+  key: 'woe_order_exported' | '_wc_customer_order_csv_export_is_exported';
   status: 'exported' | 'not_exported' | 'unknown';
   source:
     | 'extension_api'
@@ -49,6 +49,7 @@ type WooRemoteExportStatus = Readonly<{
     | 'legacy_meta'
     | 'legacy_order_meta'
     | 'legacy_post_meta'
+    | 'algolplus_order_meta'
     | 'unavailable';
   bridgeVersion: string;
 }>;
@@ -384,6 +385,11 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
     : null;
 
 const WOO_REMOTE_EXPORT_META_KEY = '_wc_customer_order_csv_export_is_exported' as const;
+const WOO_ALGOLPLUS_EXPORT_META_KEY = 'woe_order_exported' as const;
+const WOO_REMOTE_EXPORT_META_KEYS = new Set<string>([
+  WOO_REMOTE_EXPORT_META_KEY,
+  WOO_ALGOLPLUS_EXPORT_META_KEY,
+]);
 const WOO_REMOTE_EXPORT_STATUS_PATH = '/wp-json/wc/v3/woo-ops/export-status';
 
 const wooOrderIds = (items: readonly unknown[]): number[] =>
@@ -411,7 +417,8 @@ const parseRemoteExportStatuses = (value: unknown): readonly WooRemoteExportStat
       !item ||
       !Number.isSafeInteger(item.id) ||
       Number(item.id) <= 0 ||
-      item.key !== WOO_REMOTE_EXPORT_META_KEY ||
+      typeof item.key !== 'string' ||
+      !WOO_REMOTE_EXPORT_META_KEYS.has(item.key) ||
       (item.status !== 'exported' && item.status !== 'not_exported' && item.status !== 'unknown') ||
       ![
         'extension_api',
@@ -419,13 +426,14 @@ const parseRemoteExportStatuses = (value: unknown): readonly WooRemoteExportStat
         'legacy_meta',
         'legacy_order_meta',
         'legacy_post_meta',
+        'algolplus_order_meta',
         'unavailable',
       ].includes(String(item.source))
     )
       return null;
     statuses.push({
       id: Number(item.id),
-      key: WOO_REMOTE_EXPORT_META_KEY,
+      key: item.key as WooRemoteExportStatus['key'],
       status: item.status,
       source: item.source as WooRemoteExportStatus['source'],
       bridgeVersion: body.bridgeVersion,
@@ -446,7 +454,7 @@ const overlayRemoteExportStatuses = (
     const metadata = Array.isArray(order.meta_data)
       ? order.meta_data.filter((entry) => {
           const meta = asRecord(entry);
-          return meta?.key !== WOO_REMOTE_EXPORT_META_KEY;
+          return typeof meta?.key !== 'string' || !WOO_REMOTE_EXPORT_META_KEYS.has(meta.key);
         })
       : [];
     return {
@@ -696,6 +704,7 @@ export const normalizeWooOrder = (value: unknown): NormalizedOrder => {
     'wc_customer_order_csv_export_is_exported',
     '_wc_customer_order_xml_export_is_exported',
     'wc_customer_order_xml_export_is_exported',
+    WOO_ALGOLPLUS_EXPORT_META_KEY,
   ]);
   const remoteExportMetadata =
     metadata.find((item) => item.key.trim().toLowerCase() === WOO_REMOTE_EXPORT_META_KEY) ??

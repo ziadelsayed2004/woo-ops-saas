@@ -104,14 +104,14 @@ test('Woo sync health, resumable checkpoints, retry classification, and reconcil
     if (parsed.pathname.endsWith('/woo-ops/export-status'))
       return response({
         version: 1,
-        bridgeVersion: '1.5.0',
+        bridgeVersion: '1.8.0',
         items: String(parsed.searchParams.get('ids'))
           .split(',')
           .map((id) => ({
             id: Number(id),
-            key: '_wc_customer_order_csv_export_is_exported',
+            key: 'woe_order_exported',
             status: reconcileMode && id === '1' ? 'exported' : 'not_exported',
-            source: 'legacy_post_meta',
+            source: 'algolplus_order_meta',
           })),
       });
     if (parsed.pathname.endsWith('/orders')) {
@@ -203,7 +203,7 @@ test('Woo sync health, resumable checkpoints, retry classification, and reconcil
   assert.equal(JSON.parse(reconciledOrder.normalized_json).remoteExportStatus, 'exported');
   assert.equal(
     JSON.parse(reconciledOrder.normalized_json).remoteExportStatusSource,
-    'legacy_post_meta',
+    'algolplus_order_meta',
   );
   assert.equal(
     store.db.prepare('SELECT remote_deleted_at FROM orders WHERE external_order_id = ?').get('2')
