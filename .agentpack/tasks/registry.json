@@ -3154,6 +3154,43 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0932",
+      "epic": "E09",
+      "title": "Render Woo export status as a clear badge",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P1",
+      "estimate": "S",
+      "parallelGroup": "orders-ui",
+      "dependencies": ["T0930"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        "apps/web/src/App.tsx",
+        "tests/e2e/orders.spec.ts"
+      ],
+      "scope": [
+        "Render the normalized WooCommerce export status as a compact localized status badge in the orders grid",
+        "Use distinct accessible visual treatments for exported, not exported and unavailable states"
+      ],
+      "acceptance": [
+        "Woo exported status is visually presented as a success badge rather than plain text",
+        "Not-exported and unavailable states have distinct localized badges",
+        "The badge remains readable in Arabic RTL and English LTR layouts",
+        "Typecheck, browser coverage and build pass"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:e2e -- --grep orders",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
