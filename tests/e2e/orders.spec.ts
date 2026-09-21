@@ -174,7 +174,7 @@ test('creates the Woo-layout XLSX and offers repeat download in orders @orders @
   await page.getByRole('button', { name: 'Export Excel' }).click();
   await expect(page.getByText('Export command added.')).toBeVisible();
   const columns = (createdVersion?.columns ?? []) as Array<{ key: string; label: string }>;
-  expect(createdVersion?.filenameTemplate).toBe('orders-{date}-{format}');
+  expect(createdVersion?.filenameTemplate).toBe('woo-orders-{date}-{format}');
   expect(createdVersion?.rowMode).toBe('line');
   expect(columns).toHaveLength(40);
   expect(columns.map((column) => column.label).slice(0, 4)).toEqual([
@@ -294,7 +294,7 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
 
   await page.getByTestId('order-row-order-1').getByRole('checkbox').check();
   await expect(page.getByRole('button', { name: 'تصدير Excel' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'تصدير CSV' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'تصدير CSV' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'فاتورة A4' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'إيصال حراري' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'بوليصة شحن' })).toBeVisible();

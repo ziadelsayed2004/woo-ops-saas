@@ -3235,7 +3235,7 @@ function DocumentsWorkspace({ direction, t }: { direction: Direction; t: (typeof
                   <MenuItem value="a4">A4</MenuItem>
                   <MenuItem value="a5">A5</MenuItem>
                   <MenuItem value="thermal-80mm">80mm</MenuItem>
-                  <MenuItem value="label-100x150mm">100x150mm</MenuItem>
+                  <MenuItem value="label-100x150mm">80mm shipping roll</MenuItem>
                 </Select>
               </FormControl>
               <TextField
@@ -3419,7 +3419,7 @@ const documentFormatLabel = (format: DocumentTemplate['format'], direction: Dire
     a4: ['فاتورة A4', 'A4 invoice'],
     a5: ['فاتورة A5', 'A5 invoice'],
     'thermal-80mm': ['إيصال حراري 80mm', '80mm thermal receipt'],
-    'label-100x150mm': ['بوليصة شحن 100×150mm', '100×150mm shipping label'],
+    'label-100x150mm': ['بوليصة شحن حرارية 80mm', '80mm thermal shipping label'],
   };
   return labels[format][direction === 'rtl' ? 0 : 1];
 };
@@ -3550,7 +3550,7 @@ function ExportsWorkspace({
               { key: 'grandTotalMinor', label: t.total, type: 'money' },
               { key: 'createdAt', label: t.created, type: 'date' },
             ],
-            filenameTemplate: 'orders-{date}-{format}',
+            filenameTemplate: 'woo-orders-{date}-{format}',
             config: { required: ['orderNumber', 'customerName', 'customerPhone'] },
           }),
         },
@@ -3691,8 +3691,8 @@ function ExportsWorkspace({
         <Typography color="text.secondary">
           {historyOnly
             ? direction === 'rtl'
-              ? 'تابع حالة الملفات ونزّل Excel أو CSV أو PDF أو الإيصال الحراري أو بوليصة الشحن.'
-              : 'Track jobs and download Excel, CSV, PDF, thermal receipts, or shipping labels.'
+              ? 'تابع حالة الملفات ونزّل Excel أو فاتورة PDF أو الإيصال الحراري أو بوليصة الشحن.'
+              : 'Track jobs and download Excel, PDF invoices, thermal receipts, or shipping labels.'
             : t.exportsSubtitle}
         </Typography>
       </Box>
@@ -3706,7 +3706,7 @@ function ExportsWorkspace({
             scrollButtons="auto"
             aria-label={direction === 'rtl' ? 'أنواع أوامر التصدير' : 'Export command types'}
           >
-            <Tab value="spreadsheets" label={direction === 'rtl' ? 'Excel وCSV' : 'Excel & CSV'} />
+            <Tab value="spreadsheets" label="Excel" />
             <Tab
               value="documents"
               label={direction === 'rtl' ? 'الفواتير والطباعة' : 'Invoices & print'}
@@ -4345,9 +4345,7 @@ export function App({
     }
   };
 
-  const ensureOrderExportVersion = async (
-    format: 'xlsx' | 'csv',
-  ): Promise<ExportVersionSummary> => {
+  const ensureOrderExportVersion = async (format: 'xlsx'): Promise<ExportVersionSummary> => {
     const failed = async (response: Response, fallback: string): Promise<never> => {
       const body = (await response.json().catch(() => null)) as {
         error?: { code?: string };
@@ -4398,7 +4396,7 @@ export function App({
           format,
           rowMode: 'line',
           columns: wooOrderExportColumns,
-          filenameTemplate: 'orders-{date}-{format}',
+          filenameTemplate: 'woo-orders-{date}-{format}',
           config: { required: ['woo.orderNumber'] },
         }),
       },
@@ -4408,7 +4406,7 @@ export function App({
     return ((await createVersionResponse.json()) as { version: ExportVersionSummary }).version;
   };
 
-  const createSelectionExport = async (format: 'xlsx' | 'csv') => {
+  const createSelectionExport = async (format: 'xlsx') => {
     const selectionId = await createSelectionSnapshot();
     if (!selectionId) return;
     try {
@@ -4503,7 +4501,7 @@ export function App({
               format === 'thermal-80mm'
                 ? 'فاتورة حرارية 80mm'
                 : format === 'label-100x150mm'
-                  ? 'بوليصة شحن 100x150'
+                  ? 'بوليصة شحن حرارية 80mm'
                   : 'فاتورة A4',
             format,
             locale: locale === 'ar' ? 'ar-EG' : 'en-US',
@@ -5064,13 +5062,6 @@ export function App({
                   <Button
                     size="small"
                     variant="outlined"
-                    onClick={() => void createSelectionExport('csv')}
-                  >
-                    {locale === 'ar' ? 'تصدير CSV' : 'Export CSV'}
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
                     onClick={() => void createSelectionDocuments('generate-invoice')}
                   >
                     {locale === 'ar' ? 'فاتورة A4' : 'A4 invoice'}
@@ -5087,7 +5078,7 @@ export function App({
                     variant="outlined"
                     onClick={() => void createSelectionDocuments('generate-label')}
                   >
-                    {locale === 'ar' ? 'بوليصة شحن 100×150' : '100×150 shipping label'}
+                    {locale === 'ar' ? 'بوليصة شحن حرارية 80mm' : '80mm thermal shipping label'}
                   </Button>
                   {!selectAllMatching && selectedIds.size === 1 && (
                     <Button

@@ -3040,14 +3040,14 @@
         "tests/e2e/orders.spec.ts"
       ],
       "scope": [
-        "Replace the raw coordinate-based document appearance with safe deterministic HTML and print CSS templates for professional A4 invoices, 80mm thermal receipts and 100x150mm shipping labels",
+        "Replace the raw coordinate-based document appearance with safe deterministic HTML and print CSS templates for professional A4 invoices, 80mm thermal receipts and 80mm roll shipping labels",
         "Render correct Arabic RTL and English LTR text, structured customer and order facts, item tables, totals, payment and shipping details, and correctly sized barcode and QR areas",
         "Expose XLSX as the only spreadsheet export choice in the operator UI while retaining safe read compatibility for historical CSV batches",
         "Generate localized descriptive filenames for individual and merged document artifacts and spreadsheet downloads"
       ],
       "acceptance": [
         "A4 output is exactly 210x297mm and presents a complete professional invoice with a readable items table and totals",
-        "Thermal output is exactly 80mm wide with content-driven page height and the 100x150mm shipping label keeps its exact physical dimensions",
+        "Thermal receipt and shipping-label output are exactly 80mm wide with content-driven page height",
         "Arabic content is visually ordered correctly without reversed labels or mojibake and English remains LTR",
         "New order exports offer XLSX only and historical CSV downloads remain accessible",
         "Document and spreadsheet filenames are safe, localized, descriptive and stable",

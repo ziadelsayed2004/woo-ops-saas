@@ -156,7 +156,7 @@ test('organizes printable outputs and exposes useful downloads without the manif
   await page.goto('/');
   await page.getByRole('button', { name: 'English' }).click();
   await page.getByRole('tab', { name: 'Invoices & print' }).click();
-  await expect(page.getByText('100×150mm shipping label')).toBeVisible();
+  await expect(page.getByText('80mm thermal shipping label')).toBeVisible();
   await page.getByRole('button', { name: 'Show files' }).click();
   await expect(page.getByRole('link', { name: 'Download printable PDF' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Download individual files ZIP' })).toBeVisible();

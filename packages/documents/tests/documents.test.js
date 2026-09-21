@@ -43,7 +43,7 @@ test('document page presets use exact physical dimensions', () => {
   assert.deepEqual(documentPageSize('a4'), [210 * mm, 297 * mm]);
   assert.deepEqual(documentPageSize('a5'), [148 * mm, 210 * mm]);
   assert.deepEqual(documentPageSize('thermal-80mm'), [80 * mm, 150 * mm]);
-  assert.deepEqual(documentPageSize('label-100x150mm'), [100 * mm, 150 * mm]);
+  assert.deepEqual(documentPageSize('label-100x150mm'), [80 * mm, 150 * mm]);
   assert.throws(() => documentPageSize('thermal-80mm', 20), /DOCUMENT_THERMAL_HEIGHT_INVALID/);
 });
 
@@ -131,7 +131,7 @@ test('document identity kind is allowlisted and included in deterministic snapsh
   );
 });
 
-test('thermal and label PDFs retain physical page boxes', async (t) => {
+test('thermal receipts and shipping labels use an exact 80mm width with content height', async (t) => {
   if (!fontBytes) {
     t.skip('No font is available in this test environment');
     return;
@@ -142,9 +142,30 @@ test('thermal and label PDFs retain physical page boxes', async (t) => {
     const page = pdf.getPage(0);
     const [expectedWidth, expectedHeight] = documentPageSize(format);
     assert.ok(Math.abs(page.getWidth() - expectedWidth) < 0.01);
-    assert.ok(Math.abs(page.getHeight() - expectedHeight) < 0.01);
+    if (format === 'thermal-80mm' || format === 'label-100x150mm') {
+      assert.ok(page.getHeight() >= 50 * (72 / 25.4));
+      assert.ok(page.getHeight() <= 500 * (72 / 25.4));
+      assert.equal(page.getHeight(), result.heightPoints);
+    } else assert.ok(Math.abs(page.getHeight() - expectedHeight) < 0.01);
     assert.equal(result.pageCount, 1);
   }
+});
+
+test('thermal accepts an explicit physical height for fixed printer media', async (t) => {
+  if (!fontBytes) {
+    t.skip('No font is available in this test environment');
+    return;
+  }
+  const result = await generateDocument({
+    order,
+    format: 'thermal-80mm',
+    template,
+    orderId: 'thermal-fixed',
+    thermalHeightMm: 180,
+  });
+  const pdf = await PDFDocument.load(result.bytes);
+  assert.ok(Math.abs(pdf.getPage(0).getWidth() - 80 * (72 / 25.4)) < 0.01);
+  assert.ok(Math.abs(pdf.getPage(0).getHeight() - 180 * (72 / 25.4)) < 0.01);
 });
 
 test('batch generation isolates invalid documents and merges successful pages', async (t) => {

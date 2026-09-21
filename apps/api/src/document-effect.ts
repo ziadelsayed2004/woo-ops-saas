@@ -34,8 +34,30 @@ const throwIfCancelled = async (execution: JobExecutionContext): Promise<void> =
 const progress = (processed: number, total: number, lower: number, upper: number): number =>
   total < 1 ? upper : Math.min(upper, lower + Math.floor((processed / total) * (upper - lower)));
 
-const safeOrderName = (item: DocumentBatchItemRecord): string =>
-  `order-${String(item.position + 1).padStart(4, '0')}-${item.orderId.slice(-12)}`;
+const safeOrderNumber = (item: DocumentBatchItemRecord): string => {
+  const snapshot = isRecord(item.snapshot) ? item.snapshot : {};
+  const candidate = String(snapshot.orderNumber ?? snapshot.number ?? item.orderId)
+    .replace(/[^A-Za-z0-9_-]/gu, '-')
+    .replace(/-+/gu, '-')
+    .replace(/^-|-$/gu, '')
+    .slice(0, 48);
+  return candidate || String(item.position + 1).padStart(4, '0');
+};
+
+const safeOrderName = (
+  item: DocumentBatchItemRecord,
+  format: DocumentTemplateRecord['format'],
+): string => {
+  const prefix =
+    format === 'a4'
+      ? 'invoice'
+      : format === 'a5'
+        ? 'invoice-a5'
+        : format === 'thermal-80mm'
+          ? 'receipt-80mm'
+          : 'shipping-label-80mm';
+  return `${prefix}-order-${safeOrderNumber(item)}`;
+};
 
 const artifactIdForOrder = (batchId: string, item: DocumentBatchItemRecord): string =>
   `order-${batchId.slice(0, 32)}-${item.position}`;
@@ -66,9 +88,18 @@ const documentArtifactName = (
   kind: 'merged' | 'zip' | 'manifest',
   batchId: string,
   attempt: number,
+  format: DocumentTemplateRecord['format'],
 ): string => {
   const extension = kind === 'merged' ? 'pdf' : kind === 'zip' ? 'zip' : 'json';
-  return `documents-${batchId.slice(0, 12)}-${kind}-${attempt}.${extension}`;
+  const documentType =
+    format === 'a4'
+      ? 'invoices-a4'
+      : format === 'a5'
+        ? 'invoices-a5'
+        : format === 'thermal-80mm'
+          ? 'receipts-80mm'
+          : 'shipping-labels-80mm';
+  return `${documentType}-${batchId.slice(0, 12)}-${kind}-${attempt}.${extension}`;
 };
 
 export const createDocumentEffect =
@@ -127,7 +158,7 @@ export const createDocumentEffect =
               format: batch.format,
               kind: 'order-pdf',
               relativePath: stored.relativePath,
-              filename: `${safeOrderName(item)}.pdf`,
+              filename: `${safeOrderName(item, batch.format)}.pdf`,
               mimeType: 'application/pdf',
               byteSize: stored.byteSize,
               checksum: stored.checksum,
@@ -218,7 +249,7 @@ export const createDocumentEffect =
         format: batch.format,
         kind: 'manifest',
         relativePath: storedManifest.relativePath,
-        filename: documentArtifactName('manifest', batch.id, batch.attemptCount),
+        filename: documentArtifactName('manifest', batch.id, batch.attemptCount, batch.format),
         mimeType: 'application/json',
         byteSize: storedManifest.byteSize,
         checksum: storedManifest.checksum,
@@ -245,7 +276,7 @@ export const createDocumentEffect =
           format: batch.format,
           kind: 'merged-pdf',
           relativePath: storedMerged.relativePath,
-          filename: documentArtifactName('merged', batch.id, batch.attemptCount),
+          filename: documentArtifactName('merged', batch.id, batch.attemptCount, batch.format),
           mimeType: 'application/pdf',
           byteSize: storedMerged.byteSize,
           checksum: storedMerged.checksum,
@@ -275,7 +306,7 @@ export const createDocumentEffect =
         format: batch.format,
         kind: 'zip',
         relativePath: storedZip.relativePath,
-        filename: documentArtifactName('zip', batch.id, batch.attemptCount),
+        filename: documentArtifactName('zip', batch.id, batch.attemptCount, batch.format),
         mimeType: 'application/zip',
         byteSize: storedZip.byteSize,
         checksum: storedZip.checksum,
