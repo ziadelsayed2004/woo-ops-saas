@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Woo Ops Export Status Bridge
- * Description: Read-only REST exposure for WooCommerce Customer / Order / Coupon Export status.
- * Version: 1.7.0
+ * Description: Read-only REST exposure for the WooCommerce order-list Export Status marker.
+ * Version: 1.8.0
  * Requires Plugins: woocommerce
  * Requires PHP: 7.4
  * Author: Woo Ops
@@ -13,6 +13,7 @@ defined( 'ABSPATH' ) || exit;
 
 const WOO_OPS_EXPORT_STATUS_META_KEY = '_wc_customer_order_csv_export_is_exported';
 const WOO_OPS_EXPORT_STATUS_TAXONOMY = 'wc_export_is_order_exported';
+const WOO_OPS_ALGOLPLUS_EXPORT_STATUS_META_KEY = 'woe_order_exported';
 
 /**
  * Customer / Order / Coupon Export 5.0+ stores the global flag as a private
@@ -33,8 +34,39 @@ function woo_ops_order_export_status( WC_Order $order ): array {
 		'postMetaType'       => gettype( $post_meta_value ),
 		'extensionAvailable' => false,
 		'taxonomyAvailable'  => taxonomy_exists( WOO_OPS_EXPORT_STATUS_TAXONOMY ),
+		'algolPlusAvailable' => defined( 'WOE_VERSION' ) || class_exists( 'WC_Order_Export_Admin' ),
+		'algolPlusPostfixes' => 0,
 	);
 	$order_meta_exists = (bool) $diagnostics['orderMetaPresent'];
+
+	// Advanced Order Export for WooCommerce (AlgolPlus) owns the order-list
+	// column and sorter named `woe_export_status`. Its column implementation
+	// checks `woe_order_exported` with every suffix supplied by this filter.
+	// Mirror that loop exactly before considering compatibility sources from
+	// other export extensions.
+	if ( $diagnostics['algolPlusAvailable'] ) {
+		$postfixes = apply_filters( 'woe_export_status_postfixes_to_verify', array( '' ) );
+		$postfixes = is_array( $postfixes ) ? array_filter( $postfixes, 'is_scalar' ) : array( '' );
+		$postfixes = array_values( array_unique( array_map( 'strval', $postfixes ) ) );
+		$postfixes = empty( $postfixes ) ? array( '' ) : $postfixes;
+		$diagnostics['algolPlusPostfixes'] = count( $postfixes );
+
+		foreach ( $postfixes as $postfix ) {
+			if ( $order->get_meta( WOO_OPS_ALGOLPLUS_EXPORT_STATUS_META_KEY . $postfix, true ) ) {
+				return array(
+					'status'      => 'exported',
+					'source'      => 'algolplus_order_meta',
+					'diagnostics' => $diagnostics,
+				);
+			}
+		}
+
+		return array(
+			'status'      => 'not_exported',
+			'source'      => 'algolplus_order_meta',
+			'diagnostics' => $diagnostics,
+		);
+	}
 
 	// Customer / Order / Coupon Export versions before 5.0 render the admin
 	// column from post metadata. Reading both APIs is required on stores where
@@ -171,7 +203,9 @@ function woo_ops_read_export_statuses( WP_REST_Request $request ) {
 		$export_status = woo_ops_order_export_status( $order );
 		$items[]   = array(
 			'id'          => (int) $order->get_id(),
-			'key'         => WOO_OPS_EXPORT_STATUS_META_KEY,
+			'key'         => 'algolplus_order_meta' === $export_status['source']
+				? WOO_OPS_ALGOLPLUS_EXPORT_STATUS_META_KEY
+				: WOO_OPS_EXPORT_STATUS_META_KEY,
 			'status'      => $export_status['status'],
 			'source'      => $export_status['source'],
 			'diagnostics' => $export_status['diagnostics'],
@@ -181,7 +215,7 @@ function woo_ops_read_export_statuses( WP_REST_Request $request ) {
 	return rest_ensure_response(
 		array(
 			'version'       => 1,
-			'bridgeVersion' => '1.7.0',
+			'bridgeVersion' => '1.8.0',
 			'items'         => $items,
 		)
 	);

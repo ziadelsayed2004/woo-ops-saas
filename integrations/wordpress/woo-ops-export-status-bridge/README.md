@@ -1,18 +1,18 @@
 # Woo Ops Export Status Bridge
 
-Current version: **1.7.0**. This release mirrors the export extension's own global-status
-query: an order is exported when it has any relationship in the private
-`wc_export_is_order_exported` taxonomy. It does not assume a private term slug, because
-that identifier differs between extension versions. Legacy order-object and post-metadata
-flags remain supported for classic storage and HPOS compatibility mode.
+Current version: **1.8.0**. This release mirrors the exact `Export Status` column shown by
+**Advanced Order Export for WooCommerce (AlgolPlus)**. That column and its
+`woe_export_status` sorter read the `woe_order_exported` order metadata key, including any
+profile postfixes supplied through `woe_export_status_postfixes_to_verify`. The bridge now
+uses that same key and filter first.
 
-This optional companion exposes the protected global export flag maintained by WooCommerce
-Customer / Order / Coupon Export. Standard Woo REST responses omit protected metadata, so Woo Ops
-cannot otherwise distinguish an exported order from a not-exported one.
+This optional companion exposes the protected export flag maintained by the installed order-export
+extension. Standard Woo REST responses omit protected metadata, so Woo Ops cannot otherwise
+distinguish an exported order from a not-exported one.
 
-The bridge reads the current plugin's private `wc_export_is_order_exported` taxonomy. It retains
-read-only compatibility with the legacy
-`_wc_customer_order_csv_export_is_exported` metadata flag.
+Compatibility reads for WooCommerce Customer / Order / Coupon Export's private
+`wc_export_is_order_exported` taxonomy and legacy
+`_wc_customer_order_csv_export_is_exported` flag remain available only when AlgolPlus is not active.
 
 ## Install
 

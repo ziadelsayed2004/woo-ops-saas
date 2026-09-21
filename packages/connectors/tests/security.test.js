@@ -180,6 +180,17 @@ test('the WordPress companion registers only an authenticated bounded read route
   assert.match(plugin, /current_user_can\( 'manage_woocommerce' \)/u);
   assert.match(plugin, /current_user_can\( 'edit_shop_orders' \)/u);
   assert.match(plugin, /\{0,99\}/u);
+  assert.match(plugin, /WOO_OPS_ALGOLPLUS_EXPORT_STATUS_META_KEY = 'woe_order_exported'/u);
+  assert.match(plugin, /defined\( 'WOE_VERSION' \)/u);
+  assert.match(
+    plugin,
+    /apply_filters\( 'woe_export_status_postfixes_to_verify', array\( '' \) \)/u,
+  );
+  assert.match(
+    plugin,
+    /\$order->get_meta\( WOO_OPS_ALGOLPLUS_EXPORT_STATUS_META_KEY \. \$postfix, true \)/u,
+  );
+  assert.match(plugin, /'source'\s+=>\s+'algolplus_order_meta'/u);
   assert.match(plugin, /wc_export_is_order_exported/u);
   assert.match(plugin, /taxonomy_exists\( WOO_OPS_EXPORT_STATUS_TAXONOMY \)/u);
   assert.match(plugin, /wp_get_object_terms\(/u);
@@ -190,7 +201,7 @@ test('the WordPress companion registers only an authenticated bounded read route
   assert.match(plugin, /get_post_meta\( \$order_id, WOO_OPS_EXPORT_STATUS_META_KEY, true \)/u);
   assert.match(plugin, /\(bool\) \$post_meta_value/u);
   assert.match(plugin, /\(bool\) \$order_meta_value/u);
-  assert.match(plugin, /'bridgeVersion'\s+=>\s+'1\.7\.0'/u);
+  assert.match(plugin, /'bridgeVersion'\s+=>\s+'1\.8\.0'/u);
   assert.match(plugin, /'status'\s+=>\s+'unknown'/u);
   assert.match(plugin, /'source'\s+=>\s+'unavailable'/u);
   assert.match(plugin, /_wc_customer_order_csv_export_is_exported/u);
