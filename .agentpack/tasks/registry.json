@@ -3234,6 +3234,54 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0934",
+      "epic": "E09",
+      "title": "Streamline export downloads history and shipping workbooks",
+      "type": "feat",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "L",
+      "parallelGroup": "exports-ui",
+      "dependencies": ["T0933"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/TESTING.md",
+        "apps/web/src/App.tsx",
+        "apps/web/src/App.tsx",
+        "packages/exports/src/index.ts",
+        "packages/exports/tests/engine.test.js",
+        "apps/api/src/index.ts",
+        "tests/e2e/orders.spec.ts"
+      ],
+      "scope": [
+        "Add a dedicated exports navigation destination with a clear durable export and document command history",
+        "Automatically download completed exports initiated from orders while preserving the current order selection",
+        "Simplify the default XLSX order workbook, size columns for readable content and provide a ready-to-use shipping workbook"
+      ],
+      "acceptance": [
+        "Exports has a dedicated localized sidebar destination and shows downloadable durable history",
+        "Creating an export from orders records the batch and downloads the completed file without clearing selected orders",
+        "The standard workbook contains only operationally useful columns with readable widths and no oversized address duplication",
+        "A shipping-oriented XLSX option is available with order, customer, phone, governorate, address, shipping, payment and amount fields",
+        "Unit, golden, integration, E2E, typecheck and build checks pass"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:golden",
+        "npm run test:integration",
+        "npm run test:e2e -- --grep orders",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
