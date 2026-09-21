@@ -41,6 +41,7 @@ import {
 } from './AdminWorkspaces';
 import { WorkspaceShell } from './WorkspaceShell';
 import { OrderOutputDialog } from './OrderOutputDialog';
+import { getAppCopy, translate as tr, type TranslationKey } from './i18n';
 import { wooOrderExportColumns, wooShippingExportColumns } from './wooExportColumns';
 import {
   EGYPTIAN_GOVERNORATES,
@@ -262,514 +263,7 @@ type AnalyticsRebuildJob = {
   lastError: string | null;
 };
 
-const copy = {
-  ar: {
-    app: 'Woo Ops',
-    orders: 'إدارة الطلبات',
-    subtitle: 'بحث وتشغيل الطلبات من كل المصادر في مكان واحد',
-    search: 'ابحث برقم الطلب أو اسم العميل أو الهاتف',
-    searchButton: 'بحث',
-    status: 'الحالة',
-    all: 'الكل',
-    processing: 'قيد التجهيز',
-    completed: 'مكتمل',
-    pending: 'في انتظار الدفع',
-    onHold: 'قيد الانتظار',
-    cancelled: 'ملغي',
-    refunded: 'مسترجع',
-    failed: 'فشل',
-    checkoutDraft: 'مسودة الدفع',
-    refresh: 'تحديث',
-    columns: 'الأعمدة',
-    details: 'تفاصيل الطلب',
-    close: 'إغلاق',
-    remote: 'بيانات المنصة',
-    localFacts: 'بيانات التشغيل المحلية',
-    summary: 'الملخص',
-    items: 'المنتجات',
-    customer: 'العميل والعناوين',
-    finance: 'الدفع والشحن والضرائب',
-    workflow: 'التشغيل المحلي',
-    history: 'المزامنة والتدقيق',
-    raw: 'بيانات المصدر',
-    noOrders: 'لا توجد طلبات مطابقة',
-    noConnection: 'لم يتم الاتصال بالخادم بعد',
-    noData: 'لا توجد بيانات متاحة',
-    loading: 'جارٍ التحميل',
-    loadMore: 'تحميل المزيد',
-    advancedFilters: '\u0641\u0644\u0627\u062a\u0631 \u0645\u062a\u0642\u062f\u0645\u0629',
-    hideFilters: '\u0625\u062e\u0641\u0627\u0621 \u0627\u0644\u0641\u0644\u0627\u062a\u0631',
-    sourceFilter: '\u0627\u0644\u0645\u0635\u062f\u0631',
-    exportFilter: '\u062d\u0627\u0644\u0629 \u0627\u0644\u062a\u0635\u062f\u064a\u0631',
-    exported: 'تم تصديره',
-    changedAfterExport: 'تغيّر بعد التصدير',
-    governorateFilter: 'المحافظة / المنطقة',
-    paymentFilter: '\u0637\u0631\u064a\u0642\u0629 \u0627\u0644\u062f\u0641\u0639',
-    shippingFilterOrders: '\u0637\u0631\u064a\u0642\u0629 \u0627\u0644\u0634\u062d\u0646',
-    posFilter: '\u0646\u0642\u0637\u0629 \u0627\u0644\u0628\u064a\u0639',
-    productFilterOrders: '\u0627\u0644\u0645\u0646\u062a\u062c',
-    categoryFilterOrders: '\u0627\u0644\u062a\u0635\u0646\u064a\u0641',
-    authorFilterOrders: '\u0627\u0644\u0645\u0624\u0644\u0641',
-    selected: '\u0645\u062d\u062f\u062f',
-    selectAllMatching:
-      '\u062a\u062d\u062f\u064a\u062f \u0643\u0644 \u0627\u0644\u0646\u062a\u0627\u0626\u062c',
-    clearSelection: '\u0625\u0644\u063a\u0627\u0621 \u0627\u0644\u062a\u062d\u062f\u064a\u062f',
-    saveView: '\u062d\u0641\u0638 \u0627\u0644\u0645\u0634\u0627\u0647\u062f\u0629',
-    viewName: 'اسم الفلتر المحفوظ',
-    savedViews: 'الفلاتر المحفوظة',
-    totalResults: '\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u0646\u062a\u0627\u0626\u062c',
-    retry: '\u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0645\u062d\u0627\u0648\u0644\u0629',
-    authenticationRequired:
-      '\u064a\u062c\u0628 \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062f\u062e\u0648\u0644 \u0644\u0639\u0631\u0636 \u0627\u0644\u0637\u0644\u0628\u0627\u062a',
-    clearFilters: '\u0645\u0633\u062d \u0627\u0644\u0641\u0644\u0627\u062a\u0631',
-    createSelection: '\u062d\u0641\u0638 \u0627\u0644\u062a\u062d\u062f\u064a\u062f',
-    markExportReady: '\u062a\u062c\u0647\u064a\u0632 \u0644\u0644\u062a\u0635\u062f\u064a\u0631',
-    exportReadyQueued:
-      '\u062a\u0645 \u0625\u0631\u0633\u0627\u0644 \u0627\u0644\u0637\u0644\u0628\u0627\u062a \u0644\u0645\u0631\u062d\u0644\u0629 \u0627\u0644\u062a\u062c\u0647\u064a\u0632',
-    updateWorkflow: '\u062d\u0641\u0638 \u0627\u0644\u062a\u0634\u063a\u064a\u0644',
-    resync: '\u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629',
-    workflowSaved:
-      '\u062a\u0645 \u062d\u0641\u0638 \u0627\u0644\u062a\u0634\u063a\u064a\u0644 \u0645\u062d\u0644\u064a\u0627',
-    resyncQueued:
-      '\u062a\u0645 \u062a\u0633\u062c\u064a\u0644 \u0637\u0644\u0628 \u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629',
-    timeline: '\u0627\u0644\u062e\u0637 \u0627\u0644\u0632\u0645\u0646\u064a',
-    language: 'English',
-    switchToLtr: 'التبديل إلى LTR',
-    switchToRtl: 'التبديل إلى RTL',
-    orderNumber: 'رقم الطلب',
-    source: 'المصدر',
-    sourceId: 'معرّف المصدر',
-    store: 'المتجر',
-    remoteStatus: 'حالة المنصة',
-    localStatus: 'الحالة المحلية',
-    total: 'الإجمالي',
-    exportState: 'حالة التصدير',
-    originWoo: 'WooCommerce',
-    originManual: 'يدوي',
-    never: 'لم يُصدّر',
-    platformOnly: 'هذه البيانات مملوكة للمنصة وتُعرض للقراءة فقط.',
-    created: 'تاريخ الإنشاء',
-    updated: 'آخر تحديث',
-    channel: 'القناة',
-    pos: 'نقطة البيع',
-    externalCustomer: 'معرّف العميل الخارجي',
-    billing: 'عنوان الفوترة',
-    shippingAddress: 'عنوان الشحن',
-    email: 'البريد الإلكتروني',
-    phone: 'الهاتف',
-    payment: 'الدفع',
-    shippingMethod: 'الشحن',
-    taxes: 'الضرائب والرسوم',
-    refunds: 'المرتجعات',
-    method: 'الطريقة',
-    paymentStatus: 'حالة الدفع',
-    collected: 'المحصّل',
-    shippingCollected: 'الشحن المحصّل',
-    actualShipping: 'تكلفة الشحن الفعلية',
-    merchandise: 'صافي المنتجات',
-    discount: 'الخصم',
-    tax: 'الضريبة',
-    fees: 'الرسوم',
-    refund: 'المرتجع',
-    quantity: 'الكمية',
-    sku: 'SKU',
-    subtotal: 'الإجمالي قبل الخصم',
-    lineTotal: 'إجمالي السطر',
-    assignee: 'المسؤول',
-    tags: 'الوسوم',
-    notes: 'الملاحظات',
-    syncPolicy: 'سياسة المزامنة',
-    inventoryPolicy: 'سياسة المخزون',
-    syncEvents: 'أحداث المزامنة',
-    exports: 'التصديرات',
-    documents: 'المستندات',
-    audit: 'سجل التدقيق',
-    restricted: 'البيانات الخام محمية وتحتاج صلاحية مخصصة.',
-    errors: 'تعذر تحميل الطلبات، يمكنك المحاولة مرة أخرى',
-    manualOrders: '\u0625\u0646\u0634\u0627\u0621 \u0637\u0644\u0628 \u064a\u062f\u0648\u064a',
-    manualTitle: '\u0637\u0644\u0628 \u064a\u062f\u0648\u064a \u0645\u062d\u0644\u064a',
-    localOnly:
-      '\u0645\u062d\u0644\u064a \u0641\u0642\u0637: \u0644\u0627 \u064a\u0645\u0633 WooCommerce \u0623\u0648 \u0627\u0644\u0645\u062e\u0632\u0648\u0646',
-    customerName: '\u0627\u0633\u0645 \u0627\u0644\u0639\u0645\u064a\u0644',
-    customerEmail: '\u0627\u0644\u0628\u0631\u064a\u062f',
-    customerPhone: '\u0627\u0644\u0647\u0627\u062a\u0641',
-    currency: '\u0627\u0644\u0639\u0645\u0644\u0629',
-    productName: '\u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062a\u062c',
-    productSku: 'SKU',
-    unitPriceMinor:
-      '\u0633\u0639\u0631 \u0627\u0644\u0648\u062d\u062f\u0629 \u0628\u0627\u0644\u0642\u0631\u0648\u0634',
-    shippingMinor: '\u0627\u0644\u0634\u062d\u0646 \u0628\u0627\u0644\u0642\u0631\u0648\u0634',
-    discountMinor: '\u0627\u0644\u062e\u0635\u0645 \u0628\u0627\u0644\u0642\u0631\u0648\u0634',
-    taxMinor:
-      '\u0627\u0644\u0636\u0631\u064a\u0628\u0629 \u0628\u0627\u0644\u0642\u0631\u0648\u0634',
-    feesMinor: '\u0627\u0644\u0631\u0633\u0648\u0645 \u0628\u0627\u0644\u0642\u0631\u0648\u0634',
-    localStatusInput:
-      '\u0627\u0644\u062d\u0627\u0644\u0629 \u0627\u0644\u0645\u062d\u0644\u064a\u0629',
-    tagsInput:
-      '\u0627\u0644\u0648\u0633\u0648\u0645 \u0645\u0641\u0635\u0648\u0644\u0629 \u0628\u0641\u0648\u0627\u0635\u0644',
-    notesInput: '\u0645\u0644\u0627\u062d\u0638\u0627\u062a',
-    address: '\u0627\u0644\u0639\u0646\u0648\u0627\u0646',
-    saveManual: '\u062d\u0641\u0638 \u0627\u0644\u0637\u0644\u0628',
-    cancel: '\u0625\u0644\u063a\u0627\u0621',
-    invalidManual:
-      '\u062a\u062d\u0642\u0642 \u0645\u0646 \u062d\u0642\u0648\u0644 \u0627\u0644\u0637\u0644\u0628',
-    createdManual:
-      '\u062a\u0645 \u062d\u0641\u0638 \u0627\u0644\u0637\u0644\u0628 \u0627\u0644\u0645\u062d\u0644\u064a',
-    documentsNav: '\u0627\u0644\u0645\u0633\u062a\u0646\u062f\u0627\u062a',
-    exportsNav: '\u0627\u0644\u062a\u0635\u062f\u064a\u0631\u0627\u062a',
-    exportsTitle: '\u062a\u0635\u062f\u064a\u0631 \u0627\u0644\u0637\u0644\u0628\u0627\u062a',
-    exportsSubtitle:
-      '\u0645\u0644\u0641\u0627\u062a \u0634\u062d\u0646 \u0622\u0645\u0646\u0629 \u0648\u0645\u0644\u0641\u0648\u0641\u0629 \u0648\u0645\u062a\u0627\u0628\u0639\u0629 \u0627\u0644\u062d\u0627\u0644\u0629 \u0645\u062d\u0644\u064a\u0627',
-    exportProfiles:
-      '\u0627\u0644\u0645\u0644\u0641\u0627\u062a \u0627\u0644\u0645\u062d\u0641\u0648\u0638\u0629',
-    exportBatches: '\u062f\u0641\u0639\u0627\u062a \u0627\u0644\u062a\u0635\u062f\u064a\u0631',
-    format: '\u0627\u0644\u0635\u064a\u063a\u0629',
-    actions: '\u0627\u0644\u0625\u062c\u0631\u0627\u0621\u0627\u062a',
-    exportSelectionId: '\u0645\u0639\u0631\u0641 \u0627\u0644\u062a\u062d\u062f\u064a\u062f',
-    exportVersion: '\u0646\u0633\u062e\u0629 \u0627\u0644\u0645\u0644\u0641',
-    exportPreview: '\u0645\u0639\u0627\u064a\u0646\u0629',
-    createExport: '\u0628\u062f\u0621 \u0627\u0644\u062a\u0635\u062f\u064a\u0631',
-    downloadExport: '\u062a\u062d\u0645\u064a\u0644',
-    retryExport: '\u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0645\u062d\u0627\u0648\u0644\u0629',
-    exportQueued:
-      '\u062c\u0627\u0631\u064d \u062a\u062c\u0647\u064a\u0632 \u0645\u0644\u0641 \u062e\u0627\u0635 \u0628\u0627\u0644\u0634\u062d\u0646',
-    exportNoProfiles:
-      '\u0644\u0627 \u062a\u0648\u062c\u062f \u0645\u0644\u0641\u0627\u062a \u062a\u0635\u062f\u064a\u0631 \u0628\u0639\u062f',
-    documentsTitle:
-      '\u0642\u0648\u0627\u0644\u0628 \u0627\u0644\u0645\u0633\u062a\u0646\u062f\u0627\u062a \u0648\u0627\u0644\u0637\u0628\u0627\u0639\u0629',
-    documentTemplateName: '\u0627\u0633\u0645 \u0627\u0644\u0642\u0627\u0644\u0628',
-    documentCompany: '\u0627\u0633\u0645 \u0627\u0644\u0634\u0631\u0643\u0629',
-    documentBody:
-      '\u0646\u0635 \u0627\u0644\u0642\u0627\u0644\u0628 \u0627\u0644\u0622\u0645\u0646',
-    documentFormat: '\u0627\u0644\u0645\u0642\u0627\u0633',
-    saveTemplate: '\u062d\u0641\u0638 \u0627\u0644\u0642\u0627\u0644\u0628',
-    previewDocument:
-      '\u0645\u0639\u0627\u064a\u0646\u0629 \u0627\u0644\u0645\u0633\u062a\u0646\u062f',
-    printDocument: '\u0637\u0628\u0627\u0639\u0629',
-    templateSafety:
-      '\u064a\u0645\u0643\u0646 \u0627\u0633\u062a\u062e\u062f\u0627\u0645 tokens \u0645\u062d\u062f\u062f\u0629 \u0641\u0642\u0637\u060c \u0648\u0644\u0627 \u064a\u064f\u0633\u0645\u062d HTML \u0623\u0648 \u062c\u0644\u0628 \u0634\u0628\u0643\u064a.',
-    templateTokens: 'order.number, customer.name, shipping.address, order.totalMinor',
-    noTemplates:
-      '\u0644\u0627 \u062a\u0648\u062c\u062f \u0642\u0648\u0627\u0644\u0628 \u0628\u0639\u062f',
-    documentBatches: 'دفعات المستندات',
-    documentBatchStatus: 'الحالة',
-    documentBatchProgress: 'التقدم',
-    documentBatchFormat: 'المقاس',
-    documentArtifactDownload: 'تحميل',
-    retryDocumentBatch: 'إعادة المحاولة',
-    documentBatchDetails: 'التفاصيل',
-    noDocumentBatches: 'لا توجد دفعات مستندات بعد',
-    documentBatchesLoadFailed: 'تعذر تحميل دفعات المستندات',
-    analyticsNav: '\u0627\u0644\u062a\u062d\u0644\u064a\u0644\u0627\u062a',
-    analyticsTitle:
-      '\u0644\u0648\u062d\u0629 \u062a\u062d\u0644\u064a\u0644 \u0627\u0644\u0645\u0628\u064a\u0639\u0627\u062a',
-    analyticsSubtitle:
-      '\u0642\u0631\u0627\u0621\u0629 \u0648\u0627\u0636\u062d\u0629 \u0644\u0644\u0625\u064a\u0631\u0627\u062f \u0648\u0627\u0644\u0631\u0628\u062d \u0645\u0646 \u0643\u0644 \u0627\u0644\u0645\u0635\u0627\u062f\u0631',
-    analyticsSource: '\u0645\u0635\u062f\u0631 \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a',
-    currencyFilter: '\u0627\u0644\u0639\u0645\u0644\u0629',
-    allSources: '\u0643\u0644 \u0627\u0644\u0645\u0635\u0627\u062f\u0631',
-    sourceWoo: 'WooCommerce',
-    sourceManual: '\u064a\u062f\u0648\u064a',
-    sourceCombined: '\u0645\u062c\u0645\u0639',
-    fromDate: '\u0645\u0646 \u062a\u0627\u0631\u064a\u062e',
-    toDate: '\u0625\u0644\u0649 \u062a\u0627\u0631\u064a\u062e',
-    storeFilter:
-      '\u0627\u0644\u0645\u062a\u062c\u0631 / \u0645\u0639\u0631\u0641 \u0627\u0644\u0631\u0628\u0637',
-    statusFilter: '\u062d\u0627\u0644\u0629 \u0627\u0644\u0637\u0644\u0628',
-    shippingFilter: '\u0637\u0631\u064a\u0642\u0629 \u0627\u0644\u0634\u062d\u0646',
-    productFilter: '\u0627\u0644\u0645\u0646\u062a\u062c / SKU',
-    categoryFilter: '\u0627\u0644\u062a\u0635\u0646\u064a\u0641',
-    authorFilter: '\u0627\u0644\u0645\u0624\u0644\u0641',
-    applyFilters: '\u062a\u0637\u0628\u064a\u0642 \u0627\u0644\u0641\u0644\u0627\u062a\u0631',
-    resetFilters: '\u0625\u0639\u0627\u062f\u0629 \u0636\u0628\u0637',
-    revenue: '\u0627\u0644\u0625\u064a\u0631\u0627\u062f \u0627\u0644\u0645\u062d\u0635\u0644',
-    profit: '\u0631\u0628\u062d \u0627\u0644\u0645\u0633\u0627\u0647\u0645\u0629',
-    ordersCount: '\u0627\u0644\u0637\u0644\u0628\u0627\u062a',
-    linesCount: '\u0627\u0644\u0633\u0637\u0648\u0631',
-    freshness: '\u062d\u062f\u0627\u062b\u0629 \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a',
-    lastRebuilt: '\u0622\u062e\u0631 \u0625\u0639\u0627\u062f\u0629 \u0628\u0646\u0627\u0621',
-    costCoverage: '\u062a\u063a\u0637\u064a\u0629 \u0627\u0644\u062a\u0643\u0627\u0644\u064a\u0641',
-    coverageUnavailable:
-      '\u0644\u0645 \u062a\u062a\u0645 \u062a\u0633\u0639\u064a\u0631 \u0643\u0644 \u0627\u0644\u0633\u0637\u0648\u0631 \u0628\u0639\u062f',
-    coverageScope:
-      '\u0645\u0646 \u0644\u0642\u0637\u0627\u062a \u0627\u0644\u062d\u0633\u0627\u0628',
-    trend: '\u0627\u0644\u0627\u062a\u062c\u0627\u0647 \u0627\u0644\u0632\u0645\u0646\u064a',
-    breakdown: '\u0627\u0644\u062a\u0648\u0632\u064a\u0639',
-    breakdownDimension: '\u0627\u0644\u062a\u0648\u0632\u064a\u0639 \u062d\u0633\u0628',
-    dimensionSource: '\u0627\u0644\u0645\u0635\u062f\u0631',
-    dimensionStore: '\u0627\u0644\u0645\u062a\u062c\u0631',
-    dimensionStatus: '\u0627\u0644\u062d\u0627\u0644\u0629',
-    dimensionRemoteStatus: '\u062d\u0627\u0644\u0629 WooCommerce',
-    dimensionLocalStatus:
-      '\u062f\u0648\u0631\u0629 \u0627\u0644\u0637\u0644\u0628 \u0627\u0644\u064a\u062f\u0648\u064a',
-    dimensionExportState: '\u062d\u0627\u0644\u0629 \u0627\u0644\u062a\u0635\u062f\u064a\u0631',
-    dimensionGovernorate: '\u0627\u0644\u0645\u062d\u0627\u0641\u0638\u0629',
-    dimensionCustomer: 'العميل',
-    dimensionShipping: '\u0627\u0644\u0634\u062d\u0646',
-    dimensionProduct: '\u0627\u0644\u0645\u0646\u062a\u062c',
-    dimensionCategory: '\u0627\u0644\u062a\u0635\u0646\u064a\u0641',
-    dimensionAuthor: '\u0627\u0644\u0645\u0624\u0644\u0641',
-    formulas:
-      '\u0627\u0644\u0635\u064a\u063a \u0648\u0627\u0644\u0627\u0633\u062a\u0628\u0639\u0627\u062f',
-    metrics: '\u0627\u0644\u0645\u0624\u0634\u0631',
-    formula: '\u0627\u0644\u0635\u064a\u063a\u0629',
-    excludedStatuses:
-      '\u0627\u0644\u062d\u0627\u0644\u0627\u062a \u0627\u0644\u0645\u0633\u062a\u0628\u0639\u062f\u0629',
-    currencySeparated:
-      '\u0627\u0644\u0639\u0645\u0644\u0627\u062a \u0645\u0639\u0631\u0648\u0636\u0629 \u0643\u0644 \u0645\u0646\u0647\u0627 \u0628\u0645\u0641\u0631\u062f\u0647\u0627',
-    metricScopeNote:
-      '\u0627\u0644\u0645\u0628\u064a\u0639\u0627\u062a \u0648\u0627\u0644\u0634\u062d\u0646 \u0648\u0627\u0644\u0636\u0631\u0627\u0626\u0628 \u0648\u0627\u0644\u0645\u0631\u062a\u062c\u0639\u0627\u062a \u0645\u0646 \u0644\u0642\u0637\u0627\u062a \u0627\u0644\u0637\u0644\u0628\u0627\u062a \u0627\u0644\u0645\u0633\u062a\u0648\u0631\u062f\u0629 \u0623\u0648 \u0627\u0644\u064a\u062f\u0648\u064a\u0629. \u0627\u0644\u062a\u0643\u0644\u0641\u0629 \u0648\u0627\u0644\u0631\u0633\u0648\u0645 \u0645\u0646 \u0644\u0642\u0637\u0627\u062a \u0648\u0642\u0648\u0627\u0639\u062f \u0645\u062d\u0644\u064a\u0629 \u063a\u064a\u0631 \u0642\u0627\u0628\u0644\u0629 \u0644\u0644\u062a\u063a\u064a\u064a\u0631. \u0627\u0644\u0645\u0644\u063a\u064a \u0648\u0627\u0644\u0641\u0627\u0634\u0644 \u0648\u0627\u0644\u0645\u062d\u0630\u0648\u0641 \u0645\u0633\u062a\u0628\u0639\u062f.',
-    noAnalytics:
-      '\u0644\u0627 \u062a\u0648\u062c\u062f \u0628\u064a\u0627\u0646\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629 \u0644\u0647\u0630\u0647 \u0627\u0644\u0641\u0644\u0627\u062a\u0631',
-    analyticsError:
-      '\u062a\u0639\u0630\u0631 \u062a\u062d\u0645\u064a\u0644 \u0627\u0644\u062a\u062d\u0644\u064a\u0644\u0627\u062a',
-    rebuildState:
-      '\u062d\u0627\u0644\u0629 \u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0628\u0646\u0627\u0621',
-    rebuildError:
-      '\u062e\u0637\u0623 \u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0628\u0646\u0627\u0621',
-    rebuildAnalytics:
-      '\u0625\u0639\u0627\u062f\u0629 \u0628\u0646\u0627\u0621 \u0627\u0644\u062a\u062d\u0644\u064a\u0644\u0627\u062a',
-    rebuildQueued:
-      '\u062c\u0627\u0631\u064d \u0625\u0639\u0627\u062f\u0629 \u0628\u0646\u0627\u0621 \u0627\u0644\u062a\u062d\u0644\u064a\u0644\u0627\u062a',
-    rebuildFailed:
-      '\u0641\u0634\u0644 \u0625\u0639\u0627د\u0629 \u0628\u0646\u0627ء \u0627\u0644\u062a\u062d\u0644\u064a\u0644\u0627\u062a',
-  },
-  en: {
-    app: 'Woo Ops',
-    orders: 'Orders workspace',
-    subtitle: 'Search and operate orders from every source in one place',
-    search: 'Search order number, customer or phone',
-    searchButton: 'Search',
-    status: 'Status',
-    all: 'All',
-    processing: 'Processing',
-    completed: 'Completed',
-    pending: 'Pending payment',
-    onHold: 'On hold',
-    cancelled: 'Cancelled',
-    refunded: 'Refunded',
-    failed: 'Failed',
-    checkoutDraft: 'Checkout draft',
-    refresh: 'Refresh',
-    columns: 'Columns',
-    details: 'Order details',
-    close: 'Close',
-    remote: 'Platform facts',
-    localFacts: 'Local operations',
-    summary: 'Summary',
-    items: 'Items',
-    customer: 'Customer & addresses',
-    finance: 'Payment, shipping & tax',
-    workflow: 'Local workflow',
-    history: 'Sync & audit',
-    raw: 'Source data',
-    noOrders: 'No matching orders',
-    noConnection: 'The server is not connected yet',
-    noData: 'No data available',
-    loading: 'Loading',
-    loadMore: 'Load more',
-    advancedFilters: 'Advanced filters',
-    hideFilters: 'Hide filters',
-    sourceFilter: 'Source',
-    exportFilter: 'Export state',
-    exported: 'Exported',
-    changedAfterExport: 'Changed after export',
-    governorateFilter: 'Governorate / region',
-    paymentFilter: 'Payment method',
-    shippingFilterOrders: 'Shipping method',
-    posFilter: 'POS location',
-    productFilterOrders: 'Product',
-    categoryFilterOrders: 'Category',
-    authorFilterOrders: 'Author',
-    selected: 'selected',
-    selectAllMatching: 'Select all matching results',
-    clearSelection: 'Clear selection',
-    saveView: 'Save view',
-    viewName: 'View name',
-    savedViews: 'Saved views',
-    totalResults: 'Total results',
-    retry: 'Retry',
-    authenticationRequired: 'Sign in to view this account’s orders',
-    clearFilters: 'Clear filters',
-    createSelection: 'Save selection',
-    markExportReady: 'Mark ready for export',
-    exportReadyQueued: 'Orders queued for export preparation',
-    updateWorkflow: 'Save workflow',
-    resync: 'Request read-only resync',
-    workflowSaved: 'Local workflow saved',
-    resyncQueued: 'Read-only resync queued',
-    timeline: 'Order timeline',
-    language: 'العربية',
-    switchToLtr: 'Switch to LTR',
-    switchToRtl: 'Switch to RTL',
-    orderNumber: 'Order number',
-    source: 'Source',
-    sourceId: 'Source ID',
-    store: 'Store',
-    remoteStatus: 'Platform status',
-    localStatus: 'Local status',
-    total: 'Total',
-    exportState: 'Export state',
-    originWoo: 'WooCommerce',
-    originManual: 'Manual',
-    never: 'Not exported',
-    platformOnly: 'These facts belong to the platform and are read-only.',
-    created: 'Created',
-    updated: 'Updated',
-    channel: 'Channel',
-    pos: 'POS',
-    externalCustomer: 'External customer ID',
-    billing: 'Billing address',
-    shippingAddress: 'Shipping address',
-    email: 'Email',
-    phone: 'Phone',
-    payment: 'Payment',
-    shippingMethod: 'Shipping',
-    taxes: 'Taxes & fees',
-    refunds: 'Refunds',
-    method: 'Method',
-    paymentStatus: 'Payment status',
-    collected: 'Collected',
-    shippingCollected: 'Shipping collected',
-    actualShipping: 'Actual shipping cost',
-    merchandise: 'Net merchandise',
-    discount: 'Discount',
-    tax: 'Tax',
-    fees: 'Fees',
-    refund: 'Refund',
-    quantity: 'Quantity',
-    sku: 'SKU',
-    subtotal: 'Subtotal',
-    lineTotal: 'Line total',
-    assignee: 'Assignee',
-    tags: 'Tags',
-    notes: 'Notes',
-    syncPolicy: 'Sync policy',
-    inventoryPolicy: 'Inventory policy',
-    syncEvents: 'Sync events',
-    exports: 'Exports',
-    documents: 'Documents',
-    audit: 'Audit history',
-    restricted: 'Raw source data is protected and requires a dedicated permission.',
-    errors: 'Could not load orders. Try again',
-    manualOrders: 'Create manual order',
-    manualTitle: 'New local manual order',
-    localOnly: 'Local only: this order never calls WooCommerce or changes inventory',
-    customerName: 'Customer name',
-    customerEmail: 'Customer email',
-    customerPhone: 'Customer phone',
-    currency: 'Currency',
-    productName: 'Product name',
-    productSku: 'SKU',
-    unitPriceMinor: 'Unit price in minor units',
-    shippingMinor: 'Shipping in minor units',
-    discountMinor: 'Discount in minor units',
-    taxMinor: 'Tax in minor units',
-    feesMinor: 'Fees in minor units',
-    localStatusInput: 'Local status',
-    tagsInput: 'Tags separated by commas',
-    notesInput: 'Notes',
-    address: 'Address',
-    saveManual: 'Save manual order',
-    cancel: 'Cancel',
-    invalidManual: 'Check the manual order fields',
-    createdManual: 'Manual order saved locally',
-    documentsNav: 'Documents',
-    exportsNav: 'Exports',
-    exportsTitle: 'Order exports',
-    exportsSubtitle: 'Private, checksum-bound shipping files with durable progress tracking',
-    exportProfiles: 'Saved profiles',
-    exportBatches: 'Export batches',
-    format: 'Format',
-    actions: 'Actions',
-    exportSelectionId: 'Selection ID',
-    exportVersion: 'Profile version',
-    exportPreview: 'Preview',
-    createExport: 'Create export',
-    downloadExport: 'Download',
-    retryExport: 'Retry',
-    exportQueued: 'Preparing a private shipping file',
-    exportNoProfiles: 'No export profiles yet',
-    documentsTitle: 'Document templates & printing',
-    documentTemplateName: 'Template name',
-    documentCompany: 'Company name',
-    documentBody: 'Safe template text',
-    documentFormat: 'Physical size',
-    saveTemplate: 'Save template',
-    previewDocument: 'Preview PDF',
-    printDocument: 'Print',
-    templateSafety:
-      'Only allowlisted tokens are supported. HTML, scripts, and network loads are blocked.',
-    templateTokens: 'order.number, customer.name, shipping.address, order.totalMinor',
-    noTemplates: 'No templates yet',
-    documentBatches: 'Document batches',
-    documentBatchStatus: 'Status',
-    documentBatchProgress: 'Progress',
-    documentBatchFormat: 'Size',
-    documentArtifactDownload: 'Download',
-    retryDocumentBatch: 'Retry failures',
-    documentBatchDetails: 'Details',
-    noDocumentBatches: 'No document batches yet',
-    documentBatchesLoadFailed: 'Could not load document batches',
-    analyticsNav: 'Analytics',
-    analyticsTitle: 'Sales analytics dashboard',
-    analyticsSubtitle: 'Explainable revenue and contribution profit across every source',
-    analyticsSource: 'Data source',
-    currencyFilter: 'Currency',
-    allSources: 'All sources',
-    sourceWoo: 'WooCommerce',
-    sourceManual: 'Manual orders',
-    sourceCombined: 'Combined',
-    fromDate: 'From date',
-    toDate: 'To date',
-    storeFilter: 'Store / connection ID',
-    statusFilter: 'Order status',
-    shippingFilter: 'Shipping method',
-    productFilter: 'Product / SKU',
-    categoryFilter: 'Category',
-    authorFilter: 'Author',
-    applyFilters: 'Apply filters',
-    resetFilters: 'Reset',
-    revenue: 'Collected revenue',
-    profit: 'Contribution profit',
-    ordersCount: 'Orders',
-    linesCount: 'Lines',
-    freshness: 'Data freshness',
-    lastRebuilt: 'Last rebuilt',
-    costCoverage: 'Cost coverage',
-    coverageUnavailable: 'Cost snapshots are not available yet',
-    coverageScope: 'account-wide snapshots',
-    trend: 'Trend over time',
-    breakdown: 'Breakdown',
-    breakdownDimension: 'Break down by',
-    dimensionSource: 'Source',
-    dimensionStore: 'Store',
-    dimensionStatus: 'Status',
-    dimensionRemoteStatus: 'WooCommerce status',
-    dimensionLocalStatus: 'Manual order lifecycle',
-    dimensionExportState: 'Export state',
-    dimensionGovernorate: 'Governorate / region',
-    dimensionCustomer: 'Customer',
-    dimensionShipping: 'Shipping',
-    dimensionProduct: 'Product',
-    dimensionCategory: 'Category',
-    dimensionAuthor: 'Author',
-    formulas: 'Formulas and exclusions',
-    metrics: 'Metric',
-    formula: 'Formula',
-    excludedStatuses: 'Excluded statuses',
-    currencySeparated: 'Currencies are shown separately and are never combined silently.',
-    metricScopeNote:
-      'Sales, shipping, tax and refunds come from normalized imported or manual order snapshots. COGS and fees come from immutable local snapshots and effective cost rules. Cancelled, failed and trashed orders are excluded.',
-    noAnalytics: 'No analytics facts match these filters',
-    analyticsError: 'Could not load analytics. Try again',
-    rebuildState: 'Rebuild state',
-    rebuildError: 'Rebuild error',
-    rebuildAnalytics: 'Rebuild analytics',
-    rebuildQueued: 'Analytics rebuild is running',
-    rebuildFailed: 'Analytics rebuild failed',
-  },
-} as const;
+const copy = { ar: getAppCopy('ar'), en: getAppCopy('en') } as const;
 
 const columns = [
   'orderNumber',
@@ -906,27 +400,27 @@ const orderCustomerName = (order: Order): string => {
 const paymentMethodLabel = (value: unknown, locale: Locale): string => {
   const raw = valueText(value, '').trim();
   const normalized = raw.toLowerCase().replace(/[\s_-]+/gu, ' ');
-  const labels: Record<string, readonly [string, string]> = {
-    'mobile wallets': ['المحافظ الإلكترونية', 'Mobile wallets'],
-    'paymob wallet': ['محفظة Paymob', 'Paymob wallet'],
-    'pay with paymob': ['الدفع عبر Paymob', 'Paymob'],
-    bacs: ['تحويل بنكي', 'Bank transfer'],
-    'bank transfer': ['تحويل بنكي', 'Bank transfer'],
-    cod: ['الدفع عند الاستلام', 'Cash on delivery'],
-    cheque: ['شيك', 'Cheque'],
+  const labels: Record<string, TranslationKey> = {
+    'mobile wallets': 'labels.paymentMethod.mobileWallets',
+    'paymob wallet': 'labels.paymentMethod.paymobWallet',
+    'pay with paymob': 'labels.paymentMethod.paymob',
+    bacs: 'labels.paymentMethod.bankTransfer',
+    'bank transfer': 'labels.paymentMethod.bankTransfer',
+    cod: 'labels.paymentMethod.cashOnDelivery',
+    cheque: 'labels.paymentMethod.cheque',
   };
   const matched = labels[normalized];
-  return matched ? matched[locale === 'ar' ? 0 : 1] : raw || '—';
+  return matched ? tr(locale, matched) : raw || '—';
 };
 
 const shippingMethodLabel = (value: unknown, locale: Locale): string => {
   const raw = valueText(value, '').trim();
   const normalized = raw.toLowerCase().replace(/[\s_-]+/gu, ' ');
   if (!raw) return '—';
-  if (normalized === 'flat rate') return locale === 'ar' ? 'شحن ثابت' : 'Flat rate';
-  if (normalized === 'free shipping') return locale === 'ar' ? 'شحن مجاني' : 'Free shipping';
-  if (normalized === 'local pickup') return locale === 'ar' ? 'استلام من المتجر' : 'Local pickup';
-  if (/فاتورتك/u.test(raw)) return locale === 'ar' ? 'الشحن عبر فاتورتك' : 'Fatortak shipping';
+  if (normalized === 'flat rate') return tr(locale, 'inline.app.flatRate');
+  if (normalized === 'free shipping') return tr(locale, 'inline.app.freeShipping');
+  if (normalized === 'local pickup') return tr(locale, 'inline.app.localPickup');
+  if (/فاتورتك/u.test(raw)) return tr(locale, 'inline.app.fatortakShipping');
   return raw;
 };
 
@@ -1190,7 +684,7 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
       >
         <Stack gap={2}>
           <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
-            <Chip label={locale === 'ar' ? 'بيانات WooCommerce' : 'WooCommerce data'} />
+            <Chip label={tr(locale, 'inline.app.woocommerceData')} />
             <Typography variant="body2" color="text.secondary">
               {t.currencySeparated}
             </Typography>
@@ -1312,7 +806,7 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                       </Box>
                       <Box>
                         <Typography variant="caption" color="text.secondary">
-                          {locale === 'ar' ? 'صافي المبيعات' : 'Net sales'}
+                          {tr(locale, 'inline.app.netSales')}
                         </Typography>
                         <Typography variant="h6" component="div" fontWeight={800}>
                           <MoneyValue
@@ -1327,7 +821,7 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                       </Box>
                       <Box>
                         <Typography variant="caption" color="text.secondary">
-                          {locale === 'ar' ? 'إجمالي المبيعات' : 'Total sales'}
+                          {tr(locale, 'inline.app.totalSales')}
                         </Typography>
                         <Typography variant="h6" component="div" fontWeight={800}>
                           <MoneyValue
@@ -1352,7 +846,7 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                       </Box>
                       <Box>
                         <Typography variant="caption" color="text.secondary">
-                          {locale === 'ar' ? 'متوسط الطلب' : 'Average order value'}
+                          {tr(locale, 'inline.app.averageOrderValue')}
                         </Typography>
                         <Typography variant="h6" component="div" fontWeight={800}>
                           <MoneyValue
@@ -1372,10 +866,7 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                       </Box>
                       {(
                         [
-                          [
-                            'grossSalesMinor',
-                            locale === 'ar' ? 'المبيعات قبل الخصم' : 'Gross sales',
-                          ],
+                          ['grossSalesMinor', tr(locale, 'inline.app.grossSales')],
                           ['discountMinor', t.discount],
                           ['refundsMinor', t.refund],
                           ['shippingCollectedMinor', t.shippingCollected],
@@ -1409,9 +900,10 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
           </Stack>
 
           <Typography variant="caption" color="text.secondary">
-            {locale === 'ar'
-              ? 'الأرقام محسوبة من نسخ الطلبات المقروءة من WooCommerce؛ تُنسب المرتجعات لتاريخ الطلب الأصلي، وقد تختلف عن تقرير Woo Analytics الذي ينسبها لتاريخ الاسترجاع.'
-              : 'Calculated from read-only WooCommerce order snapshots. Refunds are attributed to the original order date, so date-filtered totals can differ from Woo Analytics reports.'}
+            {tr(
+              locale,
+              'inline.app.calculatedFromReadOnlyWoocommerceOrderSnapshotsRefundsAreAttribu',
+            )}
           </Typography>
 
           <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
@@ -1544,16 +1036,12 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                   <TableCell>{t.currency}</TableCell>
                   <TableCell>
                     {dimension === 'product' || dimension === 'category'
-                      ? locale === 'ar'
-                        ? 'مبيعات المنتجات بعد الخصم وقبل المرتجعات'
-                        : 'Item sales after discounts, before returns'
+                      ? tr(locale, 'inline.app.itemSalesAfterDiscountsBeforeReturns')
                       : t.revenue}
                   </TableCell>
                   <TableCell>
                     {dimension === 'product' || dimension === 'category'
-                      ? locale === 'ar'
-                        ? 'القطع المباعة'
-                        : 'Items sold'
+                      ? tr(locale, 'inline.app.itemsSold')
                       : t.profit}
                   </TableCell>
                   <TableCell>{t.ordersCount}</TableCell>
@@ -2099,12 +1587,10 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
     <Stack gap={2} data-testid="catalog-workspace">
       <Box>
         <Typography variant="h4" component="h1" fontWeight={800}>
-          {locale === 'ar' ? 'كتالوج المنتجات والمخزون' : 'Products & stock catalog'}
+          {tr(locale, 'inline.app.productsStockCatalog')}
         </Typography>
         <Typography color="text.secondary">
-          {locale === 'ar'
-            ? 'نسخة مقروءة فقط من WooCommerce — لا يمكن تعديل السعر أو المخزون هنا.'
-            : 'A read-only WooCommerce snapshot — prices and stock cannot be edited here.'}
+          {tr(locale, 'inline.app.aReadOnlyWoocommerceSnapshotPricesAndStockCannotBeEditedHere')}
         </Typography>
       </Box>
       <Paper
@@ -2131,7 +1617,7 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
           <TextField
             fullWidth
             size="small"
-            label={locale === 'ar' ? 'ابحث باسم المنتج' : 'Search product name'}
+            label={tr(locale, 'inline.app.searchProductName')}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -2142,76 +1628,66 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
             value={category || null}
             onChange={(_event, value) => setCategory(value ?? '')}
             renderInput={(params) => (
-              <TextField {...params} label={locale === 'ar' ? 'التصنيف' : 'Category'} />
+              <TextField {...params} label={tr(locale, 'inline.app.category')} />
             )}
           />
           <TextField
             select
             fullWidth
             size="small"
-            label={locale === 'ar' ? 'حالة المخزون' : 'Stock status'}
+            label={tr(locale, 'inline.app.stockStatus')}
             value={stockStatus}
             onChange={(event) => setStockStatus(event.target.value)}
           >
-            <MenuItem value="">{locale === 'ar' ? 'كل الحالات' : 'All statuses'}</MenuItem>
-            <MenuItem value="instock">{locale === 'ar' ? 'متوفر' : 'In stock'}</MenuItem>
-            <MenuItem value="outofstock">
-              {locale === 'ar' ? 'نفد المخزون' : 'Out of stock'}
-            </MenuItem>
-            <MenuItem value="onbackorder">{locale === 'ar' ? 'حجز مسبق' : 'On backorder'}</MenuItem>
+            <MenuItem value="">{tr(locale, 'inline.app.allStatuses')}</MenuItem>
+            <MenuItem value="instock">{tr(locale, 'inline.app.inStock')}</MenuItem>
+            <MenuItem value="outofstock">{tr(locale, 'inline.app.outOfStock')}</MenuItem>
+            <MenuItem value="onbackorder">{tr(locale, 'inline.app.onBackorder')}</MenuItem>
           </TextField>
           <TextField
             select
             fullWidth
             size="small"
-            label={locale === 'ar' ? 'الحجز المسبق' : 'Backorders'}
+            label={tr(locale, 'inline.app.backorders')}
             value={backorders}
             onChange={(event) => setBackorders(event.target.value)}
           >
-            <MenuItem value="">{locale === 'ar' ? 'الكل' : 'All'}</MenuItem>
-            <MenuItem value="no">{locale === 'ar' ? 'غير مسموح' : 'Not allowed'}</MenuItem>
-            <MenuItem value="notify">
-              {locale === 'ar' ? 'مسموح مع تنبيه' : 'Allowed with notice'}
-            </MenuItem>
-            <MenuItem value="yes">{locale === 'ar' ? 'مسموح' : 'Allowed'}</MenuItem>
+            <MenuItem value="">{tr(locale, 'inline.app.all')}</MenuItem>
+            <MenuItem value="no">{tr(locale, 'inline.app.notAllowed')}</MenuItem>
+            <MenuItem value="notify">{tr(locale, 'inline.app.allowedWithNotice')}</MenuItem>
+            <MenuItem value="yes">{tr(locale, 'inline.app.allowed')}</MenuItem>
           </TextField>
           <TextField
             select
             fullWidth
             size="small"
-            label={locale === 'ar' ? 'ظهور المنتج' : 'Catalog visibility'}
+            label={tr(locale, 'inline.app.catalogVisibility')}
             value={visibility}
             onChange={(event) => setVisibility(event.target.value)}
           >
-            <MenuItem value="">{locale === 'ar' ? 'الكل' : 'All'}</MenuItem>
-            <MenuItem value="visible">
-              {locale === 'ar' ? 'المتجر والبحث' : 'Shop and search'}
-            </MenuItem>
-            <MenuItem value="catalog">{locale === 'ar' ? 'المتجر فقط' : 'Shop only'}</MenuItem>
-            <MenuItem value="search">{locale === 'ar' ? 'البحث فقط' : 'Search only'}</MenuItem>
-            <MenuItem value="hidden">{locale === 'ar' ? 'مخفي' : 'Hidden'}</MenuItem>
+            <MenuItem value="">{tr(locale, 'inline.app.all')}</MenuItem>
+            <MenuItem value="visible">{tr(locale, 'inline.app.shopAndSearch')}</MenuItem>
+            <MenuItem value="catalog">{tr(locale, 'inline.app.shopOnly')}</MenuItem>
+            <MenuItem value="search">{tr(locale, 'inline.app.searchOnly')}</MenuItem>
+            <MenuItem value="hidden">{tr(locale, 'inline.app.hidden')}</MenuItem>
           </TextField>
           <Button type="submit" variant="contained">
-            {locale === 'ar' ? 'تطبيق' : 'Apply'}
+            {tr(locale, 'inline.app.apply')}
           </Button>
         </Box>
       </Paper>
-      {error && (
-        <Alert severity="error">
-          {locale === 'ar' ? 'تعذر تحميل الكتالوج' : 'Catalog could not be loaded'}
-        </Alert>
-      )}
+      {error && <Alert severity="error">{tr(locale, 'inline.app.catalogCouldNotBeLoaded')}</Alert>}
       <Paper variant="outlined">
         <TableContainer>
-          <Table size="small" aria-label={locale === 'ar' ? 'كتالوج المنتجات' : 'Product catalog'}>
+          <Table size="small" aria-label={tr(locale, 'inline.app.productCatalog')}>
             <TableHead>
               <TableRow>
-                <TableCell>{locale === 'ar' ? 'المنتج' : 'Product'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'التصنيفات' : 'Categories'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'السعر' : 'Price'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'المخزون' : 'Stock'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'الحجز المسبق' : 'Backorders'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'الظهور' : 'Visibility'}</TableCell>
+                <TableCell>{tr(locale, 'inline.app.product')}</TableCell>
+                <TableCell>{tr(locale, 'inline.app.categories')}</TableCell>
+                <TableCell>{tr(locale, 'inline.app.price')}</TableCell>
+                <TableCell>{tr(locale, 'inline.app.stock')}</TableCell>
+                <TableCell>{tr(locale, 'inline.app.backorders')}</TableCell>
+                <TableCell>{tr(locale, 'inline.app.visibility')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -2241,16 +1717,10 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
                   </TableCell>
                   <TableCell>
                     {item.backorders === 'notify'
-                      ? locale === 'ar'
-                        ? 'مسموح مع تنبيه'
-                        : 'Allowed with notice'
+                      ? tr(locale, 'inline.app.allowedWithNotice')
                       : item.backorders === 'yes'
-                        ? locale === 'ar'
-                          ? 'مسموح'
-                          : 'Allowed'
-                        : locale === 'ar'
-                          ? 'غير مسموح'
-                          : 'Not allowed'}
+                        ? tr(locale, 'inline.app.allowed')
+                        : tr(locale, 'inline.app.notAllowed')}
                   </TableCell>
                   <TableCell>{item.catalogVisibility ?? '—'}</TableCell>
                 </TableRow>
@@ -2262,17 +1732,13 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
         {!loading && items.length === 0 && (
           <Stack p={5} gap={2} alignItems="center" textAlign="center">
             <Typography fontWeight={700}>
-              {locale === 'ar'
-                ? 'لا توجد منتجات متزامنة من WooCommerce بعد'
-                : 'No WooCommerce products have been synchronized yet'}
+              {tr(locale, 'inline.app.noWoocommerceProductsHaveBeenSynchronizedYet')}
             </Typography>
             <Typography color="text.secondary">
-              {locale === 'ar'
-                ? 'افتح ربط WooCommerce وتأكد من صحة الاتصال ثم شغّل المزامنة الأولية.'
-                : 'Open the WooCommerce connection, verify it, then run the initial sync.'}
+              {tr(locale, 'inline.app.openTheWoocommerceConnectionVerifyItThenRunTheInitialSync')}
             </Typography>
             <Button variant="contained" onClick={onSync}>
-              {locale === 'ar' ? 'فتح الربط والمزامنة' : 'Open connection & sync'}
+              {tr(locale, 'inline.app.openConnectionSync')}
             </Button>
           </Stack>
         )}
@@ -2316,33 +1782,29 @@ function ManualOrdersWorkspace({ locale, onCreate }: { locale: Locale; onCreate:
       <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={2}>
         <Box>
           <Typography variant="h4" component="h1" fontWeight={800}>
-            {locale === 'ar' ? 'إدارة الطلبات اليدوية' : 'Manual order operations'}
+            {tr(locale, 'inline.app.manualOrderOperations')}
           </Typography>
           <Typography color="text.secondary">
-            {locale === 'ar'
-              ? 'طلبات محلية منفصلة لا تُرسل إلى WooCommerce ولا تخصم المخزون.'
-              : 'A separate local queue that never writes to WooCommerce or inventory.'}
+            {tr(locale, 'inline.app.aSeparateLocalQueueThatNeverWritesToWoocommerceOrInventory')}
           </Typography>
         </Box>
         <Button variant="contained" onClick={onCreate}>
-          {locale === 'ar' ? 'طلب يدوي جديد' : 'New manual order'}
+          {tr(locale, 'inline.app.newManualOrder')}
         </Button>
       </Stack>
       {error && (
-        <Alert severity="error">
-          {locale === 'ar' ? 'تعذر تحميل الطلبات اليدوية' : 'Manual orders could not be loaded'}
-        </Alert>
+        <Alert severity="error">{tr(locale, 'inline.app.manualOrdersCouldNotBeLoaded')}</Alert>
       )}
       <Paper variant="outlined">
         <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>{locale === 'ar' ? 'رقم الطلب' : 'Order'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'العميل' : 'Customer'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'الإجمالي' : 'Total'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'التصدير' : 'Export'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'إثبات التحويل' : 'Transfer proof'}</TableCell>
+                <TableCell>{tr(locale, 'inline.app.order')}</TableCell>
+                <TableCell>{tr(locale, 'inline.app.customer')}</TableCell>
+                <TableCell>{tr(locale, 'inline.app.total')}</TableCell>
+                <TableCell>{tr(locale, 'inline.app.export')}</TableCell>
+                <TableCell>{tr(locale, 'inline.app.transferProof')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -2360,7 +1822,7 @@ function ManualOrdersWorkspace({ locale, onCreate }: { locale: Locale; onCreate:
                         size="small"
                         href={`/api/v1/manual-orders/${encodeURIComponent(order.id)}/payment-proof`}
                       >
-                        {locale === 'ar' ? 'تنزيل' : 'Download'}
+                        {tr(locale, 'inline.app.download')}
                       </Button>
                     ) : (
                       '—'
@@ -2702,11 +2164,11 @@ function ManualOrderForm({
             />
             <FormControl required fullWidth disabled={!shippingRatesConfigured}>
               <InputLabel id="manual-governorate-label">
-                {locale === 'ar' ? 'المحافظة' : 'Governorate'}
+                {tr(locale, 'inline.app.governorate')}
               </InputLabel>
               <Select
                 labelId="manual-governorate-label"
-                label={locale === 'ar' ? 'المحافظة' : 'Governorate'}
+                label={tr(locale, 'inline.app.governorate')}
                 value={governorate}
                 onChange={(event) => selectGovernorate(event.target.value)}
               >
@@ -2723,9 +2185,7 @@ function ManualOrderForm({
                       {rate ? (
                         <MoneyValue value={rate.amountMinor} currency={currency} locale={locale} />
                       ) : (
-                        <span>
-                          {locale === 'ar' ? 'سعر الشحن غير متاح' : 'Shipping unavailable'}
-                        </span>
+                        <span>{tr(locale, 'inline.app.shippingUnavailable')}</span>
                       )}
                     </Stack>
                   </MenuItem>
@@ -2735,18 +2195,20 @@ function ManualOrderForm({
           </Box>
           {config && !shippingRatesConfigured && (
             <Alert severity="warning" sx={{ mt: 2 }} data-testid="shipping-rates-empty">
-              {locale === 'ar'
-                ? 'لم يعثر النظام على أسعار شحن مربوطة بمحافظات مصر. راجع مناطق الشحن في WooCommerce ثم شغّل المزامنة الأولية.'
-                : 'No WooCommerce shipping rates mapped to Egyptian governorates were found. Review Woo shipping zones, then run initial sync.'}
+              {tr(
+                locale,
+                'inline.app.noWoocommerceShippingRatesMappedToEgyptianGovernoratesWereFoundR',
+              )}
             </Alert>
           )}
         </Section>
         <Section title={t.items}>
           {catalog.length === 0 && config && (
             <Alert severity="warning" sx={{ mb: 2 }} data-testid="manual-catalog-empty">
-              {locale === 'ar'
-                ? 'لا توجد منتجات مسعّرة متاحة. شغّل مزامنة WooCommerce ثم أعد فتح الطلب اليدوي.'
-                : 'No priced products are available. Run WooCommerce sync, then reopen the manual order.'}
+              {tr(
+                locale,
+                'inline.app.noPricedProductsAreAvailableRunWoocommerceSyncThenReopenTheManua',
+              )}
             </Alert>
           )}
           <Autocomplete
@@ -2757,7 +2219,7 @@ function ManualOrderForm({
             isOptionEqualToValue={(option, value) => option.id === value.id}
             getOptionDisabled={(item) => item.stockStatus === 'outofstock'}
             onChange={(_event, item) => selectCatalogProduct(item?.id ?? '')}
-            noOptionsText={locale === 'ar' ? 'لا توجد منتجات مطابقة' : 'No matching products'}
+            noOptionsText={tr(locale, 'inline.app.noMatchingProducts')}
             renderOption={(props, item) => (
               <Box component="li" {...props} key={item.id}>
                 <Stack width="100%" gap={0.25}>
@@ -2809,12 +2271,12 @@ function ManualOrderForm({
               disabled={!selectedCatalogId}
               onClick={addCurrentLine}
             >
-              {locale === 'ar' ? 'إضافة منتج آخر' : 'Add another product'}
+              {tr(locale, 'inline.app.addAnotherProduct')}
             </Button>
           </Stack>
           {manualLines.length > 0 && (
             <TableContainer component={Paper} variant="outlined" sx={{ mt: 2 }}>
-              <Table size="small" aria-label={locale === 'ar' ? 'منتجات الطلب' : 'Order products'}>
+              <Table size="small" aria-label={tr(locale, 'inline.app.orderProducts')}>
                 <TableHead>
                   <TableRow>
                     <TableCell>{t.productName}</TableCell>
@@ -2845,7 +2307,7 @@ function ManualOrderForm({
                             )
                           }
                         >
-                          {locale === 'ar' ? 'حذف' : 'Remove'}
+                          {tr(locale, 'inline.app.remove')}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -2910,11 +2372,7 @@ function ManualOrderForm({
             />
           </Paper>
           <Button component="label" variant="outlined" sx={{ mt: 2, minWidth: 220 }}>
-            {paymentProof
-              ? paymentProof.name
-              : locale === 'ar'
-                ? 'رفع إثبات التحويل'
-                : 'Upload transfer proof'}
+            {paymentProof ? paymentProof.name : tr(locale, 'inline.app.uploadTransferProof')}
             <input
               hidden
               type="file"
@@ -2924,16 +2382,14 @@ function ManualOrderForm({
           </Button>
           {paymentProof && (
             <Alert severity="success" sx={{ mt: 1 }} data-testid="payment-proof-selected">
-              {locale === 'ar' ? 'تم اختيار إثبات التحويل:' : 'Transfer proof selected:'}{' '}
+              {tr(locale, 'inline.app.transferProofSelected')}{' '}
               <Box component="span" dir="ltr" sx={{ unicodeBidi: 'isolate' }}>
                 {paymentProof.name}
               </Box>
             </Alert>
           )}
           <Typography display="block" variant="caption" color="text.secondary">
-            {locale === 'ar'
-              ? 'JPG أو PNG أو PDF بحد أقصى 5 ميجابايت'
-              : 'JPG, PNG or PDF, up to 5 MB'}
+            {tr(locale, 'inline.app.jpgPngOrPdfUpTo5Mb')}
           </Typography>
         </Section>
         <Section title={t.workflow}>
@@ -3404,43 +2860,45 @@ type ExportBatchSummary = {
 };
 
 const exportJobStatusLabel = (status: string, direction: Direction): string => {
-  const labels: Record<string, readonly [string, string]> = {
-    queued: ['قيد الانتظار', 'Queued'],
-    running: ['جاري التجهيز', 'Preparing'],
-    completed: ['جاهز للتنزيل', 'Ready'],
-    partial: ['اكتمل جزئيًا', 'Partially completed'],
-    failed: ['فشل', 'Failed'],
-    cancelled: ['ملغي', 'Cancelled'],
+  const labels: Record<string, TranslationKey> = {
+    queued: 'labels.exportStatus.queued',
+    running: 'labels.exportStatus.running',
+    completed: 'labels.exportStatus.completed',
+    partial: 'labels.exportStatus.partial',
+    failed: 'labels.exportStatus.failed',
+    cancelled: 'labels.exportStatus.cancelled',
   };
-  return labels[status]?.[direction === 'rtl' ? 0 : 1] ?? status;
+  const key = labels[status];
+  return key ? tr(direction === 'rtl' ? 'ar' : 'en', key) : status;
 };
 
 const documentFormatLabel = (format: DocumentTemplate['format'], direction: Direction): string => {
-  const labels: Record<DocumentTemplate['format'], readonly [string, string]> = {
-    a4: ['فاتورة A4', 'A4 invoice'],
-    a5: ['فاتورة A5', 'A5 invoice'],
-    'thermal-80mm': ['إيصال حراري 80mm', '80mm thermal receipt'],
-    'label-100x150mm': ['بوليصة شحن حرارية 80mm', '80mm thermal shipping label'],
+  const labels: Record<DocumentTemplate['format'], TranslationKey> = {
+    a4: 'labels.documentFormat.a4',
+    a5: 'labels.documentFormat.a5',
+    'thermal-80mm': 'labels.documentFormat.thermal80mm',
+    'label-100x150mm': 'labels.documentFormat.shippingLabel80mm',
   };
-  return labels[format][direction === 'rtl' ? 0 : 1];
+  return tr(direction === 'rtl' ? 'ar' : 'en', labels[format]);
 };
 
 const documentArtifactLabel = (artifact: DocumentArtifactSummary, direction: Direction): string => {
-  const labels: Record<DocumentArtifactSummary['kind'], readonly [string, string]> = {
-    'merged-pdf': ['تنزيل PDF للطباعة', 'Download printable PDF'],
-    zip: ['تنزيل الملفات منفصلة ZIP', 'Download individual files ZIP'],
-    'order-pdf': ['تنزيل ملف الطلب', 'Download order PDF'],
-    manifest: ['تنزيل بيان تقني', 'Download technical manifest'],
+  const labels: Record<DocumentArtifactSummary['kind'], TranslationKey> = {
+    'merged-pdf': 'labels.documentArtifact.mergedPdf',
+    zip: 'labels.documentArtifact.zip',
+    'order-pdf': 'labels.documentArtifact.orderPdf',
+    manifest: 'labels.documentArtifact.manifest',
   };
-  return labels[artifact.kind][direction === 'rtl' ? 0 : 1];
+  return tr(direction === 'rtl' ? 'ar' : 'en', labels[artifact.kind]);
 };
 
 const exportRowModeLabel = (rowMode: string, direction: Direction): string => {
-  const labels: Record<string, readonly [string, string]> = {
-    order: ['طلب واحد في كل صف', 'One row per order'],
-    line: ['منتج واحد في كل صف', 'One row per product'],
+  const labels: Record<string, TranslationKey> = {
+    order: 'labels.exportRowMode.order',
+    line: 'labels.exportRowMode.line',
   };
-  return labels[rowMode]?.[direction === 'rtl' ? 0 : 1] ?? rowMode;
+  const key = labels[rowMode];
+  return key ? tr(direction === 'rtl' ? 'ar' : 'en', key) : rowMode;
 };
 
 function ExportsWorkspace({
@@ -3544,7 +3002,7 @@ function ExportsWorkspace({
               { key: 'remoteStatus', label: t.remoteStatus, type: 'text' },
               {
                 key: 'remoteExportStatus',
-                label: direction === 'rtl' ? 'حالة تصدير Woo' : 'Woo export status',
+                label: tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.wooExportStatus'),
                 type: 'text',
               },
               { key: 'exportState', label: t.exportState, type: 'text' },
@@ -3662,9 +3120,7 @@ function ExportsWorkspace({
       );
       if (!response.ok) throw new Error('DOCUMENT_RETRY_FAILED');
       await loadDocumentBatches(true);
-      setMessage(
-        direction === 'rtl' ? 'تمت إعادة محاولة الملفات الفاشلة' : 'Failed files queued again',
-      );
+      setMessage(tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.failedFilesQueuedAgain'));
     } catch {
       setMessage('DOCUMENT_RETRY_FAILED');
     } finally {
@@ -3684,16 +3140,15 @@ function ExportsWorkspace({
           fontWeight={800}
         >
           {historyOnly
-            ? direction === 'rtl'
-              ? 'أوامر التصدير والطباعة'
-              : 'Export and print commands'
+            ? tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.exportAndPrintCommands')
             : t.exportsTitle}
         </Typography>
         <Typography color="text.secondary">
           {historyOnly
-            ? direction === 'rtl'
-              ? 'تابع حالة الملفات ونزّل Excel أو فاتورة PDF أو الإيصال الحراري أو بوليصة الشحن.'
-              : 'Track jobs and download Excel, PDF invoices, thermal receipts, or shipping labels.'
+            ? tr(
+                direction === 'rtl' ? 'ar' : 'en',
+                'inline.app.trackJobsAndDownloadExcelPdfInvoicesThermalReceiptsOrShippingLab',
+              )
             : t.exportsSubtitle}
         </Typography>
       </Box>
@@ -3704,12 +3159,12 @@ function ExportsWorkspace({
           onChange={(_event, value: 'spreadsheets' | 'documents') => setHistoryTab(value)}
           variant="scrollable"
           scrollButtons="auto"
-          aria-label={direction === 'rtl' ? 'أنواع أوامر التصدير' : 'Export command types'}
+          aria-label={tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.exportCommandTypes')}
         >
           <Tab value="spreadsheets" label="Excel" />
           <Tab
             value="documents"
-            label={direction === 'rtl' ? 'الفواتير والطباعة' : 'Invoices & print'}
+            label={tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.invoicesPrint')}
           />
         </Tabs>
       </Paper>
@@ -3722,23 +3177,23 @@ function ExportsWorkspace({
             <Stack direction={{ xs: 'column', md: 'row' }} gap={2} flexWrap="wrap">
               <FormControl size="small" sx={{ minWidth: 260 }}>
                 <InputLabel id="export-source-label">
-                  {direction === 'rtl' ? 'الطلبات المطلوب تصديرها' : 'Orders to export'}
+                  {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.ordersToExport')}
                 </InputLabel>
                 <Select
                   labelId="export-source-label"
-                  label={direction === 'rtl' ? 'الطلبات المطلوب تصديرها' : 'Orders to export'}
+                  label={tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.ordersToExport')}
                   value={selectionSource}
                   onChange={(event) => setSelectionSource(event.target.value)}
                 >
                   <MenuItem value="current">
-                    {direction === 'rtl' ? 'الفلتر الحالي في الطلبات' : 'Current orders filter'}
+                    {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.currentOrdersFilter')}
                   </MenuItem>
                   <MenuItem value="all">
-                    {direction === 'rtl' ? 'كل الطلبات' : 'All orders'}
+                    {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.allOrders')}
                   </MenuItem>
                   {savedViews.map((saved) => (
                     <MenuItem key={saved.id} value={`saved:${saved.id}`}>
-                      {direction === 'rtl' ? 'فلتر محفوظ: ' : 'Saved filter: '}
+                      {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.savedFilter')}
                       {saved.name}
                     </MenuItem>
                   ))}
@@ -3751,10 +3206,8 @@ function ExportsWorkspace({
               >
                 {loading ? (
                   <CircularProgress size={18} aria-label={t.loading} />
-                ) : direction === 'rtl' ? (
-                  'تصدير Excel'
                 ) : (
-                  'Export Excel'
+                  tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.exportExcel')
                 )}
               </Button>
             </Stack>
@@ -3851,12 +3304,13 @@ function ExportsWorkspace({
         <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
           <Box>
             <Typography variant="h6" component="h2" fontWeight={800}>
-              {direction === 'rtl' ? 'أوامر الفواتير والطباعة' : 'Invoice and print commands'}
+              {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.invoiceAndPrintCommands')}
             </Typography>
             <Typography color="text.secondary" variant="body2">
-              {direction === 'rtl'
-                ? 'الفواتير الحرارية وبوليصات الشحن وملفات PDF المنشأة من الطلبات.'
-                : 'Thermal receipts, shipping labels and PDF jobs created from orders.'}
+              {tr(
+                direction === 'rtl' ? 'ar' : 'en',
+                'inline.app.thermalReceiptsShippingLabelsAndPdfJobsCreatedFromOrders',
+              )}
             </Typography>
           </Box>
           <Button size="small" onClick={() => void loadDocumentBatches(true)} disabled={loading}>
@@ -3866,7 +3320,7 @@ function ExportsWorkspace({
         <TableContainer>
           <Table
             size="small"
-            aria-label={direction === 'rtl' ? 'أوامر المستندات' : 'Document jobs'}
+            aria-label={tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.documentJobs')}
           >
             <TableHead>
               <TableRow>
@@ -3917,7 +3371,7 @@ function ExportsWorkspace({
                             .catch(() => setMessage('DOCUMENT_JOB_LOAD_FAILED'))
                         }
                       >
-                        {direction === 'rtl' ? 'عرض الملفات' : 'Show files'}
+                        {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.showFiles')}
                       </Button>
                       {(batch.status === 'partial' || batch.status === 'failed') && (
                         <Button
@@ -4278,7 +3732,7 @@ export function App({
       setSavedViews((current) => current.filter((item) => item.id !== selectedSavedViewId));
       setSelectedSavedViewId('');
       setActiveSavedQuery(null);
-      setSelectionMessage(locale === 'ar' ? 'تم حذف الفلتر المحفوظ' : 'Saved filter deleted');
+      setSelectionMessage(tr(locale, 'inline.app.savedFilterDeleted'));
     } catch {
       setSelectionMessage('SAVED_VIEW_DELETE_FAILED');
     }
@@ -4359,7 +3813,9 @@ export function App({
     const profiles =
       ((await profilesResponse.json()) as { items?: ExportProfileSummary[] }).items ?? [];
     const profileName =
-      preset === 'shipping' ? 'طلبات الشحن XLSX v2' : `طلبات Woo ${format.toUpperCase()} v4`;
+      preset === 'shipping'
+        ? tr(locale, 'labels.exportProfile.shippingOrders')
+        : tr(locale, 'labels.exportProfile.wooOrders', { format: format.toUpperCase() });
     const exportColumns = preset === 'shipping' ? wooShippingExportColumns : wooOrderExportColumns;
     let profile = profiles.find((item) => item.name === profileName);
     if (!profile) {
@@ -4471,9 +3927,7 @@ export function App({
       const created = (await response.json()) as { batch: ExportBatchSummary };
       setSelectionError(false);
       setSelectionMessage(
-        locale === 'ar'
-          ? 'تمت إضافة أمر التصدير وسيبدأ التحميل تلقائيًا. ستجده أيضًا في قسم التصديرات.'
-          : 'Export command added and will download automatically. It also remains in Exports.',
+        tr(locale, 'inline.app.exportCommandAddedAndWillDownloadAutomaticallyItAlsoRemainsInExp'),
       );
       setExportHistoryRevision((value) => value + 1);
       await downloadCompletedExport(created.batch.id);
@@ -4486,9 +3940,7 @@ export function App({
   const unexportSelectedOrder = async () => {
     const orderId = [...selectedIds][0];
     if (!orderId || selectedIds.size !== 1 || selectAllMatching) return;
-    const reason = window.prompt(
-      locale === 'ar' ? 'اكتب سبب التراجع عن حالة التصدير' : 'Reason for reversing export state',
-    );
+    const reason = window.prompt(tr(locale, 'inline.app.reasonForReversingExportState'));
     if (!reason?.trim()) return;
     try {
       const response = await fetch(
@@ -4503,9 +3955,7 @@ export function App({
       if (!response.ok) throw new Error('EXPORT_UNEXPORT_FAILED');
       clearOrderSelection();
       await loadOrders();
-      setSelectionMessage(
-        locale === 'ar' ? 'تم التراجع عن حالة التصدير المحلية' : 'Local export state reversed',
-      );
+      setSelectionMessage(tr(locale, 'inline.app.localExportStateReversed'));
     } catch {
       setSelectionMessage('EXPORT_UNEXPORT_FAILED');
     }
@@ -4518,23 +3968,13 @@ export function App({
     const printWindow = printAfterGeneration ? window.open('', '_blank') : null;
     if (printAfterGeneration && !printWindow) {
       setSelectionError(true);
-      setSelectionMessage(
-        locale === 'ar'
-          ? 'اسمح بفتح نافذة الطباعة في المتصفح ثم حاول مرة أخرى.'
-          : 'Allow the print popup in your browser, then try again.',
-      );
+      setSelectionMessage(tr(locale, 'inline.app.allowThePrintPopupInYourBrowserThenTryAgain'));
       return;
     }
     if (printWindow) {
       printWindow.opener = null;
-      printWindow.document.title =
-        locale === 'ar'
-          ? '\u062c\u0627\u0631\u064a \u062a\u062c\u0647\u064a\u0632 \u0627\u0644\u0637\u0628\u0627\u0639\u0629'
-          : 'Preparing print';
-      printWindow.document.body.textContent =
-        locale === 'ar'
-          ? '\u062c\u0627\u0631\u064a \u062a\u062c\u0647\u064a\u0632 \u0627\u0644\u0645\u0644\u0641\u2026'
-          : 'Preparing document\u2026';
+      printWindow.document.title = tr(locale, 'inline.app.preparingPrint');
+      printWindow.document.body.textContent = tr(locale, 'inline.app.preparingDocument');
     }
     const selectionId = await createSelectionSnapshot();
     if (!selectionId) {
@@ -4563,16 +4003,16 @@ export function App({
           body: JSON.stringify({
             name:
               format === 'thermal-80mm'
-                ? 'فاتورة حرارية 80mm'
+                ? tr(locale, 'labels.documentFormat.thermal80mm')
                 : format === 'label-100x150mm'
-                  ? 'بوليصة شحن حرارية 80mm'
-                  : 'فاتورة A4',
+                  ? tr(locale, 'labels.documentFormat.shippingLabel80mm')
+                  : tr(locale, 'labels.documentFormat.a4'),
             format,
             locale: locale === 'ar' ? 'ar-EG' : 'en-US',
             direction: locale === 'ar' ? 'rtl' : 'ltr',
             companyName: 'Wasat Al Balad',
             body: '{{order.number}}\n{{customer.name}}\n{{customer.phone}}\n{{shipping.address}}\n{{order.totalMinor}}',
-            footerText: locale === 'ar' ? 'شكراً لتعاملكم معنا' : 'Thank you for your order',
+            footerText: tr(locale, 'inline.app.thankYouForYourOrder'),
           }),
         });
         if (!templateResponse.ok) throw new Error('DOCUMENT_TEMPLATE_CREATE_FAILED');
@@ -4689,10 +4129,7 @@ export function App({
       remoteStatus: t.remoteStatus,
       total: t.total,
       exportState: t.exportState,
-      remoteExportStatus:
-        locale === 'ar'
-          ? '\u062d\u0627\u0644\u0629 \u062a\u0635\u062f\u064a\u0631 Woo'
-          : 'Woo export status',
+      remoteExportStatus: tr(locale, 'inline.app.wooExportStatus'),
       customerName: t.customerName,
       customerEmail: t.email,
       customerPhone: t.phone,
@@ -4712,20 +4149,12 @@ export function App({
         ? formatMinor(order.grandTotalMinor, valueText(order.currency, ''), locale)
         : column === 'remoteExportStatus'
           ? order.remoteExportStatus == null
-            ? locale === 'ar'
-              ? 'حالة Woo غير متاحة'
-              : 'Woo status unavailable'
+            ? tr(locale, 'inline.app.wooStatusUnavailable')
             : order.remoteExportStatus === 'exported'
-              ? locale === 'ar'
-                ? 'تم التصدير في WooCommerce'
-                : 'Exported in WooCommerce'
+              ? tr(locale, 'inline.app.exportedInWoocommerce')
               : order.remoteExportStatus === 'not_exported'
-                ? locale === 'ar'
-                  ? 'لم يُصدّر في WooCommerce'
-                  : 'Not exported in WooCommerce'
-                : locale === 'ar'
-                  ? 'حالة Woo غير متاحة'
-                  : 'Woo status unavailable'
+                ? tr(locale, 'inline.app.notExportedInWoocommerce')
+                : tr(locale, 'inline.app.wooStatusUnavailable')
           : column === 'customerName'
             ? valueText(order.customerName ?? orderCustomerName(order))
             : column === 'customerEmail'
@@ -4785,12 +4214,12 @@ export function App({
     { view: 'orders', label: t.orders },
     {
       view: 'catalog',
-      label: locale === 'ar' ? 'المنتجات والمخزون' : 'Products & stock',
+      label: tr(locale, 'inline.app.productsStock'),
     },
-    { view: 'manual', label: locale === 'ar' ? 'الطلبات اليدوية' : 'Manual orders' },
+    { view: 'manual', label: tr(locale, 'inline.app.manualOrders') },
     {
       view: 'exports',
-      label: locale === 'ar' ? '\u0627\u0644\u062a\u0635\u062f\u064a\u0631\u0627\u062a' : 'Exports',
+      label: tr(locale, 'inline.app.exports'),
     },
     { view: 'analytics', label: t.analyticsNav },
     { view: 'connections', label: adminLabel('connections', locale) },
@@ -4835,12 +4264,11 @@ export function App({
             sx={{ mb: 2 }}
           >
             {connectionNotice === 'success'
-              ? locale === 'ar'
-                ? 'تمت الموافقة في WooCommerce. انتظر ظهور المتجر ثم ابدأ المزامنة الأولية.'
-                : 'WooCommerce approved access. Wait for the store to appear, then start the initial sync.'
-              : locale === 'ar'
-                ? 'لم تتم الموافقة على الربط في WooCommerce.'
-                : 'WooCommerce authorization was not approved.'}
+              ? tr(
+                  locale,
+                  'inline.app.woocommerceApprovedAccessWaitForTheStoreToAppearThenStartTheInit',
+                )
+              : tr(locale, 'inline.app.woocommerceAuthorizationWasNotApproved')}
           </Alert>
         )}
         {isAdminView ? (
@@ -5075,7 +4503,7 @@ export function App({
                       onClick={() => void deleteSavedView()}
                       disabled={!selectedSavedViewId}
                     >
-                      {locale === 'ar' ? 'حذف الفلتر' : 'Delete filter'}
+                      {tr(locale, 'inline.app.deleteFilter')}
                     </Button>
                     <TextField
                       size="small"
@@ -5176,7 +4604,7 @@ export function App({
                     variant="contained"
                     onClick={() => setOutputDialogOpen(true)}
                   >
-                    {locale === 'ar' ? 'تصدير وطباعة' : 'Export & print'}
+                    {tr(locale, 'inline.app.exportPrint')}
                   </Button>
                   {!selectAllMatching && selectedIds.size === 1 && (
                     <Button
@@ -5184,7 +4612,7 @@ export function App({
                       color="warning"
                       onClick={() => void unexportSelectedOrder()}
                     >
-                      {locale === 'ar' ? 'تراجع عن التصدير' : 'Reverse export state'}
+                      {tr(locale, 'inline.app.reverseExportState')}
                     </Button>
                   )}
                   <Button size="small" onClick={clearOrderSelection}>
@@ -5230,7 +4658,7 @@ export function App({
               <TableContainer
                 data-testid="orders-table-scroll"
                 tabIndex={0}
-                aria-label={`${t.orders} — ${locale === 'ar' ? 'مرر أفقيا لعرض كل الأعمدة' : 'scroll horizontally to view all columns'}`}
+                aria-label={`${t.orders} — ${tr(locale, 'inline.app.scrollHorizontallyToViewAllColumns')}`}
                 sx={{
                   maxWidth: '100%',
                   overflowX: 'auto',

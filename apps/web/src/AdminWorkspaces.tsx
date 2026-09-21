@@ -1,3 +1,4 @@
+import { getAdminCopy, translate as tr } from './i18n';
 import { type FormEvent, useEffect, useState } from 'react';
 import {
   Alert,
@@ -154,204 +155,7 @@ type CustomerAnalyticsItem = {
   totals: { collectedRevenueMinor: string };
 };
 
-const translations = {
-  ar: {
-    overview: 'نظرة عامة',
-    connections: 'ربط WooCommerce',
-    mappings: 'تخصيص بيانات المتجر',
-    settings: 'الإعدادات',
-    members: 'الأعضاء',
-    operations: 'العمليات',
-    loading: 'جارٍ التحميل',
-    retry: 'إعادة المحاولة',
-    forbidden: 'ليس لديك صلاحية لعرض هذا القسم.',
-    partial: 'تم تحميل جزء من البيانات فقط. راجع العناصر الفاشلة وحاول مرة أخرى.',
-    empty: 'لا توجد بيانات بعد.',
-    account: 'الحساب',
-    queue: 'قائمة المهام',
-    database: 'قاعدة البيانات',
-    runner: 'المعالج',
-    connected: 'متصل',
-    noConnections: 'لا توجد متاجر مربوطة بعد. ابدأ بربط WooCommerce.',
-    readOnly: 'الربط للقراءة فقط؛ لا يتم تعديل الطلبات أو المخزون على WooCommerce.',
-    storeUrl: 'رابط المتجر',
-    connect: 'بدء ربط WooCommerce',
-    authorizationReady: 'تم تجهيز رابط التفويض الخارجي. أكمل الربط في WooCommerce.',
-    healthCheck: 'فحص الصحة',
-    sync: 'مزامنة أولية',
-    incremental: 'مزامنة جديدة',
-    webhookSetup: 'إعداد Webhook',
-    webhookInstructions:
-      'انسخ الرابط والسر الآن إلى WooCommerce ← الإعدادات ← متقدم ← Webhooks. أنشئ Webhook مفعّلًا لكل حدث: Order created وOrder updated وOrder deleted. لن يظهر السر مرة أخرى؛ إنشاء سر جديد يلغي القديم.',
-    reconcile: 'مطابقة وحذف محلي',
-    syncQueued: 'تم وضع المهمة في القائمة',
-    selectConnection: 'اختر المتجر',
-    fieldCatalog: 'كتالوج الحقول الآمنة',
-    fieldMappings: 'الخرائط النشطة',
-    noCatalog: 'لم يتم اكتشاف حقول آمنة بعد. شغّل مزامنة للطلبة أولاً.',
-    sourceKey: 'مفتاح الحقل',
-    label: 'الاسم الظاهر',
-    type: 'النوع',
-    targetFacet: 'التصنيف المستهدف',
-    saveMapping: 'حفظ الخريطة',
-    backfill: 'تعبئة الطلبات الحالية',
-    mappingSaved: 'تم حفظ الخريطة ووضع التعبئة في قائمة المهام.',
-    profile: 'بيانات الحساب',
-    accountName: 'اسم الحساب',
-    locale: 'اللغة',
-    direction: 'الاتجاه',
-    timezone: 'المنطقة الزمنية',
-    baseCurrency: 'العملة الأساسية',
-    save: 'حفظ',
-    password: 'تغيير كلمة المرور',
-    currentPassword: 'كلمة المرور الحالية',
-    newPassword: 'كلمة المرور الجديدة',
-    saved: 'تم الحفظ',
-    dangerZone: 'منطقة إعادة التهيئة',
-    resetAccountData: 'مسح بيانات التجربة',
-    resetAccountHelp:
-      'يمسح الطلبات المتزامنة واليدوية والمنتجات والعملاء والتحليلات والفلاتر والتصديرات والمستندات والمهام المحلية. سيبقى الحساب وربط WooCommerce، ولن يتم تعديل أي شيء داخل المتجر.',
-    resetConfirmation: 'اكتب RESET للتأكيد',
-    resetAction: 'إعادة تهيئة الحساب',
-    resetDialogTitle: 'تأكيد مسح بيانات الحساب المحلية',
-    resetDialogBody:
-      'هذا الإجراء نهائي لبيانات Woo Ops المحلية. سيظل تسجيل الدخول وربط WooCommerce متاحين لبدء مزامنة نظيفة.',
-    resetComplete: 'تم تنظيف الحساب. يمكنك الآن بدء مزامنة جديدة من صفحة ربط WooCommerce.',
-    membersTitle: 'أعضاء الحساب',
-    membersHelper:
-      'هذه الصفحة لفريق تشغيل النظام وصلاحياته. إنفاق عملاء المتجر وعدد طلباتهم يظهر في التحليلات ضمن التوزيع حسب العميل.',
-    email: 'البريد الإلكتروني',
-    role: 'الدور',
-    invite: 'دعوة عضو',
-    inviteSent: 'تم إنشاء الدعوة. انسخ رمز الدعوة من نتيجة العملية عند الحاجة.',
-    revoke: 'إلغاء الوصول',
-    pendingInvitations: 'الدعوات المعلقة',
-    jobs: 'المهام الدائمة',
-    usage: 'الاستخدام',
-    status: 'الحالة',
-    progress: 'التقدم',
-    actions: 'الإجراءات',
-    cancel: 'إلغاء',
-    replay: 'إعادة تشغيل',
-    deadLetters: 'المهام الفاشلة نهائياً',
-    noJobs: 'لا توجد مهام في القائمة.',
-    noDeadLetters: 'لا توجد مهام فاشلة نهائياً.',
-    runMaintenance: 'تشغيل صيانة النظام',
-    maintenanceQueued: 'تم وضع صيانة النظام في قائمة المهام.',
-    signIn: 'تسجيل الدخول',
-    register: 'إنشاء حساب مدير',
-    emailInput: 'البريد الإلكتروني',
-    passwordInput: 'كلمة المرور',
-    accountNameInput: 'اسم الحساب',
-    submit: 'متابعة',
-    switchToRegister: 'إنشاء حساب جديد',
-    switchToLogin: 'لديك حساب؟ تسجيل الدخول',
-    sessionExpired: 'انتهت الجلسة. سجل الدخول مرة أخرى للمتابعة.',
-    signOut: 'تسجيل الخروج',
-    externalOnly: 'إجراء خارجي',
-    permalinksBroken:
-      'WooCommerce يعمل، لكن روابط WordPress الدائمة لا تمرر مسارات API والتفويض. من لوحة WordPress افتح الإعدادات ← روابط دائمة، اختر «اسم المقالة» ثم اضغط حفظ التغييرات مرتين، وبعدها جرّب الربط مجددًا.',
-  },
-  en: {
-    overview: 'Overview',
-    connections: 'WooCommerce connection',
-    mappings: 'Store data setup',
-    settings: 'Settings',
-    members: 'Members',
-    operations: 'System health',
-    loading: 'Loading',
-    retry: 'Retry',
-    forbidden: 'You do not have permission to view this section.',
-    partial: 'Only part of the data loaded. Review failed items and retry.',
-    empty: 'No data yet.',
-    account: 'Account',
-    queue: 'Job queue',
-    database: 'Database',
-    runner: 'Runner',
-    connected: 'Connected',
-    noConnections: 'No stores are connected yet. Start a WooCommerce connection.',
-    readOnly: 'Connections are read-only; WooCommerce orders and inventory are never changed.',
-    storeUrl: 'Store URL',
-    connect: 'Start WooCommerce connection',
-    authorizationReady:
-      'An external authorization URL is ready. Finish the connection in WooCommerce.',
-    healthCheck: 'Health check',
-    sync: 'Initial sync',
-    incremental: 'Incremental sync',
-    webhookSetup: 'Set up webhook',
-    webhookInstructions:
-      'Copy this URL and secret now into WooCommerce → Settings → Advanced → Webhooks. Create an active webhook for each of Order created, Order updated and Order deleted. The secret is shown only now; generating another replaces it.',
-    reconcile: 'Reconcile locally',
-    syncQueued: 'Job queued',
-    selectConnection: 'Select a store',
-    fieldCatalog: 'Safe field catalog',
-    fieldMappings: 'Active mappings',
-    noCatalog: 'No safe fields have been discovered yet. Run an order sync first.',
-    sourceKey: 'Source key',
-    label: 'Display label',
-    type: 'Type',
-    targetFacet: 'Target facet',
-    saveMapping: 'Save mapping',
-    backfill: 'Backfill existing orders',
-    mappingSaved: 'Mapping saved and backfill queued.',
-    profile: 'Account profile',
-    accountName: 'Account name',
-    locale: 'Locale',
-    direction: 'Direction',
-    timezone: 'Timezone',
-    baseCurrency: 'Base currency',
-    save: 'Save',
-    password: 'Change password',
-    currentPassword: 'Current password',
-    newPassword: 'New password',
-    saved: 'Saved',
-    dangerZone: 'Reset and cleanup',
-    resetAccountData: 'Clear test data',
-    resetAccountHelp:
-      'Deletes synchronized and manual orders, catalog, customers, analytics, saved filters, exports, documents and local jobs. The account and WooCommerce connection remain, and nothing in the store is modified.',
-    resetConfirmation: 'Type RESET to confirm',
-    resetAction: 'Reset account data',
-    resetDialogTitle: 'Confirm local account-data reset',
-    resetDialogBody:
-      'This permanently removes local Woo Ops operational data. Your login and WooCommerce connection remain ready for a clean synchronization.',
-    resetComplete: 'Account data was cleared. You can now start a fresh WooCommerce sync.',
-    membersTitle: 'Account members',
-    membersHelper:
-      'This page manages operator access. Store customer spend and order counts are available in Analytics under Customer breakdown.',
-    email: 'Email',
-    role: 'Role',
-    invite: 'Invite member',
-    inviteSent:
-      'Invitation created. Copy the invitation token from the operation result if needed.',
-    revoke: 'Revoke access',
-    pendingInvitations: 'Pending invitations',
-    jobs: 'Durable jobs',
-    usage: 'Usage',
-    status: 'Status',
-    progress: 'Progress',
-    actions: 'Actions',
-    cancel: 'Cancel',
-    replay: 'Replay',
-    deadLetters: 'Dead letters',
-    noJobs: 'No jobs in the queue.',
-    noDeadLetters: 'No dead-letter jobs.',
-    runMaintenance: 'Run system maintenance',
-    maintenanceQueued: 'System maintenance was queued.',
-    signIn: 'Sign in',
-    register: 'Create admin account',
-    emailInput: 'Email',
-    passwordInput: 'Password',
-    accountNameInput: 'Account name',
-    submit: 'Continue',
-    switchToRegister: 'Create a new account',
-    switchToLogin: 'Already have an account? Sign in',
-    sessionExpired: 'Your session expired. Sign in again to continue.',
-    signOut: 'Sign out',
-    externalOnly: 'External action',
-    permalinksBroken:
-      'WooCommerce is active, but WordPress permalinks are not routing API and authorization paths. In WordPress open Settings → Permalinks, select Post name, save twice, then retry.',
-  },
-} as const;
+const translations = { ar: getAdminCopy('ar'), en: getAdminCopy('en') } as const;
 
 type Copy = (typeof translations)[AdminLocale];
 
@@ -558,22 +362,16 @@ export function LoginScreen({
               {register ? copy.register : copy.signIn}
             </Typography>
             <Typography variant="body2" color="text.secondary" mt={0.5}>
-              {locale === 'ar'
-                ? 'مساحة عمل موحدة لإدارة الطلبات والتحليلات'
-                : 'Your unified order operations workspace'}
+              {tr(locale, 'inline.admin.yourUnifiedOrderOperationsWorkspace')}
             </Typography>
           </Box>
           {message && <Alert severity="warning">{message}</Alert>}
           {error && (
             <Alert severity="error">
               {error === 'AUTH_REGISTRATION_CLOSED'
-                ? locale === 'ar'
-                  ? 'تم إنشاء حساب المدير بالفعل. سجّل الدخول أو اطلب دعوة.'
-                  : 'Owner account already exists. Sign in or request an invitation.'
+                ? tr(locale, 'inline.admin.ownerAccountAlreadyExistsSignInOrRequestAnInvitation')
                 : error === 'AUTH_INVALID_INPUT' && register
-                  ? locale === 'ar'
-                    ? 'تأكد من البريد وكلمة مرور لا تقل عن 12 حرفًا.'
-                    : 'Check the email and use a password of at least 12 characters.'
+                  ? tr(locale, 'inline.admin.checkTheEmailAndUseAPasswordOfAtLeast12Characters')
                   : `${copy.signIn}: ${copy.retry}`}
             </Alert>
           )}
@@ -1345,7 +1143,7 @@ function SettingsWorkspace({
                 value={locale}
                 onChange={(event) => setLocale(event.target.value as 'ar-EG' | 'en-US')}
               >
-                <MenuItem value="ar-EG">العربية</MenuItem>
+                <MenuItem value="ar-EG">{tr('ar', 'labels.languageArabic')}</MenuItem>
                 <MenuItem value="en-US">English</MenuItem>
               </Select>
             </FormControl>
@@ -1495,33 +1293,31 @@ function CustomersWorkspace({
     <Stack gap={3} data-testid="customers-workspace">
       <Box>
         <Typography variant="h4" component="h1" fontWeight={800}>
-          {locale === 'ar' ? 'عملاء WooCommerce' : 'WooCommerce customers'}
+          {tr(locale, 'inline.admin.woocommerceCustomers')}
         </Typography>
         <Typography color="text.secondary">
-          {locale === 'ar'
-            ? 'العملاء الفعليون من الطلبات المتزامنة، مع عدد الطلبات وإجمالي الإنفاق.'
-            : 'Customers derived from synchronized WooCommerce orders, with order count and total spend.'}
+          {tr(
+            locale,
+            'inline.admin.customersDerivedFromSynchronizedWoocommerceOrdersWithOrderCountA',
+          )}
         </Typography>
       </Box>
       {failed && <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />}
       <TextField
         value={search}
         onChange={(event) => setSearch(event.target.value)}
-        label={locale === 'ar' ? 'بحث عن عميل' : 'Search customers'}
+        label={tr(locale, 'inline.admin.searchCustomers')}
         sx={{ maxWidth: 520 }}
       />
       <Paper variant="outlined">
         <TableContainer>
-          <Table
-            size="small"
-            aria-label={locale === 'ar' ? 'عملاء WooCommerce' : 'WooCommerce customers'}
-          >
+          <Table size="small" aria-label={tr(locale, 'inline.admin.woocommerceCustomers')}>
             <TableHead>
               <TableRow>
-                <TableCell>{locale === 'ar' ? 'العميل' : 'Customer'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'الطلبات' : 'Orders'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'إجمالي الإنفاق' : 'Total spend'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'متوسط الطلب' : 'Average order'}</TableCell>
+                <TableCell>{tr(locale, 'inline.admin.customer')}</TableCell>
+                <TableCell>{tr(locale, 'inline.admin.orders')}</TableCell>
+                <TableCell>{tr(locale, 'inline.admin.totalSpend')}</TableCell>
+                <TableCell>{tr(locale, 'inline.admin.averageOrder')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -1641,35 +1437,33 @@ function CompleteCustomersWorkspace({
     <Stack gap={3} data-testid="customers-workspace">
       <Box>
         <Typography variant="h4" component="h1" fontWeight={800}>
-          {locale === 'ar' ? 'عملاء WooCommerce' : 'WooCommerce customers'}
+          {tr(locale, 'inline.admin.woocommerceCustomers')}
         </Typography>
         <Typography color="text.secondary">
-          {locale === 'ar'
-            ? 'دليل العملاء من الطلبات المتزامنة، ويشمل الاتصال والعناوين والإنفاق وسجل الطلبات.'
-            : 'Customer directory from synchronized orders, including contact, addresses, spend and order history.'}
+          {tr(
+            locale,
+            'inline.admin.customerDirectoryFromSynchronizedOrdersIncludingContactAddresses',
+          )}
         </Typography>
       </Box>
       {failed && <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />}
       <TextField
         value={search}
         onChange={(event) => setSearch(event.target.value)}
-        label={locale === 'ar' ? 'بحث بالاسم أو البريد أو الهاتف' : 'Search name, email or phone'}
+        label={tr(locale, 'inline.admin.searchNameEmailOrPhone')}
         sx={{ maxWidth: 520 }}
       />
       {detailsLoading && <LinearProgress aria-label={copy.loading} />}
       <Paper variant="outlined">
         <TableContainer>
-          <Table
-            size="small"
-            aria-label={locale === 'ar' ? 'عملاء WooCommerce' : 'WooCommerce customers'}
-          >
+          <Table size="small" aria-label={tr(locale, 'inline.admin.woocommerceCustomers')}>
             <TableHead>
               <TableRow>
-                <TableCell>{locale === 'ar' ? 'العميل' : 'Customer'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'بيانات الاتصال' : 'Contact'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'الطلبات' : 'Orders'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'إجمالي الإنفاق' : 'Total spend'}</TableCell>
-                <TableCell>{locale === 'ar' ? 'آخر طلب' : 'Last order'}</TableCell>
+                <TableCell>{tr(locale, 'inline.admin.customer')}</TableCell>
+                <TableCell>{tr(locale, 'inline.admin.contact')}</TableCell>
+                <TableCell>{tr(locale, 'inline.admin.orders')}</TableCell>
+                <TableCell>{tr(locale, 'inline.admin.totalSpend')}</TableCell>
+                <TableCell>{tr(locale, 'inline.admin.lastOrder')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -1685,9 +1479,7 @@ function CompleteCustomersWorkspace({
                     if (event.key === 'Enter' || event.key === ' ') void openCustomer(item);
                   }}
                 >
-                  <TableCell>
-                    {item.name ?? (locale === 'ar' ? 'عميل بدون اسم' : 'Unnamed customer')}
-                  </TableCell>
+                  <TableCell>{item.name ?? tr(locale, 'inline.admin.unnamedCustomer')}</TableCell>
                   <TableCell>
                     <Stack gap={0.25}>
                       <span dir="ltr">{item.email ?? '—'}</span>
@@ -1726,18 +1518,16 @@ function CompleteCustomersWorkspace({
       </Paper>
       {nextCursor && (
         <Button variant="outlined" onClick={() => void load(nextCursor)} disabled={loading}>
-          {locale === 'ar' ? 'تحميل المزيد' : 'Load more'}
+          {tr(locale, 'inline.admin.loadMore')}
         </Button>
       )}
       <Dialog open={selected !== null} onClose={() => setSelected(null)} fullWidth maxWidth="md">
-        <DialogTitle>
-          {selected?.name ?? (locale === 'ar' ? 'بيانات العميل' : 'Customer details')}
-        </DialogTitle>
+        <DialogTitle>{selected?.name ?? tr(locale, 'inline.admin.customerDetails')}</DialogTitle>
         {selected && (
           <DialogContent dividers>
             <Stack gap={3}>
               <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} flexWrap="wrap">
-                <Chip label={`${locale === 'ar' ? 'الطلبات' : 'Orders'}: ${selected.orderCount}`} />
+                <Chip label={`${tr(locale, 'inline.admin.orders')}: ${selected.orderCount}`} />
                 {selected.externalCustomerId && (
                   <Chip label={`Woo ID: ${selected.externalCustomerId}`} />
                 )}
@@ -1745,38 +1535,38 @@ function CompleteCustomersWorkspace({
                 <Typography dir="ltr">{selected.phone ?? '—'}</Typography>
               </Stack>
               <Box>
-                <Typography fontWeight={800}>{locale === 'ar' ? 'الإنفاق' : 'Spend'}</Typography>
+                <Typography fontWeight={800}>{tr(locale, 'inline.admin.spend')}</Typography>
                 {selected.currencies.map((entry) => (
                   <Typography dir="ltr" key={entry.currency}>
                     {money(entry.totalSpendMinor, entry.currency)} · {entry.orderCount}{' '}
-                    {locale === 'ar' ? 'طلب' : 'orders'}
+                    {tr(locale, 'inline.admin.orders2')}
                   </Typography>
                 ))}
               </Box>
               <Box>
                 <Typography fontWeight={800}>
-                  {locale === 'ar' ? 'عنوان الفوترة' : 'Billing address'}
+                  {tr(locale, 'inline.admin.billingAddress')}
                 </Typography>
                 <Typography>{addressText(selected.billing) || '—'}</Typography>
               </Box>
               <Box>
                 <Typography fontWeight={800}>
-                  {locale === 'ar' ? 'عنوان الشحن' : 'Shipping address'}
+                  {tr(locale, 'inline.admin.shippingAddress')}
                 </Typography>
                 <Typography>{addressText(selected.shipping) || '—'}</Typography>
               </Box>
               <Box>
                 <Typography fontWeight={800} mb={1}>
-                  {locale === 'ar' ? 'أحدث الطلبات' : 'Recent orders'}
+                  {tr(locale, 'inline.admin.recentOrders')}
                 </Typography>
                 <TableContainer>
                   <Table size="small">
                     <TableHead>
                       <TableRow>
-                        <TableCell>{locale === 'ar' ? 'رقم الطلب' : 'Order'}</TableCell>
-                        <TableCell>{locale === 'ar' ? 'الحالة' : 'Status'}</TableCell>
-                        <TableCell>{locale === 'ar' ? 'الإجمالي' : 'Total'}</TableCell>
-                        <TableCell>{locale === 'ar' ? 'التاريخ' : 'Date'}</TableCell>
+                        <TableCell>{tr(locale, 'inline.admin.order')}</TableCell>
+                        <TableCell>{tr(locale, 'inline.admin.status')}</TableCell>
+                        <TableCell>{tr(locale, 'inline.admin.total')}</TableCell>
+                        <TableCell>{tr(locale, 'inline.admin.date')}</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -1805,7 +1595,7 @@ function CompleteCustomersWorkspace({
           </DialogContent>
         )}
         <DialogActions>
-          <Button onClick={() => setSelected(null)}>{locale === 'ar' ? 'إغلاق' : 'Close'}</Button>
+          <Button onClick={() => setSelected(null)}>{tr(locale, 'inline.admin.close')}</Button>
         </DialogActions>
       </Dialog>
     </Stack>
@@ -2226,9 +2016,7 @@ export function AdminWorkspace({
 
 export const adminLabel = (section: AdminSection, locale: AdminLocale): string =>
   section === 'members'
-    ? locale === 'ar'
-      ? 'العملاء'
-      : 'Customers'
+    ? tr(locale, 'inline.admin.customers')
     : translations[locale][section === 'field-mappings' ? 'mappings' : section];
 
 export const sessionExpiredLabel = (locale: AdminLocale): string =>

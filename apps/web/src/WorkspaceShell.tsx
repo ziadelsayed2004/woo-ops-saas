@@ -35,6 +35,7 @@ import {
   ShoppingBagOutlined,
   SyncOutlined,
 } from '@mui/icons-material';
+import { getShellCopy } from './i18n';
 
 export type ShellNavigationItem = {
   id: string;
@@ -87,25 +88,12 @@ export function WorkspaceShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const width = collapsed ? collapsedWidth : drawerWidth;
-  const copy =
-    locale === 'ar'
-      ? {
-          workspace: 'مساحة العمل',
-          management: 'الإدارة',
-          menu: 'فتح القائمة',
-          collapse: 'طي القائمة',
-        }
-      : {
-          workspace: 'Workspace',
-          management: 'Management',
-          menu: 'Open menu',
-          collapse: 'Collapse menu',
-        };
+  const copy = getShellCopy(locale);
 
   const drawer = (mobile = false) => (
     <Stack
       component="nav"
-      aria-label={locale === 'ar' ? 'التنقل الرئيسي' : 'Primary navigation'}
+      aria-label={copy.primaryNavigation}
       height="100%"
       bgcolor="background.paper"
     >
@@ -124,7 +112,7 @@ export function WorkspaceShell({
               Woo Ops
             </Typography>
             <Typography variant="caption" color="text.secondary" noWrap>
-              {locale === 'ar' ? 'إدارة متجر وسط البلد' : 'Wasat Al Balad operations'}
+              {copy.storeOperations}
             </Typography>
           </Box>
         )}
@@ -200,50 +188,75 @@ export function WorkspaceShell({
         ))}
       </Box>
       <Divider />
-      <Stack p={1.25} gap={1}>
-        {(!collapsed || mobile) && (
-          <Box
+      <Stack p={1.25}>
+        {!mobile && (
+          <Tooltip title={collapsed ? copy.expandSidebar : copy.collapseSidebar} placement="left">
+            <Button
+              variant="outlined"
+              color="inherit"
+              onClick={() => setCollapsed((value) => !value)}
+              aria-label={collapsed ? copy.expandSidebar : copy.accountAndCollapse}
+              data-testid="sidebar-account-toggle"
+              sx={{
+                display: 'flex',
+                justifyContent: collapsed ? 'center' : 'space-between',
+                minWidth: 0,
+                width: '100%',
+                minHeight: 48,
+                borderColor: 'divider',
+                bgcolor: collapsed ? 'transparent' : 'background.default',
+                px: collapsed ? 1 : 1.5,
+                gap: 1,
+              }}
+            >
+              {!collapsed && (
+                <Typography
+                  component="span"
+                  variant="caption"
+                  color="text.secondary"
+                  noWrap
+                  dir="ltr"
+                  title={userEmail}
+                  sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
+                  {userEmail}
+                </Typography>
+              )}
+              <Box component="span" display="inline-flex" flexShrink={0} aria-hidden="true">
+                {collapsed ? (
+                  direction === 'rtl' ? (
+                    <ChevronLeft />
+                  ) : (
+                    <ChevronRight />
+                  )
+                ) : direction === 'rtl' ? (
+                  <ChevronRight />
+                ) : (
+                  <ChevronLeft />
+                )}
+              </Box>
+            </Button>
+          </Tooltip>
+        )}
+        {mobile && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            noWrap
+            dir="ltr"
+            title={userEmail}
             sx={{
+              display: 'block',
               px: 1.25,
               py: 1,
               bgcolor: 'background.default',
               borderRadius: 2,
-              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
             }}
           >
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              noWrap
-              dir="ltr"
-              title={userEmail}
-              sx={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}
-            >
-              {userEmail}
-            </Typography>
-          </Box>
-        )}
-        {!mobile && (
-          <Button
-            variant="outlined"
-            color="inherit"
-            onClick={() => setCollapsed((value) => !value)}
-            aria-label={copy.collapse}
-            startIcon={
-              collapsed ? undefined : direction === 'rtl' ? <ChevronRight /> : <ChevronLeft />
-            }
-            sx={{
-              justifyContent: collapsed ? 'center' : 'flex-start',
-              minWidth: 0,
-              width: '100%',
-              minHeight: 42,
-              borderColor: 'divider',
-              px: collapsed ? 1 : 1.5,
-              '& .MuiButton-startIcon': { m: 0, me: 1 },
-            }}
-          >
-            {collapsed ? direction === 'rtl' ? <ChevronLeft /> : <ChevronRight /> : copy.collapse}
-          </Button>
+            {userEmail}
+          </Typography>
         )}
       </Stack>
     </Stack>
@@ -267,7 +280,7 @@ export function WorkspaceShell({
           <IconButton
             onClick={() => setMobileOpen(true)}
             sx={{ display: { md: 'none' } }}
-            aria-label={copy.menu}
+            aria-label={copy.openMenu}
           >
             <MenuIcon />
           </IconButton>
@@ -278,7 +291,7 @@ export function WorkspaceShell({
             onClick={onCreateManual}
             sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
           >
-            {locale === 'ar' ? 'إنشاء طلب يدوي' : 'Create manual order'}
+            {copy.createManualOrder}
           </Button>
           <Button
             onClick={onToggleLocale}
@@ -286,9 +299,9 @@ export function WorkspaceShell({
             size="small"
             sx={{ gap: 0.75, px: 1.25, '& .MuiButton-startIcon': { m: 0 } }}
           >
-            {locale === 'ar' ? 'English' : 'العربية'}
+            {copy.switchLanguage}
           </Button>
-          <Tooltip title={locale === 'ar' ? 'تسجيل الخروج' : 'Sign out'}>
+          <Tooltip title={copy.signOut}>
             <IconButton onClick={onLogout} color="inherit">
               <LogoutOutlined />
             </IconButton>
