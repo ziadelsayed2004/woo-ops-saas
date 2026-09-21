@@ -3282,6 +3282,53 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0935",
+      "epic": "E09",
+      "title": "Ship branded HTML PDFs and Arabic export workbooks",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "L",
+      "parallelGroup": "document-rendering",
+      "dependencies": ["T0934"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/TESTING.md",
+        "packages/documents/src/index.ts",
+        "packages/documents/src/html-renderer.ts",
+        "packages/documents/tests/documents.test.js",
+        "packages/exports/src/index.ts",
+        "packages/exports/tests/engine.test.js",
+        "apps/api/src/document-effect.ts"
+      ],
+      "scope": [
+        "Make the production document path use the branded HTML-to-PDF renderer reliably and expose its renderer identity in regression coverage",
+        "Redesign A4 invoices, 80mm receipts and 80mm shipping labels with the supplied brand logo, professional Arabic RTL typography and format-specific information hierarchy",
+        "Localize standard and shipping XLSX worksheet names and column headings to Arabic with RTL layout and readable bounded widths"
+      ],
+      "acceptance": [
+        "Generated A4, receipt and shipping-label PDFs report the HTML renderer as producer and display the supplied logo and complete order information",
+        "A4 is exactly 210x297mm while both roll formats are exactly 80mm wide with content-driven height",
+        "Default operational and shipping XLSX exports use Arabic worksheet names and Arabic column headings with RTL reading order",
+        "Representative PDF and XLSX artifacts are rendered and visually inspected",
+        "Golden, unit, integration, typecheck and build checks pass"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:golden",
+        "npm run test:integration",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
