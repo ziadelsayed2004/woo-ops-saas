@@ -12,6 +12,7 @@ import {
   Tabs,
   Typography,
 } from '@mui/material';
+import { getOutputDialogCopy, translate as tr } from './i18n';
 
 type DocumentAction = 'generate-invoice' | 'generate-thermal' | 'generate-label';
 type Props = {
@@ -25,26 +26,22 @@ type Props = {
 
 export function OrderOutputDialog({ open, locale, count, onClose, onExcel, onDocument }: Props) {
   const [mode, setMode] = useState<'download' | 'print'>('download');
-  const ar = locale === 'ar';
+  const copy = getOutputDialogCopy(locale);
   const documents: Array<{ action: DocumentAction; title: string; description: string }> = [
     {
       action: 'generate-invoice',
-      title: ar ? 'فاتورة A4' : 'A4 invoice',
-      description: ar
-        ? 'فاتورة ملونة بتفاصيل المنتجات والإجماليات'
-        : 'Branded invoice with itemized totals',
+      title: copy.a4Invoice,
+      description: copy.a4Description,
     },
     {
       action: 'generate-thermal',
-      title: ar ? 'إيصال حراري' : 'Thermal receipt',
-      description: ar ? 'عرض 80 مم وطول مناسب لمحتوى كل طلب' : '80mm roll, sized to each order',
+      title: copy.thermalReceipt,
+      description: copy.thermalDescription,
     },
     {
       action: 'generate-label',
-      title: ar ? 'بوليصة شحن' : 'Shipping label',
-      description: ar
-        ? '80 مم · بيانات المستلم والعنوان ومحتويات الطلب'
-        : '80mm · recipient, address and order contents',
+      title: copy.shippingLabel,
+      description: copy.shippingDescription,
     },
   ];
   return (
@@ -54,43 +51,40 @@ export function OrderOutputDialog({ open, locale, count, onClose, onExcel, onDoc
       fullWidth
       maxWidth="sm"
       aria-labelledby="order-output-title"
-      PaperProps={{ dir: ar ? 'rtl' : 'ltr', sx: { borderRadius: 3 } }}
+      PaperProps={{ dir: locale === 'ar' ? 'rtl' : 'ltr', sx: { borderRadius: 3 } }}
     >
       <DialogTitle id="order-output-title" sx={{ pb: 1 }}>
-        {ar ? 'تصدير وطباعة الطلبات' : 'Export & print orders'}
+        {copy.title}
       </DialogTitle>
       <DialogContent>
         <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
-          {count}{' '}
-          {ar
-            ? 'طلب محدد · يتم حفظ كل أمر في سجل التصديرات'
-            : 'selected orders · every command is saved in export history'}
+          {tr(locale, 'outputDialog.selectedOrders', { count })}
         </Typography>
         <Tabs
           value={mode}
           onChange={(_event, value: 'download' | 'print') => setMode(value)}
           variant="fullWidth"
-          aria-label={ar ? 'نوع الإخراج' : 'Output action'}
+          aria-label={copy.title}
           sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
         >
           <Tab
             id="output-download-tab"
             aria-controls="output-panel"
             value="download"
-            label={ar ? 'تحميل الملفات' : 'Download files'}
+            label={copy.downloadFiles}
           />
           <Tab
             id="output-print-tab"
             aria-controls="output-panel"
             value="print"
-            label={ar ? 'الطباعة' : 'Print'}
+            label={copy.print}
           />
         </Tabs>
         <Stack id="output-panel" role="tabpanel" aria-labelledby={`output-${mode}-tab`} gap={1.5}>
           {mode === 'download' && (
             <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: 'grey.50' }}>
               <Typography fontWeight={700} sx={{ mb: 1 }}>
-                {ar ? 'جداول Excel' : 'Excel workbooks'}
+                {copy.excelTables}
               </Typography>
               <Stack direction="row" gap={1} flexWrap="wrap">
                 <Button
@@ -100,7 +94,7 @@ export function OrderOutputDialog({ open, locale, count, onClose, onExcel, onDoc
                     onExcel(false);
                   }}
                 >
-                  {ar ? 'تصدير Excel' : 'Export Excel'}
+                  {copy.exportExcel}
                 </Button>
                 <Button
                   variant="outlined"
@@ -109,7 +103,7 @@ export function OrderOutputDialog({ open, locale, count, onClose, onExcel, onDoc
                     onExcel(true);
                   }}
                 >
-                  {ar ? 'شيت الشحن' : 'Shipping sheet'}
+                  {copy.shippingSheet}
                 </Button>
               </Stack>
             </Paper>
@@ -126,30 +120,36 @@ export function OrderOutputDialog({ open, locale, count, onClose, onExcel, onDoc
                 <Button
                   variant={mode === 'print' ? 'contained' : 'outlined'}
                   sx={{ flexShrink: 0, minWidth: 95 }}
-                  aria-label={`${mode === 'print' ? (ar ? 'طباعة' : 'Print') : ar ? 'تحميل' : 'Download'} ${item.title}`}
+                  aria-label={
+                    item.action === 'generate-invoice'
+                      ? mode === 'print'
+                        ? copy.printA4
+                        : copy.downloadA4
+                      : item.action === 'generate-thermal'
+                        ? mode === 'print'
+                          ? copy.printThermal
+                          : copy.downloadThermal
+                        : mode === 'print'
+                          ? copy.printShipping
+                          : copy.downloadShipping
+                  }
                   onClick={() => {
                     onClose();
                     onDocument(item.action, mode === 'print');
                   }}
                 >
-                  {mode === 'print' ? (ar ? 'طباعة' : 'Print') : 'PDF'}
+                  {mode === 'print' ? copy.print : copy.pdf}
                 </Button>
               </Stack>
             </Paper>
           ))}
           <Typography variant="caption" color="text.secondary">
-            {mode === 'print'
-              ? ar
-                ? 'يفتح حوار الطباعة بعد تجهيز الملف. للحراري اختر 80 مم ومقياس 100%.'
-                : 'Opens print after generation. For rolls, choose 80mm paper and 100% scale.'
-              : ar
-                ? 'يبدأ التحميل بعد التجهيز، ويظل تحديد الطلبات محفوظًا.'
-                : 'Downloads when ready. Your order selection is preserved.'}
+            {mode === 'print' ? copy.printHint : copy.downloadHint}
           </Typography>
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>{ar ? 'إغلاق' : 'Close'}</Button>
+        <Button onClick={onClose}>{copy.close}</Button>
       </DialogActions>
     </Dialog>
   );

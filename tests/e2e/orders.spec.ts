@@ -265,25 +265,36 @@ test('shows an export job failure with retry instead of claiming a download @ord
   expect(downloads).toBe(0);
 });
 
-test('renders bounded Arabic orders workspace and keyboard detail navigation @orders', async ({
+test('renders bounded Arabic orders workspace and keyboard detail navigation @orders @localization', async ({
   page,
 }) => {
   const queryBodies = await mockOrderApi(page);
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'إدارة الطلبات' })).toBeVisible();
+  const accountToggle = page.getByTestId('sidebar-account-toggle');
+  await expect(accountToggle).toContainText('admin@example.test');
+  await expect(accountToggle).not.toContainText('طي القائمة');
+  await accountToggle.click();
+  await expect(page.getByRole('button', { name: 'فتح القائمة الجانبية' })).toBeVisible();
+  await expect(accountToggle).not.toContainText('admin@example.test');
+  await accountToggle.click();
+  await expect(accountToggle).toContainText('admin@example.test');
   await expect(page.locator('[data-testid="navigation-connections"]:visible')).not.toContainText(
     'تخصيص بيانات المتجر',
   );
   await expect(page.getByText('خرائط الحقول', { exact: true })).toHaveCount(0);
   const mappingNav = page.locator('[data-testid="navigation-connections"]:visible');
   const mappingIcon = page.locator('[data-testid="navigation-connections-icon"]:visible');
-  const [navigationBox, iconBox] = await Promise.all([
-    mappingNav.boundingBox(),
-    mappingIcon.boundingBox(),
-  ]);
-  expect(navigationBox).not.toBeNull();
-  expect(iconBox).not.toBeNull();
-  expect(iconBox!.x).toBeGreaterThan(navigationBox!.x + navigationBox!.width / 2);
+  await expect
+    .poll(async () => {
+      const [navigationBox, iconBox] = await Promise.all([
+        mappingNav.boundingBox(),
+        mappingIcon.boundingBox(),
+      ]);
+      if (!navigationBox || !iconBox) return false;
+      return iconBox.x > navigationBox.x + navigationBox.width / 2;
+    })
+    .toBe(true);
   await expect(page.getByTestId('orders-table')).toBeVisible();
   expect(queryBodies.some((body) => body.limit === 50)).toBe(true);
   expect(queryBodies.some((body) => body.includeFacets === true)).toBe(true);
