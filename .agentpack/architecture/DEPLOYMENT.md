@@ -23,6 +23,16 @@ migrations during startup, so a separate build-time migration is not required. K
 `WOO_OPS_DATA_DIR` outside the public web root. HTTP requests remain bounded;
 long work is durable and resumed from SQLite.
 
+HTML-to-PDF generation uses the self-contained Sparticuz Chromium runtime on Linux so Hostinger does
+not need root access or Playwright system packages such as `libatk-bridge`. Local Windows and macOS
+development use Playwright's managed Chromium. The root postinstall readiness check launches the same
+provider used by document jobs and renders a smoke PDF before deployment proceeds.
+
+`npm ci` can currently report deprecation notices for `inflight`, `glob@7`, `rimraf@2`,
+`fstream`, and `lodash.isequal`; these are transitive dependencies of the latest ExcelJS 4.4
+release, not the document browser. Treat a non-zero postinstall/readiness exit as actionable, and
+track the ExcelJS notices separately until its upstream dependency graph is replaced or updated.
+
 Reproduce Hostinger's install/build boundary before deployment:
 
 ```text
