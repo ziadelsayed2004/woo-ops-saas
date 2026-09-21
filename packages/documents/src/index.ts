@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import QRCode from 'qrcode';
+import { renderHtmlPdf } from './html-renderer.js';
 
 export type DocumentFormat = 'a4' | 'a5' | 'thermal-80mm' | 'label-100x150mm';
 export type DocumentDirection = 'rtl' | 'ltr';
@@ -67,7 +68,8 @@ const PAGE_SIZES: Readonly<Record<DocumentFormat, readonly [number, number]>> = 
   a4: [210 * MM_TO_POINTS, 297 * MM_TO_POINTS],
   a5: [148 * MM_TO_POINTS, 210 * MM_TO_POINTS],
   'thermal-80mm': [80 * MM_TO_POINTS, 150 * MM_TO_POINTS],
-  'label-100x150mm': [100 * MM_TO_POINTS, 150 * MM_TO_POINTS],
+  // Legacy persisted identifier; the operator-facing shipping roll is now 80mm wide.
+  'label-100x150mm': [80 * MM_TO_POINTS, 150 * MM_TO_POINTS],
 };
 const DOCUMENT_FORMATS: readonly DocumentFormat[] = ['a4', 'a5', 'thermal-80mm', 'label-100x150mm'];
 const DOCUMENT_LOCALES: readonly DocumentLocale[] = ['ar-EG', 'en-US'];
@@ -235,13 +237,13 @@ const normalizeRequest = (request: DocumentRequest): DocumentRequest => {
   if (!isRecord(request.order)) throw new Error('DOCUMENT_ORDER_INVALID');
   const documentKind = request.documentKind ?? 'order';
   if (!['order', 'invoice'].includes(documentKind)) throw new Error('DOCUMENT_KIND_INVALID');
-  const height = request.thermalHeightMm ?? 150;
-  if (!Number.isFinite(height) || height < 50 || height > 500)
+  const height = request.thermalHeightMm;
+  if (height !== undefined && (!Number.isFinite(height) || height < 50 || height > 500))
     throw new Error('DOCUMENT_THERMAL_HEIGHT_INVALID');
   return {
     ...request,
     template,
-    thermalHeightMm: height,
+    ...(height === undefined ? {} : { thermalHeightMm: height }),
     documentKind,
     ...(request.orderId === undefined
       ? {}
@@ -277,9 +279,9 @@ const snapshotSource = (request: DocumentRequest): string =>
     },
     order: request.order,
   }) ?? '{}';
+const pdfBytes = (value: Uint8Array): Uint8Array => value;
 const rtlText = (value: string, direction: DocumentDirection): string =>
   direction === 'rtl' && /[\u0600-\u06ff]/u.test(value) ? `\u202B${value}\u202C` : value;
-const pdfBytes = (value: Uint8Array): Uint8Array => value;
 const drawWrapped = (
   page: PDFPage,
   value: string,
@@ -570,7 +572,7 @@ const drawDocument = async (
     );
     page.drawImage(image, { x: margin, y: margin + 28, width: imageWidth, height: 38 });
   }
-  const qrValue = normalized.qrValue ?? orderNumber;
+  const qrValue = normalized.qrValue ?? 'https://wasatalbalad.store/';
   if (qrValue && normalized.format !== 'thermal-80mm') {
     const qr = await pdf.embedPng(await qrPng(qrValue));
     const qrSize = Math.min(70, width / 4);
@@ -590,8 +592,24 @@ export const generateDocument = async (request: DocumentRequest): Promise<Docume
   const normalized = normalizeRequest(request);
   const source = snapshotSource(normalized);
   const sourceHash = createHash('sha256').update(source).digest('hex');
-  const { pdf, width, height } = await drawDocument(normalized);
-  const bytes = pdfBytes(await pdf.save({ useObjectStreams: false, addDefaultPage: false }));
+  const orderNumber =
+    normalized.documentNumber ?? orderValue(normalized.order, 'orderNumber', 'number', 'id');
+  const code = normalized.barcodeValue ?? orderNumber;
+  const qrValue = normalized.qrValue ?? 'https://wasatalbalad.store/';
+  const renderRequest: DocumentRequest = {
+    ...normalized,
+    template: {
+      ...normalized.template,
+      ...(normalized.template.body
+        ? { body: renderSafeTemplate(normalized.template.body, normalized.order) }
+        : {}),
+    },
+  };
+  const rendered = await renderHtmlPdf(renderRequest, {
+    ...(code ? { barcode: await barcodePng(code) } : {}),
+    ...(qrValue ? { qr: await qrPng(qrValue) } : {}),
+  });
+  const bytes = pdfBytes(rendered.bytes);
   const checksum = createHash('sha256').update(bytes).digest('hex');
   const snapshot: DocumentSnapshot = {
     orderId: normalized.orderId ?? orderValue(normalized.order, 'id', 'orderId', 'orderNumber'),
@@ -604,9 +622,9 @@ export const generateDocument = async (request: DocumentRequest): Promise<Docume
   return {
     bytes,
     format: normalized.format,
-    pageCount: 1,
-    widthPoints: width,
-    heightPoints: height,
+    pageCount: rendered.pageCount,
+    widthPoints: rendered.widthPoints,
+    heightPoints: rendered.heightPoints,
     checksum,
     snapshot,
   };
@@ -772,6 +790,7 @@ export const documentPageSize = (
   if (!DOCUMENT_FORMATS.includes(format)) throw new Error('DOCUMENT_FORMAT_INVALID');
   if (!Number.isFinite(thermalHeightMm) || thermalHeightMm < 50 || thermalHeightMm > 500)
     throw new Error('DOCUMENT_THERMAL_HEIGHT_INVALID');
-  if (format === 'thermal-80mm') return [80 * MM_TO_POINTS, thermalHeightMm * MM_TO_POINTS];
+  if (format === 'thermal-80mm' || format === 'label-100x150mm')
+    return [80 * MM_TO_POINTS, thermalHeightMm * MM_TO_POINTS];
   return PAGE_SIZES[format];
 };

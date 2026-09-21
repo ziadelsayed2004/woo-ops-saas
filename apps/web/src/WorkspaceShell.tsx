@@ -172,7 +172,7 @@ export function WorkspaceShell({
                                 textAlign: direction === 'rtl' ? 'right' : 'left',
                               }
                             : {}),
-                          '&.Mui-selected': { bgcolor: '#e8f0fe', color: 'primary.dark' },
+                          '&.Mui-selected': { bgcolor: 'primary.light', color: 'primary.dark' },
                         }}
                       >
                         <ListItemIcon

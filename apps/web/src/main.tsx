@@ -22,7 +22,7 @@ function AppShell() {
     typography: { fontFamily: 'Cairo, Inter, Tahoma, Arial, sans-serif' },
     palette: {
       mode: 'light',
-      primary: { main: '#1558b0', light: '#e8f0fe', dark: '#124b98' },
+      primary: { main: '#720eec', light: '#f1e8ff', dark: '#4d0a9e' },
       background: { default: '#f8fafc', paper: '#ffffff' },
       text: { primary: '#111827', secondary: '#64748b' },
       divider: '#e5e7eb',

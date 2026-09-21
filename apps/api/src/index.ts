@@ -2635,7 +2635,15 @@ app.post('/api/v1/document-templates/:templateId/orders/:orderId', async (reques
     const fileId = randomUUID();
     const stored = writePrivatePdf(documentStorageRoot, user.accountId, fileId, result.bytes);
     const orderNumber = String(order.orderNumber ?? request.params.orderId);
-    const filename = `${template.name}-${orderNumber}-${format}.pdf`
+    const documentName =
+      format === 'a4'
+        ? 'invoice-a4'
+        : format === 'a5'
+          ? 'invoice-a5'
+          : format === 'thermal-80mm'
+            ? 'receipt-80mm'
+            : 'shipping-label-80mm';
+    const filename = `${documentName}-order-${orderNumber}.pdf`
       .replace(/[^A-Za-z0-9._-]/gu, '_')
       .slice(0, 160);
     const file = store.registerDocumentFile(context, {
