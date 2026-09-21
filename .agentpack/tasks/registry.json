@@ -2968,6 +2968,52 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0928",
+      "epic": "E09",
+      "title": "Match AlgolPlus Woo export status exactly",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "M",
+      "parallelGroup": "woo-export-status",
+      "dependencies": ["T0927"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/TESTING.md",
+        "integrations/wordpress/woo-ops-export-status-bridge/woo-ops-export-status-bridge.php",
+        "integrations/wordpress/woo-ops-export-status-bridge/README.md",
+        "packages/connectors/src/woocommerce.ts",
+        "packages/connectors/tests/security.test.js",
+        "packages/connectors/tests/woo-orders.test.js"
+      ],
+      "scope": [
+        "Match the exact Export Status column and woe_export_status sorting semantics of Advanced Order Export for WooCommerce",
+        "Read woe_order_exported metadata through the same postfix filter used by the installed plugin while retaining safe compatibility fallbacks",
+        "Keep the companion route authenticated, bounded and read-only and refresh cached status through normal synchronization"
+      ],
+      "acceptance": [
+        "Orders showing a tick in the AlgolPlus Export Status column normalize as exported",
+        "Orders showing a dash normalize as not_exported when the AlgolPlus plugin is active",
+        "Unsupported or unavailable extensions remain unknown and are never invented as not exported",
+        "Connector contract, security, synchronization and browser checks pass"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:contract",
+        "npm run test:e2e",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
