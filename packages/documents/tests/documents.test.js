@@ -170,7 +170,7 @@ test('thermal accepts an explicit physical height for fixed printer media', asyn
   assert.ok(Math.abs(pdf.getPage(0).getHeight() - 180 * (72 / 25.4)) < 0.01);
 });
 
-test('portable production renderer generates every operator PDF without Chromium', async (t) => {
+test('legacy portable setting cannot bypass the branded HTML renderer', async (t) => {
   if (!fontBytes) {
     t.skip('No font is available in this test environment');
     return;
@@ -188,6 +188,7 @@ test('portable production renderer generates every operator PDF without Chromium
         qrValue: 'https://wasatalbalad.store/',
       });
       const pdf = await PDFDocument.load(result.bytes);
+      assert.equal(pdf.getCreator(), 'Woo Ops HTML layouts v3');
       assert.equal(pdf.getPageCount(), 1);
       assert.ok(result.bytes.length > 1_000);
       assert.equal(pdf.getPage(0).getWidth(), result.widthPoints);
@@ -207,7 +208,7 @@ test('portable production renderer generates every operator PDF without Chromium
   }
 });
 
-test('automatic renderer falls back only when the HTML browser is unavailable', async (t) => {
+test('missing HTML browser fails explicitly instead of returning the old layout', async (t) => {
   if (!fontBytes) {
     t.skip('No font is available in this test environment');
     return;
@@ -217,16 +218,15 @@ test('automatic renderer falls back only when the HTML browser is unavailable', 
   delete process.env.WOO_OPS_DOCUMENT_RENDERER;
   process.env.WOO_OPS_DOCUMENT_BROWSER_UNAVAILABLE_FOR_TEST = '1';
   try {
-    const result = await generateDocument({
-      order,
-      format: 'thermal-80mm',
-      template,
-      orderId: 'automatic-fallback',
-    });
-    const pdf = await PDFDocument.load(result.bytes);
-    assert.equal(pdf.getPageCount(), 1);
-    assert.ok(Math.abs(result.widthPoints - 80 * (72 / 25.4)) < 0.01);
-    assert.ok(result.bytes.length > 1_000);
+    await assert.rejects(
+      generateDocument({
+        order,
+        format: 'thermal-80mm',
+        template,
+        orderId: 'automatic-fallback',
+      }),
+      /browser executable unavailable/,
+    );
   } finally {
     if (previousRenderer === undefined) delete process.env.WOO_OPS_DOCUMENT_RENDERER;
     else process.env.WOO_OPS_DOCUMENT_RENDERER = previousRenderer;
@@ -234,6 +234,22 @@ test('automatic renderer falls back only when the HTML browser is unavailable', 
       delete process.env.WOO_OPS_DOCUMENT_BROWSER_UNAVAILABLE_FOR_TEST;
     else process.env.WOO_OPS_DOCUMENT_BROWSER_UNAVAILABLE_FOR_TEST = previousUnavailable;
   }
+});
+
+test('long orders paginate A4 and expand roll height without dropping lines', async () => {
+  const longOrder = {
+    ...order,
+    lines: Array.from({ length: 70 }, (_, i) => ({
+      name: `منتج طويل للمراجعة النهائية للصف الثالث الثانوي ${i + 1}`,
+      quantity: 1,
+      totalMinor: '1250',
+    })),
+  };
+  const a4 = await generateDocument({ order: longOrder, format: 'a4', template });
+  assert.ok(a4.pageCount > 1);
+  const roll = await generateDocument({ order: longOrder, format: 'thermal-80mm', template });
+  assert.equal(roll.pageCount, 1);
+  assert.ok(roll.heightPoints > 500 * (72 / 25.4));
 });
 
 test('batch generation isolates invalid documents and merges successful pages', async (t) => {

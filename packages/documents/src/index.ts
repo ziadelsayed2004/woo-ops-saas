@@ -745,32 +745,17 @@ export const generateDocument = async (request: DocumentRequest): Promise<Docume
     ...normalized,
     template: {
       ...normalized.template,
-      ...(normalized.template.body
-        ? { body: renderSafeTemplate(normalized.template.body, normalized.order) }
-        : {}),
+      body: normalized.template.body?.replace(/\{\{[^}]+\}\}/gu, '').trim()
+        ? renderSafeTemplate(normalized.template.body, normalized.order)
+        : '',
     },
   };
   const assets = {
     ...(code ? { barcode: await barcodePng(code) } : {}),
     ...(qrValue ? { qr: await qrPng(qrValue) } : {}),
   };
-  let rendered;
-  if (process.env.WOO_OPS_DOCUMENT_RENDERER === 'portable') {
-    rendered = await renderPortablePdf(renderRequest);
-  } else {
-    try {
-      rendered = await renderHtmlPdf(renderRequest, assets);
-    } catch (error) {
-      const message = error instanceof Error ? error.message.toLowerCase() : '';
-      const rendererUnavailable =
-        message.includes('executable') ||
-        message.includes('failed to launch') ||
-        message.includes('playwright') ||
-        message.includes('browser');
-      if (!rendererUnavailable || process.env.WOO_OPS_DOCUMENT_RENDERER === 'html') throw error;
-      rendered = await renderPortablePdf(renderRequest);
-    }
-  }
+  // Never silently change the customer's print layout when Chromium is unavailable.
+  const rendered = await renderHtmlPdf(renderRequest, assets);
   const bytes = pdfBytes(rendered.bytes);
   const checksum = createHash('sha256').update(bytes).digest('hex');
   const snapshot: DocumentSnapshot = {
