@@ -26,7 +26,10 @@ long work is durable and resumed from SQLite.
 HTML-to-PDF generation uses the self-contained Sparticuz Chromium runtime on Linux so Hostinger does
 not need root access or Playwright system packages such as `libatk-bridge`. Local Windows and macOS
 development use Playwright's managed Chromium. The root postinstall readiness check launches the same
-provider used by document jobs and renders a smoke PDF before deployment proceeds.
+provider used by document jobs and renders a smoke PDF before deployment proceeds. Linux extracts the
+browser into the application-owned executable cache at `.cache/woo-ops-browser` instead of the shared
+`/tmp` mount, which Hostinger configures as `noexec`. Set `WOO_OPS_BROWSER_CACHE_DIR` to an absolute,
+private, executable filesystem path only when the default application directory is unsuitable.
 
 `npm ci` can currently report deprecation notices for `inflight`, `glob@7`, `rimraf@2`,
 `fstream`, and `lodash.isequal`; these are transitive dependencies of the latest ExcelJS 4.4

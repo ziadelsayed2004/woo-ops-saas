@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import test from 'node:test';
 import { htmlDocument } from '../dist/html-renderer.js';
@@ -12,7 +15,12 @@ import {
   renderSafeTemplate,
   validateSafeTemplate,
 } from '../dist/index.js';
-import { documentBrowserProvider } from '../runtime/browser.mjs';
+import {
+  documentBrowserCacheDirectory,
+  documentBrowserLaunchOptions,
+  documentBrowserProvider,
+  preparePortableBrowserEnvironment,
+} from '../runtime/browser.mjs';
 
 const fontPath = [
   'C:\\Windows\\Fonts\\arial.ttf',
@@ -40,10 +48,93 @@ const template = {
   ...(fontBytes ? { fontBytes } : {}),
 };
 
+const applicationTempDirectory = (name) => mkdtemp(resolve(`.woo-ops-${name}-`));
+
 test('document browser provider is portable on Linux and managed elsewhere', () => {
   assert.equal(documentBrowserProvider('linux'), 'portable-linux');
   assert.equal(documentBrowserProvider('win32'), 'playwright');
   assert.equal(documentBrowserProvider('darwin'), 'playwright');
+});
+
+test('portable browser cache avoids the system temp mount and enforces a private directory', async () => {
+  const root = await applicationTempDirectory('browser-cache');
+  const env = {};
+  try {
+    const expected = join(root, '.cache', 'woo-ops-browser');
+    assert.equal(documentBrowserCacheDirectory({ cwd: root, env }), expected);
+    assert.equal(await preparePortableBrowserEnvironment({ cwd: root, env }), expected);
+    assert.equal(env.TMPDIR, expected);
+    assert.equal(env.TMP, expected);
+    assert.equal(env.TEMP, expected);
+    assert.ok(existsSync(expected));
+    if (process.platform !== 'win32') assert.equal(statSync(expected).mode & 0o777, 0o700);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('portable Linux launch extracts and executes only from the application cache', async () => {
+  const root = await applicationTempDirectory('browser-launch');
+  const env = {};
+  const expectedCache = join(root, '.cache', 'woo-ops-browser');
+  const expectedExecutable = join(expectedCache, 'chromium');
+  try {
+    const options = await documentBrowserLaunchOptions({
+      platform: 'linux',
+      cwd: root,
+      env,
+      loadPortableChromium: async () => {
+        assert.equal(env.TMPDIR, expectedCache);
+        await writeFile(expectedExecutable, '#!/bin/sh\n', { mode: 0o600 });
+        return {
+          default: {
+            args: ['--no-sandbox'],
+            executablePath: async () => expectedExecutable,
+          },
+        };
+      },
+    });
+    assert.equal(options.executablePath, expectedExecutable);
+    assert.notEqual(options.executablePath, '/tmp/chromium');
+    if (process.platform !== 'win32')
+      assert.equal(statSync(expectedExecutable).mode & 0o777, 0o700);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('portable Linux launch rejects an executable outside its private cache', async () => {
+  const root = await applicationTempDirectory('browser-escape');
+  try {
+    await assert.rejects(
+      documentBrowserLaunchOptions({
+        platform: 'linux',
+        cwd: root,
+        env: {},
+        loadPortableChromium: async () => ({
+          default: { args: [], executablePath: async () => join(root, 'outside-chromium') },
+        }),
+      }),
+      /DOCUMENT_BROWSER_EXECUTABLE_OUTSIDE_CACHE/,
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('portable browser cache requires an absolute configured path', () => {
+  assert.throws(
+    () => documentBrowserCacheDirectory({ env: { WOO_OPS_BROWSER_CACHE_DIR: '../shared' } }),
+    /WOO_OPS_BROWSER_CACHE_DIR_MUST_BE_ABSOLUTE/,
+  );
+  assert.throws(
+    () =>
+      documentBrowserCacheDirectory({
+        cwd: resolve('application'),
+        env: { WOO_OPS_BROWSER_CACHE_DIR: join(tmpdir(), 'woo-ops-browser') },
+      }),
+    /WOO_OPS_BROWSER_CACHE_DIR_UNSAFE/,
+  );
 });
 
 test('brand HTML isolates identifiers and uses a dedicated shipping contents table', () => {

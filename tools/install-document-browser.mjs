@@ -7,10 +7,15 @@ const documentsRequire = createRequire(
 );
 const playwrightPackage = documentsRequire.resolve('playwright-core/package.json');
 const cli = join(dirname(playwrightPackage), 'cli.js');
-const { documentBrowserProvider, launchDocumentBrowser } =
+const { documentBrowserProvider, launchDocumentBrowser, preparePortableBrowserEnvironment } =
   await import('../packages/documents/runtime/browser.mjs');
 const provider = documentBrowserProvider();
 process.stdout.write(`[documents] browser provider: ${provider}\n`);
+
+if (provider === 'portable-linux') {
+  const cacheDirectory = await preparePortableBrowserEnvironment();
+  process.stdout.write(`[documents] executable cache: ${cacheDirectory}\n`);
+}
 
 if (provider === 'playwright') {
   const result = spawnSync(process.execPath, [cli, 'install', 'chromium-headless-shell'], {
