@@ -168,6 +168,43 @@ test('thermal accepts an explicit physical height for fixed printer media', asyn
   assert.ok(Math.abs(pdf.getPage(0).getHeight() - 180 * (72 / 25.4)) < 0.01);
 });
 
+test('portable production renderer generates every operator PDF without Chromium', async (t) => {
+  if (!fontBytes) {
+    t.skip('No font is available in this test environment');
+    return;
+  }
+  const previous = process.env.WOO_OPS_DOCUMENT_RENDERER;
+  process.env.WOO_OPS_DOCUMENT_RENDERER = 'portable';
+  try {
+    for (const format of ['a4', 'thermal-80mm', 'label-100x150mm']) {
+      const result = await generateDocument({
+        order,
+        format,
+        template,
+        orderId: `portable-${format}`,
+        barcodeValue: '100',
+        qrValue: 'https://wasatalbalad.store/',
+      });
+      const pdf = await PDFDocument.load(result.bytes);
+      assert.equal(pdf.getPageCount(), 1);
+      assert.ok(result.bytes.length > 1_000);
+      assert.equal(pdf.getPage(0).getWidth(), result.widthPoints);
+      assert.equal(pdf.getPage(0).getHeight(), result.heightPoints);
+      if (format === 'a4') {
+        assert.ok(Math.abs(result.widthPoints - 210 * (72 / 25.4)) < 0.01);
+        assert.ok(Math.abs(result.heightPoints - 297 * (72 / 25.4)) < 0.01);
+      } else {
+        assert.ok(Math.abs(result.widthPoints - 80 * (72 / 25.4)) < 0.01);
+        assert.ok(result.heightPoints >= 100 * (72 / 25.4));
+        assert.ok(result.heightPoints <= 500 * (72 / 25.4));
+      }
+    }
+  } finally {
+    if (previous === undefined) delete process.env.WOO_OPS_DOCUMENT_RENDERER;
+    else process.env.WOO_OPS_DOCUMENT_RENDERER = previous;
+  }
+});
+
 test('batch generation isolates invalid documents and merges successful pages', async (t) => {
   if (!fontBytes) {
     t.skip('No font is available in this test environment');

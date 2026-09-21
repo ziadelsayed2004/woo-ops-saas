@@ -280,6 +280,20 @@ const snapshotSource = (request: DocumentRequest): string =>
     order: request.order,
   }) ?? '{}';
 const pdfBytes = (value: Uint8Array): Uint8Array => value;
+const browserRendererUnavailable = (error: unknown): boolean => {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return [
+    "executable doesn't exist",
+    'executable does not exist',
+    'failed to launch',
+    'browser closed',
+    'host system is missing dependencies',
+    'browser was not found',
+    'playwright install',
+    'spawn',
+  ].some((fragment) => message.includes(fragment));
+};
 const rtlText = (value: string, direction: DocumentDirection): string =>
   direction === 'rtl' && /[\u0600-\u06ff]/u.test(value) ? `\u202B${value}\u202C` : value;
 const drawWrapped = (
@@ -349,7 +363,7 @@ const preparePdf = async (
   pdf.registerFontkit(fontkit);
   const [width, configuredHeight] = PAGE_SIZES[normalized.format];
   const height =
-    normalized.format === 'thermal-80mm'
+    normalized.format === 'thermal-80mm' || normalized.format === 'label-100x150mm'
       ? normalized.thermalHeightMm! * MM_TO_POINTS
       : configuredHeight;
   const font = normalized.template.fontBytes
@@ -573,11 +587,20 @@ const drawDocument = async (
     page.drawImage(image, { x: margin, y: margin + 28, width: imageWidth, height: 38 });
   }
   const qrValue = normalized.qrValue ?? 'https://wasatalbalad.store/';
-  if (qrValue && normalized.format !== 'thermal-80mm') {
+  if (qrValue) {
     const qr = await pdf.embedPng(await qrPng(qrValue));
-    const qrSize = Math.min(70, width / 4);
+    const qrSize = Math.min(
+      normalized.format === 'a4' || normalized.format === 'a5' ? 70 : 48,
+      width / 4,
+    );
     page.drawImage(qr, { x: width - margin - qrSize, y: margin, width: qrSize, height: qrSize });
   }
+  page.drawText('01055127111  |  info@wasatalbalad.store', {
+    x: margin,
+    y: margin + 14,
+    size: normalized.format === 'a4' || normalized.format === 'a5' ? 8 : 5.5,
+    font,
+  });
   if (normalized.template.footerText)
     page.drawText(rtlText(normalized.template.footerText, direction), {
       x: margin,
@@ -586,6 +609,39 @@ const drawDocument = async (
       font,
     });
   return { pdf, width, height };
+};
+
+const fallbackHeightMm = (request: DocumentRequest): number | undefined => {
+  if (request.format !== 'thermal-80mm' && request.format !== 'label-100x150mm') return undefined;
+  if (request.thermalHeightMm !== undefined) return request.thermalHeightMm;
+  const lineCount = Array.isArray(request.order.lines)
+    ? Math.min(request.order.lines.length, 100)
+    : 0;
+  const facts = [
+    orderValue(request.order, 'billing.name', 'customer.name', 'billing.first_name'),
+    orderValue(request.order, 'billing.phone', 'customer.phone'),
+    orderValue(request.order, 'shipping.address_1', 'shipping.address', 'billing.address_1'),
+    orderValue(request.order, 'shipping.state', 'billing.state'),
+    orderValue(request.order, 'shippingMethodTitle', 'shippingMethod.title'),
+    orderValue(request.order, 'paymentMethodTitle', 'payment.title'),
+  ].filter(Boolean).length;
+  return Math.min(500, Math.max(100, 92 + facts * 7 + lineCount * 11));
+};
+
+const renderPortablePdf = async (
+  request: DocumentRequest,
+): Promise<{ bytes: Uint8Array; pageCount: number; widthPoints: number; heightPoints: number }> => {
+  const heightMm = fallbackHeightMm(request);
+  const portableRequest =
+    heightMm === undefined ? request : { ...request, thermalHeightMm: heightMm };
+  const rendered = await drawDocument(portableRequest);
+  const bytes = await rendered.pdf.save({ useObjectStreams: false, addDefaultPage: false });
+  return {
+    bytes,
+    pageCount: rendered.pdf.getPageCount(),
+    widthPoints: rendered.width,
+    heightPoints: rendered.height,
+  };
 };
 
 export const generateDocument = async (request: DocumentRequest): Promise<DocumentResult> => {
@@ -605,10 +661,21 @@ export const generateDocument = async (request: DocumentRequest): Promise<Docume
         : {}),
     },
   };
-  const rendered = await renderHtmlPdf(renderRequest, {
+  const assets = {
     ...(code ? { barcode: await barcodePng(code) } : {}),
     ...(qrValue ? { qr: await qrPng(qrValue) } : {}),
-  });
+  };
+  let rendered;
+  if (process.env.WOO_OPS_DOCUMENT_RENDERER === 'portable') {
+    rendered = await renderPortablePdf(renderRequest);
+  } else {
+    try {
+      rendered = await renderHtmlPdf(renderRequest, assets);
+    } catch (error) {
+      if (!browserRendererUnavailable(error)) throw error;
+      rendered = await renderPortablePdf(renderRequest);
+    }
+  }
   const bytes = pdfBytes(rendered.bytes);
   const checksum = createHash('sha256').update(bytes).digest('hex');
   const snapshot: DocumentSnapshot = {

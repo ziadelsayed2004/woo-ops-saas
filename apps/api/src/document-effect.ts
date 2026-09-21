@@ -34,6 +34,20 @@ const throwIfCancelled = async (execution: JobExecutionContext): Promise<void> =
 const progress = (processed: number, total: number, lower: number, upper: number): number =>
   total < 1 ? upper : Math.min(upper, lower + Math.floor((processed / total) * (upper - lower)));
 
+const safeDocumentError = (error: unknown): string => {
+  if (!(error instanceof Error)) return 'DOCUMENT_GENERATION_FAILED';
+  if (/^DOCUMENT_[A-Z0-9_]+$/u.test(error.message)) return error.message;
+  const message = error.message.toLowerCase();
+  if (
+    message.includes('executable') ||
+    message.includes('failed to launch') ||
+    message.includes('playwright') ||
+    message.includes('browser')
+  )
+    return 'DOCUMENT_RENDERER_UNAVAILABLE';
+  return 'DOCUMENT_GENERATION_FAILED';
+};
+
 const safeOrderNumber = (item: DocumentBatchItemRecord): string => {
   const snapshot = isRecord(item.snapshot) ? item.snapshot : {};
   const candidate = String(snapshot.orderNumber ?? snapshot.number ?? item.orderId)
@@ -172,7 +186,7 @@ export const createDocumentEffect =
             context,
             batchId,
             item.position,
-            error instanceof Error ? error.message : 'DOCUMENT_GENERATION_FAILED',
+            safeDocumentError(error),
           );
         }
         batch = store.getDocumentBatchForWorker(context, batchId);
