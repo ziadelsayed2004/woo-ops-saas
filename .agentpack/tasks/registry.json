@@ -3107,6 +3107,53 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0931",
+      "epic": "E09",
+      "title": "Make document PDF rendering production-safe",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "M",
+      "parallelGroup": "document-rendering",
+      "dependencies": ["T0929"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/TESTING.md",
+        "packages/documents/src/index.ts",
+        "packages/documents/src/html-renderer.ts",
+        "packages/documents/tests/documents.test.js",
+        "apps/api/src/document-effect.ts",
+        "apps/api/tests/document-jobs.integration.test.js",
+        "apps/web/src/App.tsx"
+      ],
+      "scope": [
+        "Diagnose and repair production document jobs that fail for A4 invoices, 80mm receipts and 80mm shipping labels",
+        "Make HTML-to-PDF browser launch reliable on the supported Hostinger runtime and provide a deterministic safe fallback when the browser binary is unavailable",
+        "Expose bounded actionable per-item document errors in the operator interface without leaking filesystem paths or sensitive data"
+      ],
+      "acceptance": [
+        "A4, thermal receipt and shipping-label jobs produce downloadable PDFs on a runtime without a preinstalled Playwright browser",
+        "HTML rendering remains the preferred path when Chromium is available and fallback output preserves exact page sizing, Arabic font support, barcode and QR",
+        "Failed document rows show a safe useful failure reason and retry remains functional",
+        "Document golden, integration, security, typecheck and build checks pass"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:integration",
+        "npm run test:security",
+        "npm run test:golden",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
