@@ -5234,6 +5234,23 @@ export function App({
                                     : { color: '#8a4b00', borderColor: '#8a4b00' }
                                 }
                               />
+                            ) : column === 'remoteExportStatus' ? (
+                              <Chip
+                                data-testid={`woo-export-status-${order.id}`}
+                                size="small"
+                                label={display(order, column)}
+                                color={
+                                  order.remoteExportStatus === 'exported'
+                                    ? 'success'
+                                    : order.remoteExportStatus === 'not_exported'
+                                      ? 'default'
+                                      : 'warning'
+                                }
+                                variant={
+                                  order.remoteExportStatus === 'exported' ? 'filled' : 'outlined'
+                                }
+                                sx={{ fontWeight: 700 }}
+                              />
                             ) : column === 'exportState' ? (
                               <Chip
                                 size="small"
