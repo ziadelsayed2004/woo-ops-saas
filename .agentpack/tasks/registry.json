@@ -3064,6 +3064,49 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0930",
+      "epic": "E09",
+      "title": "Accept AlgolPlus export status bridge keys",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "S",
+      "parallelGroup": "woocommerce-export-status",
+      "dependencies": ["T0928"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/TESTING.md",
+        "integrations/wordpress/woo-ops-export-status-bridge/woo-ops-export-status-bridge.php",
+        "packages/connectors/src/woocommerce.ts",
+        "packages/connectors/tests/woo-orders.test.js",
+        "apps/api/tests/sync.integration.test.js"
+      ],
+      "scope": [
+        "Accept the allowlisted AlgolPlus woe_order_exported key returned by bridge 1.8 while retaining supported legacy export keys",
+        "Preserve the bridge source and normalized exported, not_exported or unknown truth through synchronization",
+        "Reject unrelated metadata and keep all connector requests read-only and bounded"
+      ],
+      "acceptance": [
+        "A valid bridge 1.8 AlgolPlus response is not discarded because its key differs from the legacy extension key",
+        "Exported and not-exported AlgolPlus orders normalize and persist correctly after synchronization",
+        "Malformed, ambiguous and unrelated metadata remain unknown",
+        "Connector contract, security, integration, typecheck and build checks pass"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit -- --filter connectors",
+        "npm run test:integration",
+        "npm run test:contract -- --filter woocommerce",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
