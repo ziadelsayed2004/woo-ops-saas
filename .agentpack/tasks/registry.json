@@ -3384,5 +3384,20 @@
         "git diff --check"
       ]
     }
+    ,{
+      "id": "T0937",
+      "epic": "E09",
+      "title": "Rebuild branded HTML invoice and roll document layouts",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "L",
+      "parallelGroup": "document-rendering",
+      "dependencies": ["T0936"],
+      "references": ["AGENTS.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/TESTING.md", "packages/documents/src/index.ts", "packages/documents/src/html-renderer.ts", "packages/documents/tests/documents.test.js", "tools/install-document-browser.mjs"],
+      "scope": ["Rebuild A4, receipt and shipping-label layouts from HTML and print CSS with readable Arabic and prominent cropped logo", "Ensure HTML output does not silently revert to the old portable design and add deployment renderer verification", "Verify representative and long-content PDF outputs, dimensions and pagination"],
+      "acceptance": ["All default PDF formats use HTML rendering with embedded Arabic typography and a visible brand logo", "A4 contains readable customer information, product table and totals with correct multipage handling", "Receipts and shipping labels are monochrome, exactly 80mm wide, content sized and include order contents, contact information, QR and barcode", "Browser unavailability is explicit and cannot silently return a different layout", "Document golden, integration, typecheck, format and build checks pass; representative output is visually inspected"],
+      "validation": ["npm run agent:validate", "npm run format:check", "npm run typecheck", "npm run test:golden", "npm run test:integration", "npm run build", "git diff --check"]
+    }
   ]
 }
