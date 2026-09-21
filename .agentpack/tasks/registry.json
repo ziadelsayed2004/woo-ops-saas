@@ -3406,5 +3406,12 @@
       "acceptance": ["A4 uses merchant colors and full-color logo; 80mm outputs use black logo and readable RTL", "Header cells in both XLSX presets are light gray with dark readable text", "Download and print are separated in dialog without clearing selections", "Visual PDF inspection and affected golden, UI, integration, typecheck and build checks pass"],
       "validation": ["npm run agent:validate", "npm run format:check", "npm run typecheck", "npm run test:golden", "npm run test:integration", "npm run test:e2e -- --grep orders", "git diff --check"]
     }
+    ,{
+      "id": "T0939", "epic": "E09", "title": "Centralize bilingual application copy and refine sidebar footer", "type": "feat", "phase": 9, "priority": "P0", "estimate": "L", "parallelGroup": "web-localization", "dependencies": ["T0938"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/TESTING.md", "apps/web/src/WorkspaceShell.tsx", "apps/web/src/App.tsx", "apps/web/src/AdminWorkspaces.tsx", "apps/web/src/OrderOutputDialog.tsx", "packages/ui/src/index.ts"],
+      "scope": ["Combine the sidebar account email and collapse control into one compact icon-led control without a visible collapse label", "Introduce reviewable Arabic and English JSON locale catalogs with stable semantic keys and a typed translation helper", "Migrate all operator-facing web application copy from inline Arabic-English conditionals and component-local dictionaries to the centralized locale catalogs"],
+      "acceptance": ["Expanded sidebar footer shows the account email and direction-aware collapse arrow as one control, while collapsed state remains keyboard accessible and tooltip labeled", "Arabic and English catalogs have identical key sets, support interpolation, and are valid UTF-8 JSON suitable for translation review", "Web components consume translation keys for operator-facing copy and retain locale-aware direction, dates, numbers and domain values", "Unit, typecheck, format, build and affected E2E accessibility and visual checks pass"],
+      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:e2e -- --grep \"orders|navigation|localization\"", "npm run build", "git diff --check"]
+    }
   ]
 }
