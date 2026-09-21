@@ -3329,6 +3329,60 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0936",
+      "epic": "E09",
+      "title": "Harden PDF delivery and add direct thermal printing",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "L",
+      "parallelGroup": "document-rendering",
+      "dependencies": ["T0935"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/SECURITY.md",
+        ".agentpack/architecture/TESTING.md",
+        "tools/install-document-browser.mjs",
+        "packages/documents/src/index.ts",
+        "packages/documents/src/html-renderer.ts",
+        "packages/documents/tests/documents.test.js",
+        "packages/exports/src/index.ts",
+        "packages/exports/tests/engine.test.js",
+        "apps/api/src/document-effect.ts",
+        "apps/web/src/App.tsx",
+        "tests/e2e/orders.spec.ts"
+      ],
+      "scope": [
+        "Repair production PDF generation so document jobs never return manifest-only archives when the deployed Chromium binary is unavailable",
+        "Polish A4 invoice, 80mm receipt and 80mm shipping-label layout and verify the exact generated outputs visually",
+        "Refine Arabic XLSX header color, row height and bounded column widths for standard and shipping workbooks",
+        "Add direct print actions for completed thermal receipts and shipping labels while retaining durable document history and order selection"
+      ],
+      "acceptance": [
+        "A4, thermal and shipping-label jobs produce actual PDF artifacts on production-like runtimes with or without an installed Chromium binary",
+        "A4 is exactly 210x297mm and roll documents are exactly 80mm wide with readable content-driven height",
+        "Arabic XLSX exports use a restrained WooCommerce header color and readable bounded dimensions",
+        "Orders expose direct thermal-receipt and shipping-label print actions that open the generated PDF print flow without clearing the selection",
+        "Document failures remain actionable and never present an empty ZIP as a successful document result",
+        "Golden, unit, integration, E2E, typecheck and build checks pass"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:unit",
+        "npm run test:golden",
+        "npm run test:integration",
+        "npm run test:e2e -- --grep orders",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
