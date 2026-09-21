@@ -758,7 +758,18 @@ export const generateDocument = async (request: DocumentRequest): Promise<Docume
   if (process.env.WOO_OPS_DOCUMENT_RENDERER === 'portable') {
     rendered = await renderPortablePdf(renderRequest);
   } else {
-    rendered = await renderHtmlPdf(renderRequest, assets);
+    try {
+      rendered = await renderHtmlPdf(renderRequest, assets);
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : '';
+      const rendererUnavailable =
+        message.includes('executable') ||
+        message.includes('failed to launch') ||
+        message.includes('playwright') ||
+        message.includes('browser');
+      if (!rendererUnavailable || process.env.WOO_OPS_DOCUMENT_RENDERER === 'html') throw error;
+      rendered = await renderPortablePdf(renderRequest);
+    }
   }
   const bytes = pdfBytes(rendered.bytes);
   const checksum = createHash('sha256').update(bytes).digest('hex');

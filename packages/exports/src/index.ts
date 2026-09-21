@@ -457,9 +457,9 @@ export const generateXlsx = async (
   const headers = normalized.columns.map((column) => sanitizeSpreadsheetValue(column.label));
   sheet.addRow(headers);
   const headerRow = sheet.getRow(1);
-  headerRow.height = 28;
+  headerRow.height = 24;
   headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF720EEC' } };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF96588A' } };
   headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
   for (const [index, column] of normalized.columns.entries()) {
     const cell = headerRow.getCell(index + 1);
@@ -484,7 +484,12 @@ export const generateXlsx = async (
         value instanceof Date ? 20 : String(value ?? '').replace(/[\r\n]+/gu, ' ').length;
       return Math.max(maximum, length);
     }, 0);
-    sheet.getColumn(index + 1).width = Math.min(42, Math.max(10, longest + 2));
+    const contentCap = /address|note/iu.test(column.key)
+      ? 38
+      : /(?:item|line).*name/iu.test(column.key)
+        ? 34
+        : 26;
+    sheet.getColumn(index + 1).width = Math.min(contentCap, Math.max(10, longest + 2));
     sheet.getColumn(index + 1).alignment = {
       vertical: 'top',
       ...(arabic && column.type === 'text' ? { horizontal: 'right' } : {}),
