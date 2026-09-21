@@ -2,8 +2,10 @@ import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
-const require = createRequire(import.meta.url);
-const playwrightPackage = require.resolve('playwright-core/package.json');
+const documentsRequire = createRequire(
+  join(process.cwd(), 'packages', 'documents', 'package.json'),
+);
+const playwrightPackage = documentsRequire.resolve('playwright-core/package.json');
 const cli = join(dirname(playwrightPackage), 'cli.js');
 const result = spawnSync(process.execPath, [cli, 'install', 'chromium-headless-shell'], {
   cwd: process.cwd(),

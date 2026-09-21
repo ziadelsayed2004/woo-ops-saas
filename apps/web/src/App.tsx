@@ -4511,9 +4511,25 @@ export function App({
 
   const createSelectionDocuments = async (
     action: 'generate-invoice' | 'generate-thermal' | 'generate-label',
+    printAfterGeneration = false,
   ) => {
+    const printWindow = printAfterGeneration ? window.open('', '_blank') : null;
+    if (printWindow) {
+      printWindow.opener = null;
+      printWindow.document.title =
+        locale === 'ar'
+          ? '\u062c\u0627\u0631\u064a \u062a\u062c\u0647\u064a\u0632 \u0627\u0644\u0637\u0628\u0627\u0639\u0629'
+          : 'Preparing print';
+      printWindow.document.body.textContent =
+        locale === 'ar'
+          ? '\u062c\u0627\u0631\u064a \u062a\u062c\u0647\u064a\u0632 \u0627\u0644\u0645\u0644\u0641\u2026'
+          : 'Preparing document\u2026';
+    }
     const selectionId = await createSelectionSnapshot();
-    if (!selectionId) return;
+    if (!selectionId) {
+      printWindow?.close();
+      return;
+    }
     try {
       const templatesResponse = await fetch('/api/v1/document-templates', {
         credentials: 'include',
@@ -4587,12 +4603,35 @@ export function App({
               details.artifacts.find((item) => item.kind === 'order-pdf') ??
               details.artifacts.find((item) => item.kind === 'zip');
             if (artifact) {
-              const anchor = document.createElement('a');
-              anchor.href = `/api/v1/document-artifacts/${encodeURIComponent(artifact.id)}?download=1`;
-              anchor.download = artifact.filename;
-              document.body.append(anchor);
-              anchor.click();
-              anchor.remove();
+              const artifactUrl = `/api/v1/document-artifacts/${encodeURIComponent(artifact.id)}`;
+              if (printAfterGeneration && printWindow) {
+                const fileResponse = await fetch(artifactUrl, { credentials: 'include' });
+                if (!fileResponse.ok) throw new Error('DOCUMENT_PRINT_LOAD_FAILED');
+                const objectUrl = URL.createObjectURL(await fileResponse.blob());
+                printWindow.document.body.replaceChildren();
+                printWindow.document.body.style.margin = '0';
+                const frame = printWindow.document.createElement('iframe');
+                frame.title = artifact.filename;
+                frame.style.width = '100vw';
+                frame.style.height = '100vh';
+                frame.style.border = '0';
+                frame.src = objectUrl;
+                frame.addEventListener('load', () => {
+                  window.setTimeout(() => {
+                    frame.contentWindow?.focus();
+                    frame.contentWindow?.print();
+                    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+                  }, 250);
+                });
+                printWindow.document.body.append(frame);
+              } else {
+                const anchor = document.createElement('a');
+                anchor.href = `${artifactUrl}?download=1`;
+                anchor.download = artifact.filename;
+                document.body.append(anchor);
+                anchor.click();
+                anchor.remove();
+              }
             }
             break;
           }
@@ -4601,6 +4640,7 @@ export function App({
         await new Promise((resolve) => window.setTimeout(resolve, 1_000));
       }
     } catch (error) {
+      printWindow?.close();
       setSelectionError(true);
       setSelectionMessage(error instanceof Error ? error.message : 'DOCUMENT_JOB_FAILED');
     }
@@ -5150,10 +5190,28 @@ export function App({
                   </Button>
                   <Button
                     size="small"
+                    variant="contained"
+                    onClick={() => void createSelectionDocuments('generate-thermal', true)}
+                  >
+                    {locale === 'ar'
+                      ? '\u0637\u0628\u0627\u0639\u0629 \u062d\u0631\u0627\u0631\u064a\u0629 \u0645\u0628\u0627\u0634\u0631\u0629'
+                      : 'Print thermal now'}
+                  </Button>
+                  <Button
+                    size="small"
                     variant="outlined"
                     onClick={() => void createSelectionDocuments('generate-label')}
                   >
                     {locale === 'ar' ? 'بوليصة شحن حرارية 80mm' : '80mm thermal shipping label'}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    onClick={() => void createSelectionDocuments('generate-label', true)}
+                  >
+                    {locale === 'ar'
+                      ? '\u0637\u0628\u0627\u0639\u0629 \u0627\u0644\u0628\u0648\u0644\u064a\u0635\u0629 \u0645\u0628\u0627\u0634\u0631\u0629'
+                      : 'Print shipping label now'}
                   </Button>
                   {!selectAllMatching && selectedIds.size === 1 && (
                     <Button

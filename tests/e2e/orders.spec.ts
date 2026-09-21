@@ -171,6 +171,8 @@ test('creates the Woo-layout XLSX and offers repeat download in orders @orders @
   await page.goto('/');
   await page.getByRole('button', { name: 'English' }).click();
   await page.getByTestId('order-row-order-1').getByRole('checkbox').check();
+  await expect(page.getByRole('button', { name: 'Print thermal now' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Print shipping label now' })).toBeVisible();
   const automaticDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export Excel' }).click();
   expect((await automaticDownload).suggestedFilename()).toBe('orders-export-xlsx.xlsx');
@@ -183,11 +185,11 @@ test('creates the Woo-layout XLSX and offers repeat download in orders @orders @
   expect(createdVersion?.rowMode).toBe('line');
   expect(columns).toHaveLength(15);
   expect(columns.map((column) => column.label).slice(0, 3)).toEqual([
-    'Order Number',
-    'Order Status',
-    'Order Date',
+    'رقم الطلب',
+    'حالة الطلب',
+    'تاريخ الطلب',
   ]);
-  expect(columns.map((column) => column.label)).toContain('Governorate');
+  expect(columns.map((column) => column.label)).toContain('المحافظة');
   await page.locator('[data-testid="navigation-exports"]:visible').click();
   await expect(page.getByRole('link', { name: 'Download' })).toHaveAttribute(
     'href',

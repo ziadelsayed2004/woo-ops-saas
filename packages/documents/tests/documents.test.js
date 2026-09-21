@@ -207,6 +207,35 @@ test('portable production renderer generates every operator PDF without Chromium
   }
 });
 
+test('automatic renderer falls back only when the HTML browser is unavailable', async (t) => {
+  if (!fontBytes) {
+    t.skip('No font is available in this test environment');
+    return;
+  }
+  const previousRenderer = process.env.WOO_OPS_DOCUMENT_RENDERER;
+  const previousUnavailable = process.env.WOO_OPS_DOCUMENT_BROWSER_UNAVAILABLE_FOR_TEST;
+  delete process.env.WOO_OPS_DOCUMENT_RENDERER;
+  process.env.WOO_OPS_DOCUMENT_BROWSER_UNAVAILABLE_FOR_TEST = '1';
+  try {
+    const result = await generateDocument({
+      order,
+      format: 'thermal-80mm',
+      template,
+      orderId: 'automatic-fallback',
+    });
+    const pdf = await PDFDocument.load(result.bytes);
+    assert.equal(pdf.getPageCount(), 1);
+    assert.ok(Math.abs(result.widthPoints - 80 * (72 / 25.4)) < 0.01);
+    assert.ok(result.bytes.length > 1_000);
+  } finally {
+    if (previousRenderer === undefined) delete process.env.WOO_OPS_DOCUMENT_RENDERER;
+    else process.env.WOO_OPS_DOCUMENT_RENDERER = previousRenderer;
+    if (previousUnavailable === undefined)
+      delete process.env.WOO_OPS_DOCUMENT_BROWSER_UNAVAILABLE_FOR_TEST;
+    else process.env.WOO_OPS_DOCUMENT_BROWSER_UNAVAILABLE_FOR_TEST = previousUnavailable;
+  }
+});
+
 test('batch generation isolates invalid documents and merges successful pages', async (t) => {
   if (!fontBytes) {
     t.skip('No font is available in this test environment');

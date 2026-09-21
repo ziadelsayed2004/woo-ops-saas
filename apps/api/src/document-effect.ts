@@ -199,6 +199,7 @@ export const createDocumentEffect =
       const items = store.getDocumentBatchItemsForWorker(context, batchId);
       const successful = items.filter((item) => item.status === 'succeeded' && item.artifactId);
       const failed = items.filter((item) => item.status === 'failed');
+      if (successful.length === 0) throw new Error('DOCUMENT_BATCH_ALL_ITEMS_FAILED');
       const pdfEntries = successful.map((item) => {
         const artifact = store.getDocumentArtifactForWorker(context, item.artifactId as string);
         const bytes = readPrivateDocumentArtifact(

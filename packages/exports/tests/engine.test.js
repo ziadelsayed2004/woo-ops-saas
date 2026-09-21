@@ -115,7 +115,8 @@ test('Arabic XLSX exports use RTL sheets and branded Arabic headers', async () =
   assert.equal(sheet.name, 'الطلبات');
   assert.equal(sheet.views[0]?.rightToLeft, true);
   assert.deepEqual(sheet.getRow(1).values.slice(1), ['رقم الطلب', 'رقم الهاتف']);
-  assert.equal(sheet.getCell('A1').fill.fgColor.argb, 'FF720EEC');
+  assert.equal(sheet.getCell('A1').fill.fgColor.argb, 'FF96588A');
+  assert.equal(sheet.getRow(1).height, 24);
   assert.equal(sheet.getCell('A1').font.color.argb, 'FFFFFFFF');
 });
 

@@ -58,30 +58,30 @@ type RenderAssets = Readonly<{ barcode?: Uint8Array; qr?: Uint8Array }>;
 const translations = (arabic: boolean) =>
   arabic
     ? {
-        invoice: 'ÙØ§ØªÙˆØ±Ø© Ø·Ù„Ø¨',
-        receipt: 'Ø¥ÙŠØµØ§Ù„ Ø·Ù„Ø¨',
-        label: 'Ø¨ÙˆÙ„ÙŠØµØ© Ø´Ø­Ù†',
-        order: 'Ø±Ù‚Ù… Ø§Ù„Ø·Ù„Ø¨',
-        date: 'Ø§Ù„ØªØ§Ø±ÙŠØ®',
-        customer: 'Ø§Ù„Ø¹Ù…ÙŠÙ„',
-        phone: 'Ø§Ù„Ù‡Ø§ØªÙ',
-        email: 'Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ',
-        address: 'Ø¹Ù†ÙˆØ§Ù† Ø§Ù„Ø´Ø­Ù†',
-        governorate: 'Ø§Ù„Ù…Ø­Ø§ÙØ¸Ø©',
-        payment: 'Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹',
-        shipping: 'Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø´Ø­Ù†',
-        items: 'ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø·Ù„Ø¨',
-        item: 'Ø§Ù„Ù…Ù†ØªØ¬',
-        qty: 'Ø§Ù„ÙƒÙ…ÙŠØ©',
-        unit: 'Ø³Ø¹Ø± Ø§Ù„ÙˆØ­Ø¯Ø©',
-        total: 'Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ',
-        subtotal: 'Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª',
-        discount: 'Ø§Ù„Ø®ØµÙ…',
-        shippingFee: 'Ø§Ù„Ø´Ø­Ù†',
-        tax: 'Ø§Ù„Ø¶Ø±ÙŠØ¨Ø©',
-        fees: 'Ø§Ù„Ø±Ø³ÙˆÙ…',
-        grandTotal: 'Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø³ØªØ­Ù‚',
-        thankYou: 'Ø´ÙƒØ±Ù‹Ø§ Ù„ØªØ¹Ø§Ù…Ù„ÙƒÙ… Ù…Ø¹Ù†Ø§',
+        invoice: 'فاتورة طلب',
+        receipt: 'إيصال طلب',
+        label: 'بوليصة شحن',
+        order: 'رقم الطلب',
+        date: 'التاريخ',
+        customer: 'العميل',
+        phone: 'الهاتف',
+        email: 'البريد الإلكتروني',
+        address: 'عنوان الشحن',
+        governorate: 'المحافظة',
+        payment: 'طريقة الدفع',
+        shipping: 'طريقة الشحن',
+        items: 'تفاصيل الطلب',
+        item: 'المنتج',
+        qty: 'الكمية',
+        unit: 'سعر الوحدة',
+        total: 'الإجمالي',
+        subtotal: 'إجمالي المنتجات',
+        discount: 'الخصم',
+        shippingFee: 'الشحن',
+        tax: 'الضريبة',
+        fees: 'الرسوم',
+        grandTotal: 'الإجمالي المستحق',
+        thankYou: 'شكرًا لتعاملكم معنا',
       }
     : {
         invoice: 'ORDER INVOICE',
@@ -118,7 +118,7 @@ const address = (order: Readonly<Record<string, unknown>>): string =>
     text(order, 'shipping.postcode', 'billing.postcode'),
   ]
     .filter(Boolean)
-    .join('ØŒ ');
+    .join('، ');
 
 const htmlDocument = (request: DocumentRequest, assets: RenderAssets): string => {
   const order = request.order;
@@ -212,6 +212,8 @@ export const renderHtmlPdf = async (
   request: DocumentRequest,
   assets: RenderAssets,
 ): Promise<{ bytes: Uint8Array; pageCount: number; widthPoints: number; heightPoints: number }> => {
+  if (process.env.WOO_OPS_DOCUMENT_BROWSER_UNAVAILABLE_FOR_TEST === '1')
+    throw new Error('Playwright browser executable unavailable');
   // Keep the browser inside the deployed dependency tree so Hostinger release directories do not
   // depend on a user-level Playwright cache that may disappear between build and runtime.
   process.env.PLAYWRIGHT_BROWSERS_PATH ||= '0';
