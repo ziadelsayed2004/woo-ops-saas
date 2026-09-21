@@ -280,20 +280,6 @@ const snapshotSource = (request: DocumentRequest): string =>
     order: request.order,
   }) ?? '{}';
 const pdfBytes = (value: Uint8Array): Uint8Array => value;
-const browserRendererUnavailable = (error: unknown): boolean => {
-  if (!(error instanceof Error)) return false;
-  const message = error.message.toLowerCase();
-  return [
-    "executable doesn't exist",
-    'executable does not exist',
-    'failed to launch',
-    'browser closed',
-    'host system is missing dependencies',
-    'browser was not found',
-    'playwright install',
-    'spawn',
-  ].some((fragment) => message.includes(fragment));
-};
 const rtlText = (value: string, direction: DocumentDirection): string =>
   direction === 'rtl' && /[\u0600-\u06ff]/u.test(value) ? `\u202B${value}\u202C` : value;
 const drawWrapped = (
@@ -772,12 +758,7 @@ export const generateDocument = async (request: DocumentRequest): Promise<Docume
   if (process.env.WOO_OPS_DOCUMENT_RENDERER === 'portable') {
     rendered = await renderPortablePdf(renderRequest);
   } else {
-    try {
-      rendered = await renderHtmlPdf(renderRequest, assets);
-    } catch (error) {
-      if (!browserRendererUnavailable(error)) throw error;
-      rendered = await renderPortablePdf(renderRequest);
-    }
+    rendered = await renderHtmlPdf(renderRequest, assets);
   }
   const bytes = pdfBytes(rendered.bytes);
   const checksum = createHash('sha256').update(bytes).digest('hex');

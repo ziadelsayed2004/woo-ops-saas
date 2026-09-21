@@ -96,6 +96,29 @@ test('XLSX export has a frozen header, text formatting, and no formula cells', a
   assert.equal(sheet.getColumn(4).alignment.wrapText, true);
 });
 
+test('Arabic XLSX exports use RTL sheets and branded Arabic headers', async () => {
+  const result = await generateExport({
+    profile: {
+      ...profile('xlsx'),
+      name: 'طلبات Woo XLSX v4',
+      rowMode: 'order',
+      columns: [
+        { key: 'orderNumber', label: 'رقم الطلب', type: 'text' },
+        { key: 'billing.phone', label: 'رقم الهاتف', type: 'text' },
+      ],
+    },
+    orders: [order],
+  });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(result.bytes);
+  const sheet = workbook.worksheets[0];
+  assert.equal(sheet.name, 'الطلبات');
+  assert.equal(sheet.views[0]?.rightToLeft, true);
+  assert.deepEqual(sheet.getRow(1).values.slice(1), ['رقم الطلب', 'رقم الهاتف']);
+  assert.equal(sheet.getCell('A1').fill.fgColor.argb, 'FF720EEC');
+  assert.equal(sheet.getCell('A1').font.color.argb, 'FFFFFFFF');
+});
+
 test('Egypt governorate codes are exported as readable Arabic names', async () => {
   const result = await generateExport({
     profile: {

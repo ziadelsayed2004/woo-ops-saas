@@ -450,13 +450,17 @@ export const generateXlsx = async (
   workbook.created = new Date(0);
   workbook.modified = new Date(0);
   workbook.calcProperties.fullCalcOnLoad = false;
-  const sheet = workbook.addWorksheet(worksheetName(normalized.name));
-  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  const arabic = normalized.columns.some((column) => /[\u0600-\u06ff]/u.test(column.label));
+  const arabicSheetName = /shipping|شحن/iu.test(normalized.name) ? 'طلبات الشحن' : 'الطلبات';
+  const sheet = workbook.addWorksheet(worksheetName(arabic ? arabicSheetName : normalized.name));
+  sheet.views = [{ state: 'frozen', ySplit: 1, rightToLeft: arabic }];
   const headers = normalized.columns.map((column) => sanitizeSpreadsheetValue(column.label));
   sheet.addRow(headers);
   const headerRow = sheet.getRow(1);
-  headerRow.font = { bold: true };
-  headerRow.alignment = { vertical: 'middle' };
+  headerRow.height = 28;
+  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF720EEC' } };
+  headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
   for (const [index, column] of normalized.columns.entries()) {
     const cell = headerRow.getCell(index + 1);
     cell.numFmt = '@';
@@ -483,6 +487,7 @@ export const generateXlsx = async (
     sheet.getColumn(index + 1).width = Math.min(42, Math.max(10, longest + 2));
     sheet.getColumn(index + 1).alignment = {
       vertical: 'top',
+      ...(arabic && column.type === 'text' ? { horizontal: 'right' } : {}),
       wrapText: /address|(?:item|line)\.?(?:name)?|note/iu.test(column.key),
     };
   });

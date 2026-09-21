@@ -4357,7 +4357,7 @@ export function App({
     const profiles =
       ((await profilesResponse.json()) as { items?: ExportProfileSummary[] }).items ?? [];
     const profileName =
-      preset === 'shipping' ? 'Woo Shipping XLSX v1' : `Woo Orders ${format.toUpperCase()} v3`;
+      preset === 'shipping' ? 'طلبات الشحن XLSX v2' : `طلبات Woo ${format.toUpperCase()} v4`;
     const exportColumns = preset === 'shipping' ? wooShippingExportColumns : wooOrderExportColumns;
     let profile = profiles.find((item) => item.name === profileName);
     if (!profile) {
@@ -4389,7 +4389,11 @@ export function App({
         item.format === format &&
         item.rowMode === 'line' &&
         item.columns?.length === exportColumns.length &&
-        item.columns.every((column, index) => column.key === exportColumns[index]?.key),
+        item.columns.every(
+          (column, index) =>
+            column.key === exportColumns[index]?.key &&
+            column.label === exportColumns[index]?.label,
+        ),
     );
     if (existing) return existing;
     const createVersionResponse = await fetch(

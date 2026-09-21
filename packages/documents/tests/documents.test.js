@@ -90,6 +90,8 @@ test('Arabic A4 document embeds a font, QR/barcode assets, and is reproducible',
   assert.deepEqual(first.snapshot, second.snapshot);
   const pdf = await PDFDocument.load(first.bytes);
   assert.equal(pdf.getPageCount(), 1);
+  assert.equal(pdf.getSubject(), 'Woo Ops a4');
+  assert.equal(pdf.getAuthor(), template.companyName);
   assert.match(new TextDecoder().decode(first.bytes), /\/Type \/Font/);
   assert.match(first.checksum, /^[a-f0-9]{64}$/);
 });
@@ -211,9 +213,9 @@ test('batch generation isolates invalid documents and merges successful pages', 
     return;
   }
   const result = await generateDocumentBatch([
-    { order, format: 'a5', template, orderId: 'valid-1' },
-    { order: null, format: 'a5', template, orderId: 'invalid-1' },
-    { order, format: 'a5', template, orderId: 'valid-2' },
+    { order, format: 'a4', template, orderId: 'valid-1' },
+    { order: null, format: 'a4', template, orderId: 'invalid-1' },
+    { order, format: 'a4', template, orderId: 'valid-2' },
   ]);
   assert.equal(result.documents.length, 2);
   assert.equal(result.failures.length, 1);

@@ -11,6 +11,7 @@
     "apps/*"
   ],
   "scripts": {
+    "postinstall": "node tools/install-document-browser.mjs",
     "agent:doctor": "node .agentpack/scripts/agentpack.mjs doctor",
     "agent:validate": "node .agentpack/scripts/agentpack.mjs validate",
     "task:list": "node .agentpack/scripts/agentpack.mjs task list",

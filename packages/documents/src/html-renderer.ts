@@ -1,5 +1,4 @@
-import { chromium } from 'playwright-chromium';
-import { readFileSync } from 'node:fs';
+﻿import { readFileSync } from 'node:fs';
 import { PDFDocument } from 'pdf-lib';
 
 import type { DocumentRequest } from './index.js';
@@ -10,9 +9,6 @@ const SUPPORT_EMAIL = 'info@wasatalbalad.store';
 const STORE_URL = 'https://wasatalbalad.store/';
 const COLOR_LOGO = new Uint8Array(
   readFileSync(new URL('../assets/wasat-al-balad-horizontal.svg', import.meta.url)),
-);
-const MONO_LOGO = new Uint8Array(
-  readFileSync(new URL('../assets/wasat-al-balad-mark.svg', import.meta.url)),
 );
 const escapeHtml = (value: unknown): string =>
   String(value ?? '')
@@ -62,30 +58,30 @@ type RenderAssets = Readonly<{ barcode?: Uint8Array; qr?: Uint8Array }>;
 const translations = (arabic: boolean) =>
   arabic
     ? {
-        invoice: 'فاتورة طلب',
-        receipt: 'إيصال طلب',
-        label: 'بوليصة شحن',
-        order: 'رقم الطلب',
-        date: 'التاريخ',
-        customer: 'العميل',
-        phone: 'الهاتف',
-        email: 'البريد الإلكتروني',
-        address: 'عنوان الشحن',
-        governorate: 'المحافظة',
-        payment: 'طريقة الدفع',
-        shipping: 'طريقة الشحن',
-        items: 'تفاصيل الطلب',
-        item: 'المنتج',
-        qty: 'الكمية',
-        unit: 'سعر الوحدة',
-        total: 'الإجمالي',
-        subtotal: 'إجمالي المنتجات',
-        discount: 'الخصم',
-        shippingFee: 'الشحن',
-        tax: 'الضريبة',
-        fees: 'الرسوم',
-        grandTotal: 'الإجمالي المستحق',
-        thankYou: 'شكرًا لتعاملكم معنا',
+        invoice: 'ÙØ§ØªÙˆØ±Ø© Ø·Ù„Ø¨',
+        receipt: 'Ø¥ÙŠØµØ§Ù„ Ø·Ù„Ø¨',
+        label: 'Ø¨ÙˆÙ„ÙŠØµØ© Ø´Ø­Ù†',
+        order: 'Ø±Ù‚Ù… Ø§Ù„Ø·Ù„Ø¨',
+        date: 'Ø§Ù„ØªØ§Ø±ÙŠØ®',
+        customer: 'Ø§Ù„Ø¹Ù…ÙŠÙ„',
+        phone: 'Ø§Ù„Ù‡Ø§ØªÙ',
+        email: 'Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ',
+        address: 'Ø¹Ù†ÙˆØ§Ù† Ø§Ù„Ø´Ø­Ù†',
+        governorate: 'Ø§Ù„Ù…Ø­Ø§ÙØ¸Ø©',
+        payment: 'Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹',
+        shipping: 'Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø´Ø­Ù†',
+        items: 'ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø·Ù„Ø¨',
+        item: 'Ø§Ù„Ù…Ù†ØªØ¬',
+        qty: 'Ø§Ù„ÙƒÙ…ÙŠØ©',
+        unit: 'Ø³Ø¹Ø± Ø§Ù„ÙˆØ­Ø¯Ø©',
+        total: 'Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ',
+        subtotal: 'Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª',
+        discount: 'Ø§Ù„Ø®ØµÙ…',
+        shippingFee: 'Ø§Ù„Ø´Ø­Ù†',
+        tax: 'Ø§Ù„Ø¶Ø±ÙŠØ¨Ø©',
+        fees: 'Ø§Ù„Ø±Ø³ÙˆÙ…',
+        grandTotal: 'Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø³ØªØ­Ù‚',
+        thankYou: 'Ø´ÙƒØ±Ù‹Ø§ Ù„ØªØ¹Ø§Ù…Ù„ÙƒÙ… Ù…Ø¹Ù†Ø§',
       }
     : {
         invoice: 'ORDER INVOICE',
@@ -122,7 +118,7 @@ const address = (order: Readonly<Record<string, unknown>>): string =>
     text(order, 'shipping.postcode', 'billing.postcode'),
   ]
     .filter(Boolean)
-    .join('، ');
+    .join('ØŒ ');
 
 const htmlDocument = (request: DocumentRequest, assets: RenderAssets): string => {
   const order = request.order;
@@ -201,21 +197,25 @@ const htmlDocument = (request: DocumentRequest, assets: RenderAssets): string =>
         ? t.label
         : t.invoice;
   const compact = request.format === 'thermal-80mm' || request.format === 'label-100x150mm';
-  const logo = dataUrl('image/svg+xml', compact ? MONO_LOGO : COLOR_LOGO);
+  const logo = dataUrl('image/svg+xml', COLOR_LOGO);
   const fontFace = request.template.fontBytes
     ? `@font-face{font-family:DocumentFont;src:url('${dataUrl('font/ttf', request.template.fontBytes)}') format('truetype');font-weight:100 900}`
     : '';
   const formatClass = request.format.replaceAll('-', '_');
   return `<!doctype html><html lang="${arabic ? 'ar' : 'en'}" dir="${arabic ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><style>
-${fontFace} @page{margin:0} *{box-sizing:border-box} html,body{margin:0;padding:0;background:#fff;color:#152033;font-family:DocumentFont,Arial,"Noto Sans Arabic",sans-serif;font-variant-numeric:lining-nums tabular-nums} body{direction:${arabic ? 'rtl' : 'ltr'}} .page{min-height:100%;padding:12mm 13mm;display:flex;flex-direction:column;gap:6mm}.a4 .page{width:210mm;min-height:297mm}.a5 .page{width:148mm;min-height:210mm}.brand{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #720eec;padding-bottom:5mm}.brand-identity{display:flex;align-items:center;gap:4mm}.brand-logo{display:block;width:50mm;max-height:19mm;object-fit:contain}.brand p,.meta p{margin:1mm 0;color:#56657a}.doc-title{text-align:${arabic ? 'left' : 'right'}}.doc-title h2{font-size:22px;margin:0 0 2mm}.pill{display:inline-block;background:#f1e8ff;color:#4d0a9e;border-radius:999px;padding:1.5mm 4mm;font-weight:700}.facts{display:grid;grid-template-columns:1fr 1fr;gap:3mm}.fact{border:1px solid #ded4ee;border-radius:3mm;padding:3mm;min-height:17mm}.fact span{display:block;color:#64748b;font-size:10px;margin-bottom:1mm}.fact strong{font-size:12px;line-height:1.55;overflow-wrap:anywhere}.section-title{font-size:15px;margin:0 0 2mm}.items{width:100%;border-collapse:separate;border-spacing:0;border:1px solid #ded4ee;border-radius:3mm;overflow:hidden}.items th{background:#720eec;color:white;font-size:10px;padding:3mm 2mm}.items td{padding:3mm 2mm;border-bottom:1px solid #eee8f6;font-size:10px;text-align:center;vertical-align:top}.items tr:last-child td{border-bottom:0}.items .product{text-align:${arabic ? 'right' : 'left'};width:42%}.product small{display:block;color:#64748b;margin-top:1mm;direction:ltr}.index{width:7%}.summary{margin-${arabic ? 'right' : 'left'}:auto;width:78mm;border:1px solid #ded4ee;border-radius:3mm;padding:3mm}.total-row{display:flex;justify-content:space-between;padding:1.7mm 0;border-bottom:1px dashed #ded4ee;font-size:11px}.total-row:last-child{border-bottom:0}.total-row.grand{font-size:14px;color:#4d0a9e;padding-top:3mm}.codes{display:flex;align-items:flex-end;justify-content:space-between;gap:6mm;margin-top:auto;padding-top:4mm;border-top:1px solid #ded4ee}.barcode{max-width:62mm;height:13mm;object-fit:fill}.qr{width:22mm;height:22mm}.code-caption{font-size:7px;color:#475569;margin-top:1mm;direction:ltr}.support{display:flex;justify-content:center;gap:5mm;flex-wrap:wrap;text-align:center;font-size:9px;color:#334155}.support span{direction:ltr}.footer{text-align:center;font-size:9px;color:#64748b;margin-top:2mm}
-.thermal_80mm .page,.label_100x150mm .page{width:80mm;min-height:0;padding:4mm;gap:3mm}.thermal_80mm .brand,.label_100x150mm .brand{display:block;text-align:center;padding-bottom:3mm;border-color:#111}.thermal_80mm .brand-identity,.label_100x150mm .brand-identity{display:block}.thermal_80mm .brand-logo,.label_100x150mm .brand-logo{width:18mm;height:18mm;margin:0 auto 1mm;filter:grayscale(1) contrast(2)}.thermal_80mm .brand p,.label_100x150mm .brand p{font-size:8px}.thermal_80mm .doc-title,.label_100x150mm .doc-title{text-align:center;margin-top:2mm}.thermal_80mm .doc-title h2,.label_100x150mm .doc-title h2{font-size:15px}.thermal_80mm .facts,.label_100x150mm .facts{display:block}.thermal_80mm .fact,.label_100x150mm .fact{border:0;border-bottom:1px dashed #9aa5b1;border-radius:0;min-height:0;padding:2mm 0}.thermal_80mm .fact span,.thermal_80mm .fact strong,.label_100x150mm .fact span,.label_100x150mm .fact strong{display:inline;font-size:10px}.thermal_80mm .fact span::after,.label_100x150mm .fact span::after{content:": "}.thermal_80mm .items th,.label_100x150mm .items th{background:#eee;color:#152033;padding:2mm 1mm}.thermal_80mm .items td,.label_100x150mm .items td{padding:2mm 1mm;font-size:9px}.thermal_80mm .items th:nth-child(1),.thermal_80mm .items td:nth-child(1),.thermal_80mm .items th:nth-child(4),.thermal_80mm .items td:nth-child(4),.label_100x150mm .items th:nth-child(1),.label_100x150mm .items td:nth-child(1),.label_100x150mm .items th:nth-child(4),.label_100x150mm .items td:nth-child(4){display:none}.thermal_80mm .items .product,.label_100x150mm .items .product{width:auto}.thermal_80mm .summary{width:100%;padding:2mm}.label_100x150mm .summary{display:none}.thermal_80mm .codes,.label_100x150mm .codes{display:grid;grid-template-columns:1fr 19mm;align-items:end;gap:2mm;text-align:center;margin-top:2mm;border-color:#aaa}.thermal_80mm .barcode,.label_100x150mm .barcode{width:100%;max-width:100%;height:12mm}.thermal_80mm .qr,.label_100x150mm .qr{display:block;width:18mm;height:18mm}.thermal_80mm .support,.label_100x150mm .support{display:block;font-size:7.5px}.thermal_80mm .support span,.label_100x150mm .support span{display:block;margin:.8mm 0}.thermal_80mm .footer,.label_100x150mm .footer{font-size:7px;margin-top:0}
-</style></head><body class="${formatClass}"><main class="page"><header class="brand"><div class="brand-identity"><img class="brand-logo" src="${logo}" alt="${escapeHtml(request.template.companyName)}">${request.template.companyAddress ? `<p>${escapeHtml(request.template.companyAddress)}</p>` : ''}</div><div class="doc-title"><h2>${escapeHtml(title)}</h2><span class="pill">#${escapeHtml(orderNumber)}</span>${createdLabel ? `<p>${escapeHtml(createdLabel)}</p>` : ''}</div></header><section class="facts">${factCards}</section><section><h3 class="section-title">${escapeHtml(t.items)}</h3><table class="items"><thead><tr><th>#</th><th>${escapeHtml(t.item)}</th><th>${escapeHtml(t.qty)}</th><th>${escapeHtml(t.unit)}</th><th>${escapeHtml(t.total)}</th></tr></thead><tbody>${lineRows}</tbody></table></section><section class="summary">${totalRows}</section><section class="codes"><div>${assets.barcode ? `<img class="barcode" src="${dataUrl('image/png', assets.barcode)}"><div class="code-caption">#${escapeHtml(orderNumber)}</div>` : ''}</div>${assets.qr ? `<div><img class="qr" src="${dataUrl('image/png', assets.qr)}"><div class="code-caption">${STORE_URL}</div></div>` : ''}</section><section class="support"><span>${escapeHtml(SUPPORT_PHONE)}</span><span>${escapeHtml(SUPPORT_EMAIL)}</span></section>${request.template.body ? `<div class="footer">${escapeHtml(request.template.body)}</div>` : ''}<footer class="footer">${escapeHtml(request.template.footerText || t.thankYou)}</footer></main></body></html>`;
+${fontFace} @page{margin:0} *{box-sizing:border-box} html,body{margin:0;padding:0;background:#fff;color:#152033;font-family:DocumentFont,Arial,"Noto Sans Arabic",sans-serif;font-variant-numeric:lining-nums tabular-nums} body{direction:${arabic ? 'rtl' : 'ltr'}} .page{min-height:100%;padding:12mm 13mm;display:flex;flex-direction:column;gap:6mm}.a4 .page{width:210mm;min-height:297mm}.a5 .page{width:148mm;min-height:210mm}.brand{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #720eec;padding-bottom:5mm}.brand-identity{display:flex;align-items:center;gap:4mm}.logo-window{width:50mm;height:20mm;display:grid;place-items:center}.brand-logo{display:block;width:50mm;height:20mm;object-fit:contain}.brand p,.meta p{margin:1mm 0;color:#56657a}.doc-title{text-align:${arabic ? 'left' : 'right'}}.doc-title h2{font-size:22px;margin:0 0 2mm}.pill{display:inline-block;background:#f1e8ff;color:#4d0a9e;border-radius:999px;padding:1.5mm 4mm;font-weight:700}.facts{display:grid;grid-template-columns:1fr 1fr;gap:3mm}.fact{border:1px solid #ded4ee;border-radius:3mm;padding:3mm;min-height:17mm}.fact span{display:block;color:#64748b;font-size:10px;margin-bottom:1mm}.fact strong{font-size:12px;line-height:1.55;overflow-wrap:anywhere}.section-title{font-size:15px;margin:0 0 2mm}.items{width:100%;border-collapse:separate;border-spacing:0;border:1px solid #ded4ee;border-radius:3mm;overflow:hidden}.items th{background:#720eec;color:white;font-size:10px;padding:3mm 2mm}.items td{padding:3mm 2mm;border-bottom:1px solid #eee8f6;font-size:10px;text-align:center;vertical-align:top}.items tr:last-child td{border-bottom:0}.items .product{text-align:${arabic ? 'right' : 'left'};width:42%}.product small{display:block;color:#64748b;margin-top:1mm;direction:ltr}.index{width:7%}.summary{margin-${arabic ? 'right' : 'left'}:auto;width:78mm;border:1px solid #ded4ee;border-radius:3mm;padding:3mm}.total-row{display:flex;justify-content:space-between;padding:1.7mm 0;border-bottom:1px dashed #ded4ee;font-size:11px}.total-row:last-child{border-bottom:0}.total-row.grand{font-size:14px;color:#4d0a9e;padding-top:3mm}.codes{display:flex;align-items:flex-end;justify-content:space-between;gap:6mm;margin-top:auto;padding-top:4mm;border-top:1px solid #ded4ee}.barcode{max-width:62mm;height:13mm;object-fit:fill}.qr{width:22mm;height:22mm}.code-caption{font-size:7px;color:#475569;margin-top:1mm;direction:ltr}.support{display:flex;justify-content:center;gap:5mm;flex-wrap:wrap;text-align:center;font-size:9px;color:#334155}.support span{direction:ltr}.footer{text-align:center;font-size:9px;color:#64748b;margin-top:2mm}
+.thermal_80mm .page,.label_100x150mm .page{width:80mm;min-height:0;padding:4mm;gap:3mm}.thermal_80mm .brand,.label_100x150mm .brand{display:block;text-align:center;padding-bottom:3mm;border-color:#111}.thermal_80mm .brand-identity,.label_100x150mm .brand-identity{display:block}.thermal_80mm .logo-window,.label_100x150mm .logo-window{width:38mm;height:18mm;margin:0 auto 1mm}.thermal_80mm .brand-logo,.label_100x150mm .brand-logo{width:38mm;height:18mm;filter:grayscale(1) contrast(2)}.thermal_80mm .brand p,.label_100x150mm .brand p{font-size:8px}.thermal_80mm .doc-title,.label_100x150mm .doc-title{text-align:center;margin-top:2mm}.thermal_80mm .doc-title h2,.label_100x150mm .doc-title h2{font-size:15px}.thermal_80mm .facts,.label_100x150mm .facts{display:block}.thermal_80mm .fact,.label_100x150mm .fact{border:0;border-bottom:1px dashed #9aa5b1;border-radius:0;min-height:0;padding:2mm 0}.thermal_80mm .fact span,.thermal_80mm .fact strong,.label_100x150mm .fact span,.label_100x150mm .fact strong{display:inline;font-size:10px}.thermal_80mm .fact span::after,.label_100x150mm .fact span::after{content:": "}.thermal_80mm .items th,.label_100x150mm .items th{background:#eee;color:#152033;padding:2mm 1mm}.thermal_80mm .items td,.label_100x150mm .items td{padding:2mm 1mm;font-size:9px}.thermal_80mm .items th:nth-child(1),.thermal_80mm .items td:nth-child(1),.thermal_80mm .items th:nth-child(4),.thermal_80mm .items td:nth-child(4),.label_100x150mm .items th:nth-child(1),.label_100x150mm .items td:nth-child(1),.label_100x150mm .items th:nth-child(4),.label_100x150mm .items td:nth-child(4){display:none}.thermal_80mm .items .product,.label_100x150mm .items .product{width:auto}.thermal_80mm .summary{width:100%;padding:2mm}.label_100x150mm .summary{display:none}.thermal_80mm .codes,.label_100x150mm .codes{display:grid;grid-template-columns:1fr 19mm;align-items:end;gap:2mm;text-align:center;margin-top:2mm;border-color:#aaa}.thermal_80mm .barcode,.label_100x150mm .barcode{width:100%;max-width:100%;height:12mm}.thermal_80mm .qr,.label_100x150mm .qr{display:block;width:18mm;height:18mm}.thermal_80mm .support,.label_100x150mm .support{display:block;font-size:7.5px}.thermal_80mm .support span,.label_100x150mm .support span{display:block;margin:.8mm 0}.thermal_80mm .footer,.label_100x150mm .footer{font-size:7px;margin-top:0}
+</style></head><body class="${formatClass}"><main class="page"><header class="brand"><div class="brand-identity"><div class="logo-window"><img class="brand-logo" src="${logo}" alt="${escapeHtml(request.template.companyName)}"></div>${request.template.companyAddress ? `<p>${escapeHtml(request.template.companyAddress)}</p>` : ''}</div><div class="doc-title"><h2>${escapeHtml(title)}</h2><span class="pill">#${escapeHtml(orderNumber)}</span>${createdLabel ? `<p>${escapeHtml(createdLabel)}</p>` : ''}</div></header><section class="facts">${factCards}</section><section><h3 class="section-title">${escapeHtml(t.items)}</h3><table class="items"><thead><tr><th>#</th><th>${escapeHtml(t.item)}</th><th>${escapeHtml(t.qty)}</th><th>${escapeHtml(t.unit)}</th><th>${escapeHtml(t.total)}</th></tr></thead><tbody>${lineRows}</tbody></table></section><section class="summary">${totalRows}</section><section class="codes"><div>${assets.barcode ? `<img class="barcode" src="${dataUrl('image/png', assets.barcode)}"><div class="code-caption">#${escapeHtml(orderNumber)}</div>` : ''}</div>${assets.qr ? `<div><img class="qr" src="${dataUrl('image/png', assets.qr)}"><div class="code-caption">${STORE_URL}</div></div>` : ''}</section><section class="support"><span>${escapeHtml(SUPPORT_PHONE)}</span><span>${escapeHtml(SUPPORT_EMAIL)}</span></section>${request.template.body ? `<div class="footer">${escapeHtml(request.template.body)}</div>` : ''}<footer class="footer">${escapeHtml(request.template.footerText || t.thankYou)}</footer></main></body></html>`;
 };
 
 export const renderHtmlPdf = async (
   request: DocumentRequest,
   assets: RenderAssets,
 ): Promise<{ bytes: Uint8Array; pageCount: number; widthPoints: number; heightPoints: number }> => {
+  // Keep the browser inside the deployed dependency tree so Hostinger release directories do not
+  // depend on a user-level Playwright cache that may disappear between build and runtime.
+  process.env.PLAYWRIGHT_BROWSERS_PATH ||= '0';
+  const { chromium } = await import('playwright-chromium');
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
@@ -246,7 +246,7 @@ export const renderHtmlPdf = async (
       preferCSSPageSize: false,
       displayHeaderFooter: false,
     });
-    const pdf = await PDFDocument.load(new Uint8Array(raw));
+    const pdf = await PDFDocument.load(new Uint8Array(raw), { updateMetadata: false });
     const exactWidth = widthMm * MM_TO_POINTS;
     const exactHeight = heightMm * MM_TO_POINTS;
     for (const pdfPage of pdf.getPages()) pdfPage.setSize(exactWidth, exactHeight);
