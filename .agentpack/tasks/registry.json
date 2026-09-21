@@ -3191,6 +3191,49 @@
         "npm run build",
         "git diff --check"
       ]
+    },
+    {
+      "id": "T0933",
+      "epic": "E09",
+      "title": "Redesign portable invoice receipt and shipping PDFs",
+      "type": "fix",
+      "phase": 9,
+      "priority": "P0",
+      "estimate": "L",
+      "parallelGroup": "document-rendering",
+      "dependencies": ["T0931"],
+      "references": [
+        "AGENTS.md",
+        ".agentpack/product/PRD.md",
+        ".agentpack/product/UI_SPEC.md",
+        ".agentpack/architecture/ARCHITECTURE.md",
+        ".agentpack/architecture/TESTING.md",
+        "packages/documents/src/index.ts",
+        "packages/documents/src/html-renderer.ts",
+        "packages/documents/tests/documents.test.js",
+        "apps/api/src/document-effect.ts"
+      ],
+      "scope": [
+        "Replace the legacy-looking portable PDF fallback with a polished structured design for A4 invoices, 80mm receipts and 80mm shipping labels",
+        "Preserve complete order, customer, address, payment, shipping, line, total, barcode, QR and support information in Arabic and English",
+        "Generate and visually inspect representative PDFs from the same portable path used when Chromium is unavailable"
+      ],
+      "acceptance": [
+        "Portable A4 output has professional brand hierarchy, customer and order cards, a clean items table, totals and footer",
+        "Portable 80mm receipt and shipping label have distinct task-appropriate layouts, readable density and content-driven height",
+        "Arabic text is readable with no clipping and barcode, QR, support phone and email are present",
+        "Golden, visual, integration, typecheck and build checks pass"
+      ],
+      "validation": [
+        "npm run agent:validate",
+        "npm run format:check",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run test:golden",
+        "npm run test:integration",
+        "npm run build",
+        "git diff --check"
+      ]
     }
   ]
 }
