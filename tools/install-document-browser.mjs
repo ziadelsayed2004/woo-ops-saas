@@ -7,19 +7,29 @@ const documentsRequire = createRequire(
 );
 const playwrightPackage = documentsRequire.resolve('playwright-core/package.json');
 const cli = join(dirname(playwrightPackage), 'cli.js');
-const result = spawnSync(process.execPath, [cli, 'install', 'chromium-headless-shell'], {
-  cwd: process.cwd(),
-  env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: '0' },
-  stdio: 'inherit',
-});
+const { documentBrowserProvider, launchDocumentBrowser } =
+  await import('../packages/documents/runtime/browser.mjs');
+const provider = documentBrowserProvider();
+process.stdout.write(`[documents] browser provider: ${provider}\n`);
 
-if (result.error) throw result.error;
-if (result.status !== 0) process.exit(result.status ?? 1);
+if (provider === 'playwright') {
+  const result = spawnSync(process.execPath, [cli, 'install', 'chromium-headless-shell'], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      PLAYWRIGHT_BROWSERS_PATH: '0',
+      PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT:
+        process.env.PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT ?? '120000',
+    },
+    stdio: 'inherit',
+  });
+
+  if (result.error) throw result.error;
+  if (result.status !== 0) process.exit(result.status ?? 1);
+}
 
 // Fail deployment early instead of silently producing a different PDF layout at runtime.
-process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
-const { chromium } = documentsRequire('playwright-chromium');
-const browser = await chromium.launch({ headless: true });
+const browser = await launchDocumentBrowser();
 try {
   const page = await browser.newPage();
   await page.setContent('<html><body>Woo Ops PDF readiness</body></html>');

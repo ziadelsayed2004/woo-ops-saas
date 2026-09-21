@@ -12,6 +12,7 @@ import {
   renderSafeTemplate,
   validateSafeTemplate,
 } from '../dist/index.js';
+import { documentBrowserProvider } from '../runtime/browser.mjs';
 
 const fontPath = [
   'C:\\Windows\\Fonts\\arial.ttf',
@@ -38,6 +39,12 @@ const template = {
   direction: 'rtl',
   ...(fontBytes ? { fontBytes } : {}),
 };
+
+test('document browser provider is portable on Linux and managed elsewhere', () => {
+  assert.equal(documentBrowserProvider('linux'), 'portable-linux');
+  assert.equal(documentBrowserProvider('win32'), 'playwright');
+  assert.equal(documentBrowserProvider('darwin'), 'playwright');
+});
 
 test('brand HTML isolates identifiers and uses a dedicated shipping contents table', () => {
   const html = htmlDocument(

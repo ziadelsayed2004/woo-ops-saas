@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { documentStyles } from './document-styles.js';
 import { PDFDocument } from 'pdf-lib';
+import { launchDocumentBrowser } from '../runtime/browser.mjs';
 
 import type { DocumentRequest } from './index.js';
 
@@ -232,11 +233,7 @@ export const renderHtmlPdf = async (
 ): Promise<{ bytes: Uint8Array; pageCount: number; widthPoints: number; heightPoints: number }> => {
   if (process.env.WOO_OPS_DOCUMENT_BROWSER_UNAVAILABLE_FOR_TEST === '1')
     throw new Error('Playwright browser executable unavailable');
-  // Keep the browser inside the deployed dependency tree so Hostinger release directories do not
-  // depend on a user-level Playwright cache that may disappear between build and runtime.
-  process.env.PLAYWRIGHT_BROWSERS_PATH ||= '0';
-  const { chromium } = await import('playwright-chromium');
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchDocumentBrowser();
   try {
     const page = await browser.newPage();
     await page.route('**/*', (route) => route.abort());
