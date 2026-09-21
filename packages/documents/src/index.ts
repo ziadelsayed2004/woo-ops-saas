@@ -319,9 +319,11 @@ const drawWrapped = (
   }
   if (line) lines.push(line);
   const visible = lines.length > 0 ? lines : [''];
-  visible.forEach((item, index) =>
-    page.drawText(item, { x, y: y - index * (size + 3), size, font, color }),
-  );
+  visible.forEach((item, index) => {
+    const lineX =
+      direction === 'rtl' ? Math.max(x, x + maxWidth - font.widthOfTextAtSize(item, size)) : x;
+    page.drawText(item, { x: lineX, y: y - index * (size + 3), size, font, color });
+  });
   return visible.length * (size + 3);
 };
 const drawPair = (
@@ -335,8 +337,33 @@ const drawPair = (
   direction: DocumentDirection,
   size: number,
 ): number => {
-  const labelText = direction === 'rtl' ? `${value} :${label}` : `${label}: ${value}`;
-  return drawWrapped(page, labelText, x, y, width, font, size, direction);
+  const labelWidth = Math.min(width * 0.34, 150);
+  const gap = 8;
+  if (direction === 'rtl') {
+    drawWrapped(
+      page,
+      label,
+      x + width - labelWidth,
+      y,
+      labelWidth,
+      font,
+      size,
+      direction,
+      rgb(0.36, 0.38, 0.46),
+    );
+    return drawWrapped(page, value, x, y, width - labelWidth - gap, font, size, direction);
+  }
+  drawWrapped(page, label, x, y, labelWidth, font, size, direction, rgb(0.36, 0.38, 0.46));
+  return drawWrapped(
+    page,
+    value,
+    x + labelWidth + gap,
+    y,
+    width - labelWidth - gap,
+    font,
+    size,
+    direction,
+  );
 };
 const imageBytes = (dataUrl: string): Uint8Array => {
   const encoded = dataUrl.substring(dataUrl.indexOf(',') + 1);
@@ -386,9 +413,13 @@ const drawDocument = async (
   const { pdf, font, width, height } = await preparePdf(normalized);
   const page = pdf.addPage([width, height]);
   const direction = normalized.template.direction!;
-  const margin = normalized.format === 'thermal-80mm' ? 14 : 32;
+  const compact = normalized.format === 'thermal-80mm' || normalized.format === 'label-100x150mm';
+  const margin = compact ? 14 : 38;
   const size =
     normalized.format === 'thermal-80mm' ? 8 : normalized.format === 'label-100x150mm' ? 10 : 10;
+  const brandColor = compact ? rgb(0.08, 0.08, 0.1) : rgb(0.45, 0.055, 0.925);
+  const softColor = compact ? rgb(0.95, 0.95, 0.95) : rgb(0.965, 0.94, 1);
+  const borderColor = compact ? rgb(0.68, 0.68, 0.7) : rgb(0.84, 0.78, 0.92);
   let y = height - margin;
   const title =
     normalized.format === 'label-100x150mm'
@@ -404,15 +435,27 @@ const drawDocument = async (
           : direction === 'rtl'
             ? 'مستند'
             : 'DOCUMENT';
-  page.drawText(rtlText(title, direction), {
-    x: direction === 'rtl' ? margin : margin,
-    y,
-    size: size + 6,
-    font,
-    color: rgb(0.04, 0.28, 0.58),
+  const headerHeight = compact ? 54 : 82;
+  page.drawRectangle({
+    x: 0,
+    y: height - headerHeight,
+    width,
+    height: headerHeight,
+    color: brandColor,
   });
+  drawWrapped(page, title, margin, y, width - margin * 2, font, size + 6, direction, rgb(1, 1, 1));
   y -= size + 12;
-  page.drawText(rtlText(normalized.template.companyName, direction), { x: margin, y, size, font });
+  drawWrapped(
+    page,
+    normalized.template.companyName,
+    margin,
+    y,
+    width - margin * 2,
+    font,
+    size,
+    direction,
+    rgb(1, 1, 1),
+  );
   y -= size + 4;
   if (normalized.template.companyAddress) {
     y -= drawWrapped(
@@ -424,6 +467,7 @@ const drawDocument = async (
       font,
       size,
       direction,
+      rgb(1, 1, 1),
     );
   }
   if (normalized.template.body) {
@@ -436,9 +480,20 @@ const drawDocument = async (
       font,
       size,
       direction,
+      rgb(1, 1, 1),
     );
   }
-  y -= 8;
+  y = height - headerHeight - (compact ? 12 : 20);
+  page.drawRectangle({
+    x: margin,
+    y: y - (compact ? 23 : 31),
+    width: width - margin * 2,
+    height: compact ? 31 : 41,
+    color: softColor,
+    borderColor,
+    borderWidth: 0.8,
+  });
+  y -= compact ? 7 : 9;
   const orderNumber =
     normalized.documentNumber ?? orderValue(normalized.order, 'orderNumber', 'number', 'id');
   y -= drawPair(
@@ -550,20 +605,68 @@ const drawDocument = async (
       direction,
       size,
     );
-  y -= 8;
+  y -= compact ? 9 : 16;
   const lines = Array.isArray(normalized.order.lines)
     ? normalized.order.lines.slice(0, MAX_LINES)
     : [];
-  page.drawText(direction === 'rtl' ? 'الأصناف' : 'Items', { x: margin, y, size: size + 1, font });
-  y -= size + 5;
+  page.drawRectangle({
+    x: margin,
+    y: y - 5,
+    width: width - margin * 2,
+    height: size + 12,
+    color: softColor,
+    borderColor: brandColor,
+    borderWidth: 0.8,
+  });
+  drawWrapped(
+    page,
+    direction === 'rtl' ? 'الأصناف' : 'Items',
+    margin + 8,
+    y,
+    width - margin * 2 - 16,
+    font,
+    size + 1,
+    direction,
+  );
+  y -= size + 16;
   for (const line of lines) {
     const item = isRecord(line) ? line : {};
     const lineTotal = orderValue(item, 'totalMinor', 'total');
-    const textLine = `${orderValue(item, 'name', 'title')} × ${orderValue(item, 'quantity')}  ${displayMoney(lineTotal, orderValue(normalized.order, 'currency'))}`;
-    y -= drawWrapped(page, textLine, margin, y, width - margin * 2, font, size, direction);
+    const name = orderValue(item, 'name', 'title');
+    const quantity = orderValue(item, 'quantity');
+    y -= drawWrapped(page, name, margin, y, width - margin * 2, font, size, direction);
+    const details = `${direction === 'rtl' ? 'الكمية' : 'Qty'}: ${quantity}    ${displayMoney(lineTotal, orderValue(normalized.order, 'currency'))}`;
+    y -= drawWrapped(
+      page,
+      details,
+      margin,
+      y,
+      width - margin * 2,
+      font,
+      size - 1,
+      direction,
+      rgb(0.36, 0.38, 0.46),
+    );
+    page.drawLine({
+      start: { x: margin, y: y + 2 },
+      end: { x: width - margin, y: y + 2 },
+      thickness: 0.4,
+      color: borderColor,
+    });
+    y -= compact ? 5 : 8;
     if (y < margin + 80) break;
   }
   const total = orderValue(normalized.order, 'grandTotalMinor', 'amounts.grandTotalMinor', 'total');
+  y -= compact ? 6 : 12;
+  page.drawRectangle({
+    x: margin,
+    y: y - (size + 12),
+    width: width - margin * 2,
+    height: size + 20,
+    color: softColor,
+    borderColor: brandColor,
+    borderWidth: 1.2,
+  });
   y -= 5;
   y -= drawPair(
     page,
