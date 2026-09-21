@@ -411,6 +411,16 @@ test('shows Woo export status only when the connector supplies authoritative evi
   await expect(page.getByText('Exported in WooCommerce', { exact: true })).toHaveCount(1);
   await expect(page.getByText('Not exported in WooCommerce', { exact: true })).toHaveCount(1);
   await expect(page.getByText('Woo status unavailable', { exact: true })).toHaveCount(1);
+  await expect(page.getByTestId('woo-export-status-order-exported')).toHaveClass(/MuiChip-filled/u);
+  await expect(page.getByTestId('woo-export-status-order-exported')).toHaveClass(
+    /MuiChip-colorSuccess/u,
+  );
+  await expect(page.getByTestId('woo-export-status-order-not-exported')).toHaveClass(
+    /MuiChip-outlined/u,
+  );
+  await expect(page.getByTestId('woo-export-status-order-unknown')).toHaveClass(
+    /MuiChip-colorWarning/u,
+  );
 });
 
 test('keeps a saved filter selected, applies its exact query and deletes it', async ({ page }) => {
