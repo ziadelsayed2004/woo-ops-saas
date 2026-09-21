@@ -171,32 +171,30 @@ test('creates the Woo-layout XLSX and offers repeat download in orders @orders @
   await page.goto('/');
   await page.getByRole('button', { name: 'English' }).click();
   await page.getByTestId('order-row-order-1').getByRole('checkbox').check();
+  const automaticDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export Excel' }).click();
-  await expect(page.getByText('Export command added.')).toBeVisible();
+  expect((await automaticDownload).suggestedFilename()).toBe('orders-export-xlsx.xlsx');
+  await expect(
+    page.getByText(/Export command added and will download automatically/u),
+  ).toBeVisible();
+  await expect(page.getByTestId('order-row-order-1').getByRole('checkbox')).toBeChecked();
   const columns = (createdVersion?.columns ?? []) as Array<{ key: string; label: string }>;
-  expect(createdVersion?.filenameTemplate).toBe('woo-orders-{date}-{format}');
+  expect(createdVersion?.filenameTemplate).toBe('orders-{date}-{format}');
   expect(createdVersion?.rowMode).toBe('line');
-  expect(columns).toHaveLength(40);
-  expect(columns.map((column) => column.label).slice(0, 4)).toEqual([
+  expect(columns).toHaveLength(15);
+  expect(columns.map((column) => column.label).slice(0, 3)).toEqual([
     'Order Number',
     'Order Status',
     'Order Date',
-    'Customer Note',
   ]);
-  expect(columns.map((column) => column.label)).toContain('Governorate (Shipping)');
+  expect(columns.map((column) => column.label)).toContain('Governorate');
+  await page.locator('[data-testid="navigation-exports"]:visible').click();
   await expect(page.getByRole('link', { name: 'Download' })).toHaveAttribute(
     'href',
     '/api/v1/export-batches/batch-woo/download',
   );
-  const downloadEvent = page.waitForEvent('download');
-  await page.getByRole('link', { name: 'Download' }).click();
-  const download = await downloadEvent;
-  expect(download.suggestedFilename()).toBe('orders-export-xlsx.xlsx');
   const historyBox = await page.getByTestId('exports-workspace').boundingBox();
-  const tableBox = await page.getByTestId('orders-table').boundingBox();
   expect(historyBox).not.toBeNull();
-  expect(tableBox).not.toBeNull();
-  expect(historyBox!.y).toBeGreaterThan(tableBox!.y);
 });
 
 test('shows an export job failure with retry instead of claiming a download @orders @exports', async ({
@@ -210,7 +208,10 @@ test('shows an export job failure with retry instead of claiming a download @ord
   });
   await page.route('**/api/v1/export-profiles', async (route: Route) => {
     await route.fulfill({
-      json: { items: [{ id: 'profile-woo', name: 'Woo Orders XLSX v2', active: true }] },
+      json:
+        route.request().method() === 'POST'
+          ? { profile: { id: 'profile-woo', name: 'Woo Orders XLSX v3', active: true } }
+          : { items: [{ id: 'profile-woo', name: 'Woo Orders XLSX v3', active: true }] },
     });
   });
   await page.route('**/api/v1/export-profiles/profile-woo/versions', async (route: Route) => {
@@ -249,6 +250,8 @@ test('shows an export job failure with retry instead of claiming a download @ord
   await page.getByRole('button', { name: 'English' }).click();
   await page.getByTestId('order-row-order-1').getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Export Excel' }).click();
+  await expect.poll(() => created).toBe(true);
+  await page.locator('[data-testid="navigation-exports"]:visible').click();
   await expect(page.getByText('EXPORT_REQUIRED_FIELD_MISSING')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible();
   expect(downloads).toBe(0);

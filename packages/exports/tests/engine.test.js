@@ -91,6 +91,9 @@ test('XLSX export has a frozen header, text formatting, and no formula cells', a
   assert.equal(sheet.getCell('D3').value, "'=2+2");
   assert.equal(sheet.getCell('D3').type, ExcelJS.ValueType.String);
   assert.equal(sheet.views[0]?.state, 'frozen');
+  assert.ok(sheet.getColumn(1).width >= 10);
+  assert.ok(sheet.getColumn(4).width <= 42);
+  assert.equal(sheet.getColumn(4).alignment.wrapText, true);
 });
 
 test('Egypt governorate codes are exported as readable Arabic names', async () => {
@@ -132,9 +135,14 @@ test('Woo-style order-line sheet keeps state codes and adds readable governorate
   assert.equal(result.rowCount, 2);
   assert.equal(result.filename, 'orders-export-xlsx.xlsx');
   assert.deepEqual(sheet.getRow(1).values.slice(1), [
-    'Order Number', 'State Code (Billing)', 'Governorate (Billing)',
-    'State Code (Shipping)', 'Governorate (Shipping)', 'Item Name',
-    'Quantity (- Refund)', 'Order Total Amount',
+    'Order Number',
+    'State Code (Billing)',
+    'Governorate (Billing)',
+    'State Code (Shipping)',
+    'Governorate (Shipping)',
+    'Item Name',
+    'Quantity (- Refund)',
+    'Order Total Amount',
   ]);
   assert.equal(sheet.getCell('B2').value, 'EGSHR');
   assert.equal(sheet.getCell('C2').value, 'الشرقية');

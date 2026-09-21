@@ -40,7 +40,7 @@ import {
   type AuthenticatedUser,
 } from './AdminWorkspaces';
 import { WorkspaceShell } from './WorkspaceShell';
-import { wooOrderExportColumns } from './wooExportColumns';
+import { wooOrderExportColumns, wooShippingExportColumns } from './wooExportColumns';
 import {
   EGYPTIAN_GOVERNORATES,
   egyptianGovernorate,
@@ -3565,8 +3565,8 @@ function ExportsWorkspace({
     setLoading(true);
     void Promise.all([
       ...(historyOnly ? [] : [loadProfiles()]),
-      loadBatches(historyOnly),
-      loadDocumentBatches(historyOnly),
+      loadBatches(true),
+      loadDocumentBatches(true),
     ])
       .catch(() => setMessage('EXPORT_LOAD_FAILED'))
       .finally(() => setLoading(false));
@@ -3697,23 +3697,21 @@ function ExportsWorkspace({
         </Typography>
       </Box>
       {message && <Alert severity={message.endsWith('FAILED') ? 'error' : 'info'}>{message}</Alert>}
-      {historyOnly && (
-        <Paper variant="outlined" sx={{ px: 2, pt: 1 }}>
-          <Tabs
-            value={historyTab}
-            onChange={(_event, value: 'spreadsheets' | 'documents') => setHistoryTab(value)}
-            variant="scrollable"
-            scrollButtons="auto"
-            aria-label={direction === 'rtl' ? 'أنواع أوامر التصدير' : 'Export command types'}
-          >
-            <Tab value="spreadsheets" label="Excel" />
-            <Tab
-              value="documents"
-              label={direction === 'rtl' ? 'الفواتير والطباعة' : 'Invoices & print'}
-            />
-          </Tabs>
-        </Paper>
-      )}
+      <Paper variant="outlined" sx={{ px: 2, pt: 1 }}>
+        <Tabs
+          value={historyTab}
+          onChange={(_event, value: 'spreadsheets' | 'documents') => setHistoryTab(value)}
+          variant="scrollable"
+          scrollButtons="auto"
+          aria-label={direction === 'rtl' ? 'أنواع أوامر التصدير' : 'Export command types'}
+        >
+          <Tab value="spreadsheets" label="Excel" />
+          <Tab
+            value="documents"
+            label={direction === 'rtl' ? 'الفواتير والطباعة' : 'Invoices & print'}
+          />
+        </Tabs>
+      </Paper>
       {!historyOnly && (
         <Paper variant="outlined" sx={{ p: 2 }}>
           <Stack gap={2}>
@@ -3764,7 +3762,7 @@ function ExportsWorkspace({
       )}
       <Paper
         variant="outlined"
-        sx={{ p: 2, display: historyOnly && historyTab !== 'spreadsheets' ? 'none' : 'block' }}
+        sx={{ p: 2, display: historyTab !== 'spreadsheets' ? 'none' : 'block' }}
       >
         <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
           <Typography variant="h6" component="h2" fontWeight={800}>
@@ -3846,7 +3844,7 @@ function ExportsWorkspace({
       </Paper>
       <Paper
         variant="outlined"
-        sx={{ p: 2, display: historyOnly && historyTab !== 'documents' ? 'none' : 'block' }}
+        sx={{ p: 2, display: historyTab !== 'documents' ? 'none' : 'block' }}
         data-testid="export-document-jobs"
       >
         <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
@@ -3983,7 +3981,6 @@ const viewFromPath = (path: string): AppView => {
     'members',
     'operations',
   ];
-  if (value === 'exports') return 'orders';
   return supported.includes(value as AppView) ? (value as AppView) : 'orders';
 };
 
@@ -4345,7 +4342,10 @@ export function App({
     }
   };
 
-  const ensureOrderExportVersion = async (format: 'xlsx'): Promise<ExportVersionSummary> => {
+  const ensureOrderExportVersion = async (
+    format: 'xlsx',
+    preset: 'orders' | 'shipping' = 'orders',
+  ): Promise<ExportVersionSummary> => {
     const failed = async (response: Response, fallback: string): Promise<never> => {
       const body = (await response.json().catch(() => null)) as {
         error?: { code?: string };
@@ -4356,15 +4356,21 @@ export function App({
     if (!profilesResponse.ok) return failed(profilesResponse, 'EXPORT_PROFILES_LOAD_FAILED');
     const profiles =
       ((await profilesResponse.json()) as { items?: ExportProfileSummary[] }).items ?? [];
-    let profile = profiles.find((item) => item.name === `Woo Orders ${format.toUpperCase()} v2`);
+    const profileName =
+      preset === 'shipping' ? 'Woo Shipping XLSX v1' : `Woo Orders ${format.toUpperCase()} v3`;
+    const exportColumns = preset === 'shipping' ? wooShippingExportColumns : wooOrderExportColumns;
+    let profile = profiles.find((item) => item.name === profileName);
     if (!profile) {
       const createProfileResponse = await fetch('/api/v1/export-profiles', {
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
         body: JSON.stringify({
-          name: `Woo Orders ${format.toUpperCase()} v2`,
-          description: 'WooCommerce order-line layout with governorate names',
+          name: profileName,
+          description:
+            preset === 'shipping'
+              ? 'Ready-to-use shipping order sheet'
+              : 'Compact operational order sheet with readable addresses',
         }),
       });
       if (!createProfileResponse.ok)
@@ -4382,8 +4388,8 @@ export function App({
       (item) =>
         item.format === format &&
         item.rowMode === 'line' &&
-        item.columns?.length === wooOrderExportColumns.length &&
-        item.columns.every((column, index) => column.key === wooOrderExportColumns[index]?.key),
+        item.columns?.length === exportColumns.length &&
+        item.columns.every((column, index) => column.key === exportColumns[index]?.key),
     );
     if (existing) return existing;
     const createVersionResponse = await fetch(
@@ -4395,8 +4401,9 @@ export function App({
         body: JSON.stringify({
           format,
           rowMode: 'line',
-          columns: wooOrderExportColumns,
-          filenameTemplate: 'woo-orders-{date}-{format}',
+          columns: exportColumns,
+          filenameTemplate:
+            preset === 'shipping' ? 'shipping-orders-{date}-{format}' : 'orders-{date}-{format}',
           config: { required: ['woo.orderNumber'] },
         }),
       },
@@ -4406,11 +4413,36 @@ export function App({
     return ((await createVersionResponse.json()) as { version: ExportVersionSummary }).version;
   };
 
-  const createSelectionExport = async (format: 'xlsx') => {
+  const downloadCompletedExport = async (batchId: string): Promise<void> => {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const response = await fetch('/api/v1/export-batches', { credentials: 'include' });
+      if (response.ok) {
+        const items = ((await response.json()) as { items?: ExportBatchSummary[] }).items ?? [];
+        const batch = items.find((item) => item.id === batchId);
+        if (batch?.status === 'completed') {
+          const anchor = document.createElement('a');
+          anchor.href = `/api/v1/export-batches/${encodeURIComponent(batchId)}/download`;
+          anchor.download = batch.filename ?? '';
+          document.body.append(anchor);
+          anchor.click();
+          anchor.remove();
+          return;
+        }
+        if (batch?.status === 'failed') throw new Error(batch.error ?? 'EXPORT_CREATE_FAILED');
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+    }
+    throw new Error('EXPORT_DOWNLOAD_TIMEOUT');
+  };
+
+  const createSelectionExport = async (
+    format: 'xlsx',
+    preset: 'orders' | 'shipping' = 'orders',
+  ) => {
     const selectionId = await createSelectionSnapshot();
     if (!selectionId) return;
     try {
-      const version = await ensureOrderExportVersion(format);
+      const version = await ensureOrderExportVersion(format, preset);
       const response = await fetch('/api/v1/export-batches', {
         method: 'POST',
         credentials: 'include',
@@ -4430,14 +4462,15 @@ export function App({
           errorBody?.error?.code ?? errorBody?.code ?? `EXPORT_HTTP_${response.status}`,
         );
       }
-      clearOrderSelection();
+      const created = (await response.json()) as { batch: ExportBatchSummary };
       setSelectionError(false);
       setSelectionMessage(
         locale === 'ar'
-          ? 'تمت إضافة أمر التصدير. تابعه ونزّل الملف من قسم أوامر التصدير والطباعة أسفل الطلبات.'
-          : 'Export command added. Track and download it from Export and print commands below the orders.',
+          ? 'تمت إضافة أمر التصدير وسيبدأ التحميل تلقائيًا. ستجده أيضًا في قسم التصديرات.'
+          : 'Export command added and will download automatically. It also remains in Exports.',
       );
       setExportHistoryRevision((value) => value + 1);
+      await downloadCompletedExport(created.batch.id);
     } catch (error) {
       setSelectionError(true);
       setSelectionMessage(error instanceof Error ? error.message : 'EXPORT_CREATE_FAILED');
@@ -4535,8 +4568,34 @@ export function App({
           errorBody?.error?.code ?? errorBody?.code ?? `DOCUMENT_JOB_HTTP_${response.status}`,
         );
       }
-      clearOrderSelection();
+      const created = (await response.json()) as { batch: DocumentBatchSummary };
       setExportHistoryRevision((value) => value + 1);
+      for (let attempt = 0; attempt < 45; attempt += 1) {
+        const detailsResponse = await fetch(
+          `/api/v1/document-jobs/${encodeURIComponent(created.batch.id)}`,
+          { credentials: 'include' },
+        );
+        if (detailsResponse.ok) {
+          const details = (await detailsResponse.json()) as DocumentBatchDetails;
+          if (details.batch.status === 'completed' || details.batch.status === 'partial') {
+            const artifact =
+              details.artifacts.find((item) => item.kind === 'merged-pdf') ??
+              details.artifacts.find((item) => item.kind === 'order-pdf') ??
+              details.artifacts.find((item) => item.kind === 'zip');
+            if (artifact) {
+              const anchor = document.createElement('a');
+              anchor.href = `/api/v1/document-artifacts/${encodeURIComponent(artifact.id)}?download=1`;
+              anchor.download = artifact.filename;
+              document.body.append(anchor);
+              anchor.click();
+              anchor.remove();
+            }
+            break;
+          }
+          if (details.batch.status === 'failed') throw new Error('DOCUMENT_JOB_FAILED');
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+      }
     } catch (error) {
       setSelectionError(true);
       setSelectionMessage(error instanceof Error ? error.message : 'DOCUMENT_JOB_FAILED');
@@ -4674,6 +4733,10 @@ export function App({
       label: locale === 'ar' ? 'المنتجات والمخزون' : 'Products & stock',
     },
     { view: 'manual', label: locale === 'ar' ? 'الطلبات اليدوية' : 'Manual orders' },
+    {
+      view: 'exports',
+      label: locale === 'ar' ? '\u0627\u0644\u062a\u0635\u062f\u064a\u0631\u0627\u062a' : 'Exports',
+    },
     { view: 'analytics', label: t.analyticsNav },
     { view: 'connections', label: adminLabel('connections', locale) },
     { view: 'settings', label: adminLabel('settings', locale) },
@@ -4734,6 +4797,7 @@ export function App({
           />
         ) : view === 'exports' ? (
           <ExportsWorkspace
+            key={exportHistoryRevision}
             direction={direction}
             t={t}
             savedViews={savedViews}
@@ -5062,6 +5126,13 @@ export function App({
                   <Button
                     size="small"
                     variant="outlined"
+                    onClick={() => void createSelectionExport('xlsx', 'shipping')}
+                  >
+                    {locale === 'ar' ? 'شيت الشحن' : 'Shipping sheet'}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
                     onClick={() => void createSelectionDocuments('generate-invoice')}
                   >
                     {locale === 'ar' ? 'فاتورة A4' : 'A4 invoice'}
@@ -5249,7 +5320,16 @@ export function App({
                                 variant={
                                   order.remoteExportStatus === 'exported' ? 'filled' : 'outlined'
                                 }
-                                sx={{ fontWeight: 700 }}
+                                sx={{
+                                  fontWeight: 700,
+                                  ...(order.remoteExportStatus !== 'exported' &&
+                                  order.remoteExportStatus !== 'not_exported'
+                                    ? {
+                                        borderColor: '#8a4b00',
+                                        '& .MuiChip-label': { color: '#8a4b00' },
+                                      }
+                                    : {}),
+                                }}
                               />
                             ) : column === 'exportState' ? (
                               <Chip
@@ -5298,16 +5378,6 @@ export function App({
                 </Box>
               )}
             </Paper>
-            <Box sx={{ mt: 3 }}>
-              <ExportsWorkspace
-                key={exportHistoryRevision}
-                direction={direction}
-                t={t}
-                savedViews={savedViews}
-                currentOrderQuery={currentOrderQuery}
-                historyOnly
-              />
-            </Box>
           </>
         )}
       </WorkspaceShell>

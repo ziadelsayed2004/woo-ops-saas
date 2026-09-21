@@ -470,6 +470,22 @@ export const generateXlsx = async (
       if (typeof cell.value === 'string') cell.value = sanitizeSpreadsheetValue(cell.value);
     });
   }
+  normalized.columns.forEach((column, index) => {
+    const values = [
+      column.label,
+      ...rows.slice(0, 500).map((row) => configuredValue(row, column, normalized)),
+    ];
+    const longest = values.reduce<number>((maximum, value) => {
+      const length =
+        value instanceof Date ? 20 : String(value ?? '').replace(/[\r\n]+/gu, ' ').length;
+      return Math.max(maximum, length);
+    }, 0);
+    sheet.getColumn(index + 1).width = Math.min(42, Math.max(10, longest + 2));
+    sheet.getColumn(index + 1).alignment = {
+      vertical: 'top',
+      wrapText: /address|(?:item|line)\.?(?:name)?|note/iu.test(column.key),
+    };
+  });
   sheet.autoFilter = {
     from: 'A1',
     to: `${columnName(normalized.columns.length)}${rows.length + 1}`,

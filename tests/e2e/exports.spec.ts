@@ -63,16 +63,17 @@ async function mockExports(page: Page) {
   });
 }
 
-test('shows export history in orders without standalone export navigation @exports', async ({
+test('shows export history in a dedicated export navigation destination @exports', async ({
   page,
 }) => {
   await mockExports(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'English' }).click();
+  await page.locator('[data-testid="navigation-exports"]:visible').click();
   await expect(page.getByTestId('exports-workspace')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Export batches' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Exports', exact: true })).toHaveCount(0);
-  await expect(page.getByLabel('Orders to export')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Exports', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Orders to export')).toBeVisible();
   await expect(page.getByLabel('Saved profiles')).toHaveCount(0);
   await expect(page.getByLabel('Profile version')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Preview' })).toHaveCount(0);
@@ -88,7 +89,7 @@ test('does not load profiles merely to show order export history @exports', asyn
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'English' }).click();
-  await expect(page.getByTestId('exports-workspace')).toBeVisible();
+  await expect(page.getByTestId('exports-workspace')).toHaveCount(0);
   expect(profileReads).toBe(0);
 });
 
@@ -155,6 +156,7 @@ test('organizes printable outputs and exposes useful downloads without the manif
 
   await page.goto('/');
   await page.getByRole('button', { name: 'English' }).click();
+  await page.locator('[data-testid="navigation-exports"]:visible').click();
   await page.getByRole('tab', { name: 'Invoices & print' }).click();
   await expect(page.getByText('80mm thermal shipping label')).toBeVisible();
   await page.getByRole('button', { name: 'Show files' }).click();
@@ -169,6 +171,7 @@ test('export workspace has no automated accessibility violations @a11y @exports'
   await mockExports(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'English' }).click();
+  await page.locator('[data-testid="navigation-exports"]:visible').click();
   await expect(page.getByTestId('exports-workspace')).toBeVisible();
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
