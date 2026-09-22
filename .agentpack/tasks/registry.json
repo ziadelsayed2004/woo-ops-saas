@@ -3427,5 +3427,12 @@
       "acceptance": ["Hostinger postinstall does not attempt to spawn /tmp/chromium and succeeds on a noexec system temp mount", "The portable browser executable is stored under an explicit or application-owned cache with owner-only writable permissions and executable mode", "Postinstall and runtime HTML-to-PDF generation share the same cache resolver and browser launcher", "Unit, golden, integration, typecheck, build and install smoke checks pass"],
       "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:golden", "npm run test:integration", "node tools/install-document-browser.mjs", "npm run build", "git diff --check"]
     }
+    ,{
+      "id": "T0942", "epic": "E09", "title": "Make Hostinger Chromium cache preparation idempotent", "type": "fix", "phase": 9, "priority": "P0", "estimate": "S", "parallelGroup": "document-rendering", "dependencies": ["T0941"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/DEPLOYMENT.md", ".agentpack/architecture/TESTING.md", "tools/install-document-browser.mjs", "packages/documents/runtime/browser.mjs", "packages/documents/runtime/browser.d.mts", "packages/documents/tests/documents.test.js"],
+      "scope": ["Keep the original operating-system temporary directory stable while the portable browser cache updates process temporary-directory variables", "Make repeated cache preparation idempotent for postinstall readiness and runtime launches", "Add a regression reproducing the exact prepare-then-launch sequence reported by Hostinger"],
+      "acceptance": ["A second cache preparation in the same process does not raise WOO_OPS_BROWSER_CACHE_DIR_UNSAFE", "Actual system temporary paths remain rejected while the application cache remains accepted after TMPDIR mutation", "Hostinger postinstall proceeds past cache preparation and launches from the application cache", "Unit, golden, integration, typecheck, build and install smoke checks pass"],
+      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:golden", "npm run test:integration", "node tools/install-document-browser.mjs", "npm run build", "git diff --check"]
+    }
   ]
 }
