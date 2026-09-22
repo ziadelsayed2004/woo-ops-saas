@@ -384,6 +384,32 @@ test('owner can deliberately clear local test data from the settings danger zone
     });
   });
   await page.goto('/settings');
+  const connectedStoreUrl = page.getByTestId('connected-store-url');
+  const disconnectStoreButton = page.getByTestId('disconnect-store-button');
+  await expect(page.getByTestId('connected-store-management')).toBeVisible();
+  const desktopUrlBox = await connectedStoreUrl.boundingBox();
+  const desktopButtonBox = await disconnectStoreButton.boundingBox();
+  expect(desktopUrlBox).not.toBeNull();
+  expect(desktopButtonBox).not.toBeNull();
+  if (desktopUrlBox && desktopButtonBox) {
+    const horizontalGap =
+      desktopButtonBox.x < desktopUrlBox.x
+        ? desktopUrlBox.x - (desktopButtonBox.x + desktopButtonBox.width)
+        : desktopButtonBox.x - (desktopUrlBox.x + desktopUrlBox.width);
+    expect(horizontalGap).toBeGreaterThanOrEqual(16);
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByTestId('connected-store-management').scrollIntoViewIfNeeded();
+  const mobileUrlBox = await connectedStoreUrl.boundingBox();
+  const mobileButtonBox = await disconnectStoreButton.boundingBox();
+  expect(mobileUrlBox).not.toBeNull();
+  expect(mobileButtonBox).not.toBeNull();
+  if (mobileUrlBox && mobileButtonBox) {
+    expect(mobileButtonBox.y - (mobileUrlBox.y + mobileUrlBox.height)).toBeGreaterThanOrEqual(8);
+  }
+
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByRole('button', { name: 'English' }).click();
   await expect(page.getByTestId('account-reset-zone')).toBeVisible();
   await page.getByRole('button', { name: 'Disconnect store' }).click();
