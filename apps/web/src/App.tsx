@@ -10,6 +10,10 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Drawer,
   FormControl,
   IconButton,
@@ -2922,9 +2926,29 @@ function ExportsWorkspace({
   const [documentArtifacts, setDocumentArtifacts] = useState<
     Record<string, DocumentArtifactSummary[]>
   >({});
+  const [documentFilesBatchId, setDocumentFilesBatchId] = useState<string | null>(null);
+  const [documentFileSearch, setDocumentFileSearch] = useState('');
+  const [documentFilePage, setDocumentFilePage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [historyTab, setHistoryTab] = useState<'spreadsheets' | 'documents'>('spreadsheets');
+  const visibleDocumentArtifacts = documentFilesBatchId
+    ? (documentArtifacts[documentFilesBatchId] ?? [])
+    : [];
+  const individualDocumentArtifacts = visibleDocumentArtifacts.filter(
+    (artifact) =>
+      artifact.kind === 'order-pdf' &&
+      artifact.filename.toLocaleLowerCase().includes(documentFileSearch.trim().toLocaleLowerCase()),
+  );
+  const documentFilePageSize = 20;
+  const documentFilePageCount = Math.max(
+    1,
+    Math.ceil(individualDocumentArtifacts.length / documentFilePageSize),
+  );
+  const pagedDocumentArtifacts = individualDocumentArtifacts.slice(
+    documentFilePage * documentFilePageSize,
+    (documentFilePage + 1) * documentFilePageSize,
+  );
 
   const loadBatches = async (force = false) => {
     const body = await cachedGetJson<{ items?: ExportBatchSummary[] }>(
@@ -3367,6 +3391,9 @@ function ExportsWorkspace({
                                 ...current,
                                 [batch.id]: body.artifacts ?? [],
                               }));
+                              setDocumentFileSearch('');
+                              setDocumentFilePage(0);
+                              setDocumentFilesBatchId(batch.id);
                             })
                             .catch(() => setMessage('DOCUMENT_JOB_LOAD_FAILED'))
                         }
@@ -3383,21 +3410,6 @@ function ExportsWorkspace({
                           {t.retryDocumentBatch}
                         </Button>
                       )}
-                      {(documentArtifacts[batch.id] ?? [])
-                        .filter((artifact) => artifact.kind !== 'manifest')
-                        .map((artifact) => (
-                          <Button
-                            key={artifact.id}
-                            size="small"
-                            variant={artifact.kind === 'merged-pdf' ? 'contained' : 'outlined'}
-                            component="a"
-                            href={`/api/v1/document-artifacts/${encodeURIComponent(artifact.id)}?download=1`}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {documentArtifactLabel(artifact, direction)}
-                          </Button>
-                        ))}
                     </Stack>
                   </TableCell>
                 </TableRow>
@@ -3411,6 +3423,115 @@ function ExportsWorkspace({
           </Typography>
         )}
       </Paper>
+      <Dialog
+        open={documentFilesBatchId !== null}
+        onClose={() => setDocumentFilesBatchId(null)}
+        fullWidth
+        maxWidth="md"
+        PaperProps={{
+          dir: direction,
+          sx: { borderRadius: '12px', maxHeight: '85vh' },
+        }}
+      >
+        <DialogTitle>
+          {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.documentFiles')}
+        </DialogTitle>
+        <DialogContent>
+          <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} sx={{ mb: 2 }}>
+            {visibleDocumentArtifacts
+              .filter((artifact) => artifact.kind === 'zip' || artifact.kind === 'merged-pdf')
+              .sort((left, right) => (left.kind === 'zip' ? -1 : right.kind === 'zip' ? 1 : 0))
+              .map((artifact) => (
+                <Button
+                  key={artifact.id}
+                  variant={artifact.kind === 'zip' ? 'contained' : 'outlined'}
+                  component="a"
+                  href={`/api/v1/document-artifacts/${encodeURIComponent(artifact.id)}?download=1`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {documentArtifactLabel(artifact, direction)}
+                </Button>
+              ))}
+          </Stack>
+          <Typography variant="subtitle2" fontWeight={800} sx={{ mb: 1 }}>
+            {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.individualFiles', {
+              count: individualDocumentArtifacts.length,
+            })}
+          </Typography>
+          <TextField
+            fullWidth
+            size="small"
+            value={documentFileSearch}
+            onChange={(event) => {
+              setDocumentFileSearch(event.target.value);
+              setDocumentFilePage(0);
+            }}
+            placeholder={tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.searchDocumentFiles')}
+            sx={{ mb: 1.5 }}
+          />
+          <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: '12px' }}>
+            <Table size="small">
+              <TableBody>
+                {pagedDocumentArtifacts.map((artifact) => (
+                  <TableRow key={artifact.id}>
+                    <TableCell sx={{ wordBreak: 'break-word' }} dir="ltr">
+                      {artifact.filename}
+                    </TableCell>
+                    <TableCell width={120}>
+                      <Button
+                        size="small"
+                        component="a"
+                        href={`/api/v1/document-artifacts/${encodeURIComponent(artifact.id)}?download=1`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.download')}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          {pagedDocumentArtifacts.length === 0 && (
+            <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
+              {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.noMatchingDocumentFiles')}
+            </Typography>
+          )}
+          {documentFilePageCount > 1 && (
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              alignItems="center"
+              sx={{ mt: 2 }}
+            >
+              <Button
+                size="small"
+                disabled={documentFilePage === 0}
+                onClick={() => setDocumentFilePage((page) => Math.max(0, page - 1))}
+              >
+                {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.previousPage')}
+              </Button>
+              <Typography variant="body2" dir="ltr">
+                {documentFilePage + 1} / {documentFilePageCount}
+              </Typography>
+              <Button
+                size="small"
+                disabled={documentFilePage + 1 >= documentFilePageCount}
+                onClick={() =>
+                  setDocumentFilePage((page) => Math.min(documentFilePageCount - 1, page + 1))
+                }
+              >
+                {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.nextPage')}
+              </Button>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDocumentFilesBatchId(null)}>{t.close}</Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }

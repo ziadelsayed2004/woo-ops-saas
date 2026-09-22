@@ -85,14 +85,20 @@ test('document job renders immutable order snapshots and private batch artifacts
   const artifacts = store.listDocumentArtifacts(context, { batchId: batch.id });
   assert.equal(artifacts.length, 5);
   assert.equal(
-    artifacts.filter((artifact) => artifact.kind === 'order-pdf').every((artifact) =>
-      /^receipt-80mm-order-[A-Za-z0-9_-]+\.pdf$/u.test(artifact.filename),
-    ),
+    artifacts
+      .filter((artifact) => artifact.kind === 'order-pdf')
+      .every((artifact) =>
+        /^receipt-80mm-order-[A-Za-z0-9_-]+-\d{4}-\d{2}-\d{2}\.pdf$/u.test(artifact.filename),
+      ),
     true,
   );
   assert.match(
     artifacts.find((artifact) => artifact.kind === 'merged-pdf')?.filename ?? '',
-    /^receipts-80mm-[A-Za-z0-9_-]+-merged-1\.pdf$/u,
+    /^receipts-80mm-\d{4}-\d{2}-\d{2}-merged\.pdf$/u,
+  );
+  assert.match(
+    artifacts.find((artifact) => artifact.kind === 'zip')?.filename ?? '',
+    /^receipts-80mm-\d{4}-\d{2}-\d{2}\.zip$/u,
   );
   assert.equal(new Set(artifacts.map((artifact) => artifact.checksum)).size, artifacts.length);
   for (const artifact of artifacts) {

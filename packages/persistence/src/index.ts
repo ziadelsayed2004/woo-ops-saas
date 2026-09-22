@@ -3723,6 +3723,22 @@ export class SqliteStore {
     ).map((row) => ({ accountId: row.account_id, connectionId: row.id }));
   }
 
+  hasActiveAutomaticSync(accountId: string, connectionId: string): boolean {
+    if (!accountId || accountId.length > 256 || !connectionId || connectionId.length > 256)
+      throw new Error('SYNC_TARGET_INVALID');
+    const row = this.db
+      .prepare(
+        `SELECT 1 AS active FROM jobs
+         WHERE account_id = ?
+           AND type IN ('sync.initial', 'sync.incremental', 'sync.reconcile')
+           AND status IN ('queued', 'running')
+           AND json_extract(payload_json, '$.connectionId') = ?
+         LIMIT 1`,
+      )
+      .get(accountId, connectionId) as { active: number } | undefined;
+    return row?.active === 1;
+  }
+
   getConnectionForWebhook(connectionId: string): {
     id: string;
     accountId: string;

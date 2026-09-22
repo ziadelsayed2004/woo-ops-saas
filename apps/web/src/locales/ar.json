@@ -500,7 +500,13 @@
       "invoiceAndPrintCommands": "أوامر الفواتير والطباعة",
       "thermalReceiptsShippingLabelsAndPdfJobsCreatedFromOrders": "الفواتير الحرارية وبوليصات الشحن وملفات PDF المنشأة من الطلبات.",
       "documentJobs": "أوامر المستندات",
-      "showFiles": "عرض الملفات"
+      "showFiles": "عرض الملفات",
+      "documentFiles": "ملفات المستندات",
+      "individualFiles": "ملفات الطلبات المنفصلة ({{count}})",
+      "searchDocumentFiles": "ابحث بنوع المستند أو رقم الطلب أو التاريخ",
+      "noMatchingDocumentFiles": "لا توجد ملفات مطابقة",
+      "previousPage": "السابق",
+      "nextPage": "التالي"
     },
     "admin": {
       "yourUnifiedOrderOperationsWorkspace": "مساحة عمل موحدة لإدارة الطلبات والتحليلات",

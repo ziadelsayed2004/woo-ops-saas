@@ -36,6 +36,7 @@ type SyncContext = Readonly<{
   connectionId: string;
   type: SyncRunType;
   overlapSeconds: number;
+  scope: 'full' | 'orders';
 }>;
 
 export type WooSyncOptions = Readonly<{
@@ -131,6 +132,14 @@ const connectionAccount = (job: DurableJob, execution: JobExecutionContext): Acc
 const connectionIdFromJob = (job: DurableJob): string => {
   if (!isRecord(job.payload)) throw new Error('SYNC_JOB_PAYLOAD_INVALID');
   return requiredString(job.payload.connectionId, 'SYNC_JOB_PAYLOAD_INVALID');
+};
+
+const syncScopeFromJob = (job: DurableJob): 'full' | 'orders' => {
+  if (!isRecord(job.payload)) throw new Error('SYNC_JOB_PAYLOAD_INVALID');
+  const scope = job.payload.scope;
+  if (scope === undefined || scope === 'full') return 'full';
+  if (scope === 'orders' && job.type === 'sync.incremental') return 'orders';
+  throw new Error('SYNC_JOB_PAYLOAD_INVALID');
 };
 
 const connectorFor = (
@@ -311,13 +320,14 @@ const syncOrders = async (context: SyncContext, cursor: SyncCursor): Promise<Syn
     cursor: encodeCursor(completeCursor),
     deleted: totalDeleted,
   });
-  context.store.enqueueJob(context.account, {
-    id: `analytics-${context.job.id}`,
-    type: 'analytics.rebuild',
-    idempotencyKey: `analytics-after-sync:${context.job.id}`,
-    payload: {},
-    maxAttempts: 3,
-  });
+  if (context.scope === 'full')
+    context.store.enqueueJob(context.account, {
+      id: `analytics-${context.job.id}`,
+      type: 'analytics.rebuild',
+      idempotencyKey: `analytics-after-sync:${context.job.id}`,
+      payload: {},
+      maxAttempts: 3,
+    });
   await context.execution.reportProgress(100);
   return completeCursor;
 };
@@ -334,6 +344,7 @@ export const createWooSyncEffect =
   async (job: DurableJob, execution: JobExecutionContext): Promise<void> => {
     const type = syncType(job.type);
     const connectionId = connectionIdFromJob(job);
+    const scope = syncScopeFromJob(job);
     const account = connectionAccount(job, execution);
     const run = store.beginSyncRun(account, { id: job.id, connectionId, type });
     if (run.status === 'succeeded') return;
@@ -350,8 +361,16 @@ export const createWooSyncEffect =
         connectionId,
         type,
         overlapSeconds: boundedOverlapSeconds(options.overlapSeconds),
+        scope,
       };
       let cursor = initialCursor;
+      if (scope === 'orders' && cursor.phase !== 'orders') {
+        cursor = {
+          phase: 'orders',
+          page: 1,
+          ...(cursor.lastModifiedAt === undefined ? {} : { lastModifiedAt: cursor.lastModifiedAt }),
+        };
+      }
       if (type !== 'initial' && cursor.phase === 'complete') {
         cursor = {
           phase: 'catalog',
@@ -364,9 +383,9 @@ export const createWooSyncEffect =
       }
       // Catalog, categories, variations, stock and backorder state are mutable remote facts too.
       // Refresh them on every scheduled/manual sync instead of only on first connection.
-      if (cursor.phase !== 'orders' && cursor.phase !== 'complete')
+      if (scope === 'full' && cursor.phase !== 'orders' && cursor.phase !== 'complete')
         cursor = await syncCatalog(syncContext, cursor);
-      {
+      if (scope === 'full') {
         try {
           const shippingRates = await syncContext.connector.readEgyptShippingRates();
           store.replaceWooShippingRates(account, connectionId, shippingRates);

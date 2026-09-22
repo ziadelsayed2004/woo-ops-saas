@@ -107,9 +107,9 @@ test('organizes printable outputs and exposes useful downloads without the manif
             action: 'generate-label',
             format: 'label-100x150mm',
             status: 'completed',
-            totalCount: 2,
-            processedCount: 2,
-            succeededCount: 2,
+            totalCount: 25,
+            processedCount: 25,
+            succeededCount: 25,
             failedCount: 0,
             attemptCount: 1,
             jobId: 'job-1',
@@ -149,6 +149,14 @@ test('organizes printable outputs and exposes useful downloads without the manif
             byteSize: 20,
             checksum: 'c',
           },
+          ...Array.from({ length: 25 }, (_, index) => ({
+            id: `order-pdf-${index + 1}`,
+            kind: 'order-pdf',
+            filename: `shipping-label-80mm-order-${1001 + index}-2026-09-21.pdf`,
+            mimeType: 'application/pdf',
+            byteSize: 100,
+            checksum: `order-${index + 1}`,
+          })),
         ],
       },
     });
@@ -163,6 +171,10 @@ test('organizes printable outputs and exposes useful downloads without the manif
   await expect(page.getByRole('link', { name: 'Download printable PDF' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Download individual files ZIP' })).toBeVisible();
   await expect(page.getByText('manifest.json')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Download', exact: true })).toHaveCount(20);
+  await page.getByRole('button', { name: 'Next' }).click();
+  await expect(page.getByText('shipping-label-80mm-order-1021-2026-09-21.pdf')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Download', exact: true })).toHaveCount(5);
 });
 
 test('export workspace has no automated accessibility violations @a11y @exports', async ({
