@@ -75,10 +75,18 @@ test('portable browser cache avoids the system temp mount and enforces a private
 
 test('portable Linux launch extracts and executes only from the application cache', async () => {
   const root = await applicationTempDirectory('browser-launch');
-  const env = {};
+  const originalTempEnvironment = {
+    TMPDIR: process.env.TMPDIR,
+    TMP: process.env.TMP,
+    TEMP: process.env.TEMP,
+  };
+  const env = process.env;
   const expectedCache = join(root, '.cache', 'woo-ops-browser');
   const expectedExecutable = join(expectedCache, 'chromium');
   try {
+    // Postinstall reports/prepares the cache, then the shared launcher prepares
+    // it again. This exact sequence previously treated the cache as system temp.
+    assert.equal(await preparePortableBrowserEnvironment({ cwd: root, env }), expectedCache);
     const options = await documentBrowserLaunchOptions({
       platform: 'linux',
       cwd: root,
@@ -99,6 +107,10 @@ test('portable Linux launch extracts and executes only from the application cach
     if (process.platform !== 'win32')
       assert.equal(statSync(expectedExecutable).mode & 0o777, 0o700);
   } finally {
+    for (const [key, value] of Object.entries(originalTempEnvironment)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
     await rm(root, { force: true, recursive: true });
   }
 });

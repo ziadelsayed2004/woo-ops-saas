@@ -2,6 +2,10 @@ import { chmod, lstat, mkdir, realpath } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, parse, relative, resolve } from 'node:path';
 
+// Capture this before portable preparation rewrites TMPDIR/TMP/TEMP. Calling
+// os.tmpdir() after that mutation would identify our own cache as system temp.
+const operatingSystemTempDirectory = resolve(tmpdir());
+
 /**
  * Keep production PDF rendering and deployment readiness on one browser path.
  * Hostinger shared Linux images cannot install Playwright's system packages, so
@@ -24,7 +28,7 @@ const assertSafeCacheDirectory = (cacheDirectory, cwd) => {
   const forbiddenExactPaths = [parse(resolvedCache).root, resolve(cwd), resolve(homedir())];
   if (
     forbiddenExactPaths.includes(resolvedCache) ||
-    isInsideDirectory(resolve(tmpdir()), resolvedCache)
+    isInsideDirectory(operatingSystemTempDirectory, resolvedCache)
   ) {
     throw new Error('WOO_OPS_BROWSER_CACHE_DIR_UNSAFE');
   }
