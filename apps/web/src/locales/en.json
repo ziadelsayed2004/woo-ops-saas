@@ -508,7 +508,9 @@
       "searchDocumentFiles": "Search by document type, order number, or date",
       "noMatchingDocumentFiles": "No matching document files",
       "previousPage": "Previous",
-      "nextPage": "Next"
+      "nextPage": "Next",
+      "documentRendererUnavailable": "The PDF engine stopped temporarily. Retry this job; completed files are preserved.",
+      "documentBatchAllItemsFailed": "No document could be generated. Review the job and retry."
     },
     "admin": {
       "yourUnifiedOrderOperationsWorkspace": "Your unified order operations workspace",

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { SqliteStore } from '@woo-ops/persistence';
+import { PDFDocument } from 'pdf-lib';
 import { createApiJobRunner } from '../src/job-runner.js';
 import { createDocumentEffect } from '../src/document-effect.js';
 import { readPrivateDocumentArtifact } from '../src/document-artifacts.js';
@@ -148,6 +149,60 @@ test('document job resumes idempotently after a worker lease recovery', async ()
   assert.equal(firstArtifacts.filter((artifact) => artifact.kind === 'order-pdf').length, 2);
   assert.equal(store.getDocumentBatch(context, batch.id).attemptCount, 2);
   assert.equal(await runner.drain({ maxJobs: 1 }), 0);
+});
+
+test('document job retries renderer outages without failing every item and recycles sessions', async () => {
+  const batch = store.createDocumentBatch(context, {
+    selectionId: selection.id,
+    action: 'generate-thermal',
+    templateId: template.id,
+    idempotencyKey: 'document-job-renderer-recovery',
+  });
+  const pdf = await PDFDocument.create();
+  pdf.addPage([226.77, 340]);
+  const renderedPdf = new Uint8Array(await pdf.save({ useObjectStreams: true }));
+  let sessionAttempts = 0;
+  let closedSessions = 0;
+  const effect = createDocumentEffect(store, storageRoot, undefined, {
+    maxDocumentsPerSession: 1,
+    createRenderSession: async () => {
+      sessionAttempts += 1;
+      if (sessionAttempts === 1) throw new Error('browser failed to launch');
+      return {
+        render: async () => ({
+          bytes: renderedPdf,
+          pageCount: 1,
+          widthPoints: 226.77,
+          heightPoints: 340,
+        }),
+        close: async () => {
+          closedSessions += 1;
+        },
+      };
+    },
+  });
+  const job = { ...store.getJob(context, batch.jobId), payload: { documentBatchId: batch.id } };
+  const execution = {
+    accountId,
+    correlationId: randomUUID(),
+    signal: new AbortController().signal,
+    isCancellationRequested: () => false,
+    reportProgress: () => undefined,
+  };
+
+  await assert.rejects(() => effect(job, execution), /DOCUMENT_RENDERER_UNAVAILABLE/u);
+  assert.equal(store.getDocumentBatch(context, batch.id).status, 'running');
+  const interruptedItems = store.listDocumentBatchItems(context, batch.id).items;
+  assert.equal(interruptedItems.filter((item) => item.status === 'failed').length, 0);
+  assert.equal(interruptedItems.filter((item) => item.status === 'running').length, 1);
+
+  await effect(job, execution);
+  const completed = store.getDocumentBatch(context, batch.id);
+  assert.equal(completed.status, 'completed');
+  assert.equal(completed.succeededCount, 2);
+  assert.equal(completed.failedCount, 0);
+  assert.equal(sessionAttempts, 3);
+  assert.equal(closedSessions, 2);
 });
 
 test.after(() => {

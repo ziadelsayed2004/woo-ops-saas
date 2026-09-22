@@ -159,8 +159,17 @@ type DocumentBatchSummary = {
   failedCount: number;
   attemptCount: number;
   jobId: string | null;
+  error?: string | null;
   createdAt: string;
   completedAt: string | null;
+};
+type ExportHistoryTab = 'spreadsheets' | 'documents';
+
+const exportHistoryTabFromLocation = (): ExportHistoryTab => {
+  if (typeof window === 'undefined') return 'spreadsheets';
+  return new URLSearchParams(window.location.search).get('history') === 'documents'
+    ? 'documents'
+    : 'spreadsheets';
 };
 type DocumentArtifactSummary = {
   id: string;
@@ -2917,6 +2926,14 @@ const documentArtifactLabel = (artifact: DocumentArtifactSummary, direction: Dir
   return tr(direction === 'rtl' ? 'ar' : 'en', labels[artifact.kind]);
 };
 
+const documentBatchErrorLabel = (error: string, direction: Direction): string => {
+  if (error === 'DOCUMENT_RENDERER_UNAVAILABLE')
+    return tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.documentRendererUnavailable');
+  if (error === 'DOCUMENT_BATCH_ALL_ITEMS_FAILED')
+    return tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.documentBatchAllItemsFailed');
+  return error;
+};
+
 const exportRowModeLabel = (rowMode: string, direction: Direction): string => {
   const labels: Record<string, TranslationKey> = {
     order: 'labels.exportRowMode.order',
@@ -2952,7 +2969,7 @@ function ExportsWorkspace({
   const [documentFilePage, setDocumentFilePage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [historyTab, setHistoryTab] = useState<'spreadsheets' | 'documents'>('spreadsheets');
+  const [historyTab, setHistoryTab] = useState<ExportHistoryTab>(exportHistoryTabFromLocation);
   const visibleDocumentArtifacts = documentFilesBatchId
     ? (documentArtifacts[documentFilesBatchId] ?? [])
     : [];
@@ -2970,6 +2987,18 @@ function ExportsWorkspace({
     documentFilePage * documentFilePageSize,
     (documentFilePage + 1) * documentFilePageSize,
   );
+
+  const selectHistoryTab = (value: ExportHistoryTab) => {
+    setHistoryTab(value);
+    const url = new URL(window.location.href);
+    if (value === 'documents') url.searchParams.set('history', 'documents');
+    else url.searchParams.delete('history');
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  };
 
   const loadBatches = async (force = false) => {
     const body = await cachedGetJson<{ items?: ExportBatchSummary[] }>(
@@ -3201,7 +3230,7 @@ function ExportsWorkspace({
       <Paper variant="outlined" sx={{ px: 2, pt: 1 }}>
         <Tabs
           value={historyTab}
-          onChange={(_event, value: 'spreadsheets' | 'documents') => setHistoryTab(value)}
+          onChange={(_event, value: ExportHistoryTab) => selectHistoryTab(value)}
           variant="scrollable"
           scrollButtons="auto"
           aria-label={tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.exportCommandTypes')}
@@ -3379,19 +3408,26 @@ function ExportsWorkspace({
               {documentBatches.map((batch) => (
                 <TableRow key={batch.id}>
                   <TableCell>
-                    <Chip
-                      size="small"
-                      label={exportJobStatusLabel(batch.status, direction)}
-                      color={
-                        batch.status === 'completed'
-                          ? 'success'
-                          : batch.status === 'failed'
-                            ? 'error'
-                            : batch.status === 'partial'
-                              ? 'warning'
-                              : 'default'
-                      }
-                    />
+                    <Stack gap={0.5} alignItems="flex-start">
+                      <Chip
+                        size="small"
+                        label={exportJobStatusLabel(batch.status, direction)}
+                        color={
+                          batch.status === 'completed'
+                            ? 'success'
+                            : batch.status === 'failed'
+                              ? 'error'
+                              : batch.status === 'partial'
+                                ? 'warning'
+                                : 'default'
+                        }
+                      />
+                      {batch.status === 'failed' && batch.error && (
+                        <Typography variant="caption" color="error">
+                          {documentBatchErrorLabel(batch.error, direction)}
+                        </Typography>
+                      )}
+                    </Stack>
                   </TableCell>
                   <TableCell>{documentFormatLabel(batch.format, direction)}</TableCell>
                   <TableCell dir="ltr">
@@ -4227,7 +4263,8 @@ export function App({
             }
             break;
           }
-          if (details.batch.status === 'failed') throw new Error('DOCUMENT_JOB_FAILED');
+          if (details.batch.status === 'failed')
+            throw new Error(details.batch.error ?? 'DOCUMENT_JOB_FAILED');
         }
         await new Promise((resolve) => window.setTimeout(resolve, 1_000));
       }
