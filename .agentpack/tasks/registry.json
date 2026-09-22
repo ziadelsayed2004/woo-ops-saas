@@ -3455,5 +3455,12 @@
       "acceptance": ["Refreshing /exports preserves the selected Excel or invoices-and-print tab", "Large document batches render sequentially while recycling browser resources at a bounded interval", "A transient renderer outage leaves the current item recoverable for the durable job retry instead of producing a zero-success failure for every order", "Per-order content failures remain isolated and produce partial batches", "Affected unit, integration, E2E, typecheck and build checks pass"],
       "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:e2e -- --grep exports", "npm run build", "git diff --check"]
     }
+    ,{
+      "id": "T0946", "epic": "E09", "title": "Increase thermal receipt footer weight", "type": "fix", "phase": 9, "priority": "P1", "estimate": "S", "parallelGroup": "document-rendering", "dependencies": ["T0945"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/TESTING.md", "packages/documents/src/document-styles.ts", "packages/documents/src/html-renderer.ts", "packages/documents/tests/documents.test.js"],
+      "scope": ["Increase the visual font weight of the contact and closing footer content on 80mm thermal receipts without changing A4 invoices or shipping-label typography", "Add deterministic HTML and PDF regression coverage for the receipt-specific styling"],
+      "acceptance": ["Thermal receipt contact details and final thank-you footer render with a clearly heavier embedded font weight", "A4 invoices and 80mm shipping labels retain their existing footer typography", "Thermal width and content-driven height remain unchanged", "Affected unit, golden, typecheck, format and build checks pass"],
+      "validation": ["npm run agent:validate", "npm run format:check", "npm run typecheck", "npm run test:unit", "npm run test:golden", "npm run build", "git diff --check"]
+    }
   ]
 }
