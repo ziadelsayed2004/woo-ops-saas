@@ -1,0 +1,51 @@
+.admin-connected-store.MuiStack-root {
+  flex-direction: row;
+  align-items: center;
+  gap: 24px;
+  margin-block: 12px 16px;
+  padding: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.admin-connected-store__identity {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-items: flex-start;
+}
+
+.admin-connected-store__url {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  text-align: left;
+}
+
+.admin-connected-store .admin-connected-store__disconnect {
+  align-self: center;
+  flex-shrink: 0;
+  min-width: 180px;
+  padding-inline: 16px;
+  white-space: nowrap;
+}
+
+@media (max-width: 899.95px) {
+  .admin-connected-store.MuiStack-root {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .admin-connected-store .admin-connected-store__disconnect {
+    align-self: stretch;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 599.95px) {
+  .admin-connected-store.MuiStack-root {
+    padding: 12px;
+  }
+}

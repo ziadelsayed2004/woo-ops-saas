@@ -387,6 +387,10 @@ test('owner can deliberately clear local test data from the settings danger zone
   const connectedStoreUrl = page.getByTestId('connected-store-url');
   const disconnectStoreButton = page.getByTestId('disconnect-store-button');
   await expect(page.getByTestId('connected-store-management')).toBeVisible();
+  await expect(page.getByTestId('connected-store-identity')).toHaveCSS(
+    'justify-items',
+    'flex-start',
+  );
   const desktopUrlBox = await connectedStoreUrl.boundingBox();
   const desktopButtonBox = await disconnectStoreButton.boundingBox();
   expect(desktopUrlBox).not.toBeNull();
