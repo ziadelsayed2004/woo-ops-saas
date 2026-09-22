@@ -3469,5 +3469,12 @@
       "acceptance": ["A second active WooCommerce store cannot be authorized for the same account even through direct API or callback calls", "A disabled store releases the active-store slot and reconnecting the same canonical store reuses its connection record", "Only an authenticated account owner with valid CSRF, current password and explicit confirmation can disconnect or reset local data", "Disconnect disables ingestion and irreversibly clears stored Woo credentials and webhook secret while retained local data follows policy", "Connections presents read-only connection and sync management; Settings presents localized accessible destructive-action dialogs", "Account isolation, authorization, persistence, UI localization, typecheck, integration and E2E checks pass"],
       "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:e2e -- --grep \"connections|settings\"", "npm run build", "git diff --check"]
     }
+    ,{
+      "id": "T0948", "epic": "E09", "title": "Refine Settings disconnect action layout", "type": "fix", "phase": 9, "priority": "P1", "estimate": "S", "parallelGroup": "account-settings-ui", "dependencies": ["T0947"],
+      "references": ["AGENTS.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/TESTING.md", "apps/web/src/AdminWorkspaces.tsx", "tests/e2e/admin.spec.ts"],
+      "scope": ["Separate the connected-store identity and disconnect action with responsive spacing in the Settings danger zone", "Keep long store URLs readable without colliding with the action in Arabic RTL, English LTR and narrow layouts"],
+      "acceptance": ["The disconnect button never overlaps or touches the connected-store URL", "Long URLs wrap or truncate safely while the button label remains intact", "The row stacks cleanly on narrow screens and remains keyboard accessible", "Affected format, typecheck, E2E and build checks pass"],
+      "validation": ["npm run agent:validate", "npm run format:check", "npm run typecheck", "npm run test:e2e -- --grep settings", "npm run build", "git diff --check"]
+    }
   ]
 }
