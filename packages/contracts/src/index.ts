@@ -44,6 +44,13 @@ export const accountResetSchema = z
   .object({
     confirmation: z.literal('RESET'),
     preserveConnections: z.literal(true),
+    currentPassword: z.string().min(12).max(1024),
+  })
+  .strict();
+export const connectionDisconnectSchema = z
+  .object({
+    confirmation: z.literal('DISCONNECT'),
+    currentPassword: z.string().min(12).max(1024),
   })
   .strict();
 export const memberRoleUpdateSchema = z.object({ role: accountRoleSchema }).strict();

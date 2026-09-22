@@ -243,6 +243,12 @@ test('admin navigation exposes authenticated operational workspaces and route st
   await expect(page.getByTestId('admin-overview')).toBeVisible();
   await page.getByRole('button', { name: 'WooCommerce connection' }).click();
   await expect(page.getByTestId('connections-workspace')).toBeVisible();
+  await expect(
+    page.getByText(
+      'One WooCommerce store can be active for this account. Disconnect the current store from Settings before connecting another.',
+    ),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start WooCommerce connection' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.getByTestId('settings-workspace')).toBeVisible();
   await page.getByRole('button', { name: 'Customers' }).click();
@@ -360,6 +366,7 @@ test('owner can deliberately clear local test data from the settings danger zone
   await mockAdminApi(page);
   const owner = { ...user, role: 'owner' as const };
   let resetBody: Record<string, unknown> | null = null;
+  let disconnectBody: Record<string, unknown> | null = null;
   await page.route('**/api/v1/auth/session', (route) => route.fulfill({ json: { user: owner } }));
   await page.route('**/api/v1/account', async (route) => {
     await route.fulfill({ json: { account, user: owner } });
@@ -370,18 +377,42 @@ test('owner can deliberately clear local test data from the settings danger zone
       json: { reset: true, deletedRecords: 24, preservedConnections: 1 },
     });
   });
+  await page.route('**/api/v1/connections/connection-1/disable', async (route) => {
+    disconnectBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      json: { connection: { ...connection, status: 'disabled' } },
+    });
+  });
   await page.goto('/settings');
   await page.getByRole('button', { name: 'English' }).click();
   await expect(page.getByTestId('account-reset-zone')).toBeVisible();
+  await page.getByRole('button', { name: 'Disconnect store' }).click();
+  const disconnectDialog = page.getByRole('dialog');
+  await disconnectDialog.getByLabel('Type DISCONNECT to confirm').fill('DISCONNECT');
+  await disconnectDialog.getByLabel('Current password').fill('correct horse battery staple');
+  await page.getByRole('button', { name: 'Disconnect permanently' }).click();
+  await expect(
+    page.getByText('The WooCommerce store was disconnected. You can now connect another store.'),
+  ).toBeVisible();
+  expect(disconnectBody).toEqual({
+    confirmation: 'DISCONNECT',
+    currentPassword: 'correct horse battery staple',
+  });
   await page.getByRole('button', { name: 'Clear test data' }).click();
+  const resetDialog = page.getByRole('dialog');
   const confirm = page.getByLabel('Type RESET to confirm');
   await expect(page.getByRole('button', { name: 'Reset account data' })).toBeDisabled();
   await confirm.fill('RESET');
+  await resetDialog.getByLabel('Current password').fill('correct horse battery staple');
   await page.getByRole('button', { name: 'Reset account data' }).click();
   await expect(
     page.getByText('Account data was cleared. You can now start a fresh WooCommerce sync.'),
   ).toBeVisible();
-  expect(resetBody).toEqual({ confirmation: 'RESET', preserveConnections: true });
+  expect(resetBody).toEqual({
+    confirmation: 'RESET',
+    preserveConnections: true,
+    currentPassword: 'correct horse battery staple',
+  });
 });
 
 test('admin workspaces have no automated accessibility violations @a11y @admin', async ({

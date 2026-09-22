@@ -165,6 +165,16 @@ export class AuthService {
     return { id: row.user_id, email: row.email, accountId: row.account_id, role: row.role };
   }
 
+  verifyCurrentPassword(userId: string, accountId: string, currentPassword: string): void {
+    const row = this.db
+      .prepare(
+        "SELECT u.password_hash FROM users u JOIN account_memberships m ON m.user_id = u.id AND m.account_id = ? AND m.status = 'active' WHERE u.id = ?",
+      )
+      .get(accountId, userId) as { password_hash: string } | undefined;
+    if (!row || !verifyPassword(currentPassword, row.password_hash))
+      throw new Error('AUTH_INVALID_CREDENTIALS');
+  }
+
   changePassword(
     userId: string,
     accountId: string,
@@ -180,8 +190,8 @@ export class AuthService {
       .get(accountId, userId) as
       | { id: string; email: string; password_hash: string; account_id: string; role: string }
       | undefined;
-    if (!row || !verifyPassword(currentPassword, row.password_hash))
-      throw new Error('AUTH_INVALID_CREDENTIALS');
+    if (!row) throw new Error('AUTH_INVALID_CREDENTIALS');
+    this.verifyCurrentPassword(userId, accountId, currentPassword);
     const passwordHash = hashPassword(newPassword);
     const now = new Date().toISOString();
     this.db.transaction(() => {

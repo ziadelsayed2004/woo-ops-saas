@@ -55,6 +55,7 @@ import {
   connectionSyncRequestSchema,
   connectionRotateSchema,
   connectionWebhookSecretSchema,
+  connectionDisconnectSchema,
   orderQuerySchema,
   orderLocalWorkflowSchema,
   orderTagSchema,
@@ -262,6 +263,29 @@ const authenticatedUser = (request: Request, response: Response): CurrentUser | 
     return null;
   }
   return user;
+};
+const verifySensitiveActionPassword = (
+  user: CurrentUser,
+  currentPassword: string,
+  response: Response,
+): boolean => {
+  const key = `sensitive-action:${user.accountId}:${user.id}`;
+  const current = attempts.get(key);
+  if (current && current.resetAt > Date.now() && current.count >= 5) {
+    sendApiError(response, 429, 'AUTH_RATE_LIMITED', 'Too many password attempts');
+    return false;
+  }
+  try {
+    auth.verifyCurrentPassword(user.id, user.accountId, currentPassword);
+    attempts.delete(key);
+    return true;
+  } catch {
+    if (!current || current.resetAt <= Date.now())
+      attempts.set(key, { count: 1, resetAt: Date.now() + 15 * 60_000 });
+    else current.count += 1;
+    sendApiError(response, 400, 'AUTH_INVALID_CREDENTIALS', 'Current password is incorrect');
+    return false;
+  }
 };
 const operationContext = (user: CurrentUser, response: Response): AccountContext => ({
   accountId: user.accountId,
@@ -1181,13 +1205,17 @@ app.post('/api/v1/connections/woocommerce/return', (request, response) => {
     return;
   } catch (error) {
     const code = error instanceof Error ? error.message : 'CONNECTOR_CALLBACK_INVALID';
-    response.status(code === 'CONNECTOR_CALLBACK_REPLAYED' ? 409 : 400).json({
-      error: {
-        code,
-        message: 'Authorization callback is invalid or was already used',
-        correlationId: response.getHeader('x-correlation-id'),
-      },
-    });
+    response
+      .status(
+        code === 'CONNECTOR_CALLBACK_REPLAYED' || code === 'CONNECTION_LIMIT_REACHED' ? 409 : 400,
+      )
+      .json({
+        error: {
+          code,
+          message: 'Authorization callback is invalid or was already used',
+          correlationId: response.getHeader('x-correlation-id'),
+        },
+      });
     return;
   }
 });
@@ -1421,8 +1449,23 @@ app.post('/api/v1/connections/:connectionId/webhook-secret', (request, response)
   }
 });
 app.post('/api/v1/connections/:connectionId/disable', (request, response) => {
-  const user = requireConnectionAdmin(request, response);
+  const user = authenticatedUser(request, response);
   if (!user) return;
+  if (user.role !== 'owner' || !auth.csrfValid(request)) {
+    sendApiError(response, 403, 'FORBIDDEN', 'Only the account owner can disconnect a store');
+    return;
+  }
+  const parsed = connectionDisconnectSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(
+      response,
+      400,
+      'CONNECTION_DISCONNECT_CONFIRMATION_INVALID',
+      'Disconnect confirmation is invalid',
+    );
+    return;
+  }
+  if (!verifySensitiveActionPassword(user, parsed.data.currentPassword, response)) return;
   try {
     response.json({
       connection: store.disableConnection(
@@ -1673,6 +1716,7 @@ app.post('/api/v1/account/reset', (request, response) => {
     );
     return;
   }
+  if (!verifySensitiveActionPassword(user, parsed.data.currentPassword, response)) return;
   try {
     const result = store.resetAccountOperationalData(operationContext(user, response));
     purgeAccountPrivateFiles(

@@ -604,6 +604,7 @@ function ConnectionsWorkspace({
       setMessage(error instanceof Error ? error.message : 'REQUEST_FAILED');
     }
   };
+  const activeConnection = connections.find((connection) => connection.status !== 'disabled');
 
   if (loading) return <StateBlock copy={copy} loading error={false} onRetry={() => void load()} />;
   if (failed && message === 'FORBIDDEN')
@@ -627,32 +628,36 @@ function ConnectionsWorkspace({
           {message === 'WOO_PERMALINKS_BROKEN' ? copy.permalinksBroken : message}
         </Alert>
       )}
-      <Paper
-        component="form"
-        variant="outlined"
-        sx={{ p: 2 }}
-        onSubmit={(event) => {
-          event.preventDefault();
-          void connect();
-        }}
-      >
-        <Stack direction={{ xs: 'column', sm: 'row' }} gap={2}>
-          <TextField
-            fullWidth
-            required
-            label={copy.storeUrl}
-            value={storeUrl}
-            onChange={(event) => setStoreUrl(event.target.value)}
-            placeholder="https://shop.example"
-          />
-          <Button type="submit" variant="contained" disabled={!storeUrl.trim()}>
-            {copy.connect}
-          </Button>
-        </Stack>
-        <Typography variant="caption" color="text.secondary" display="block" mt={1}>
-          {copy.externalOnly}
-        </Typography>
-      </Paper>
+      {activeConnection ? (
+        <Alert severity="info">{copy.singleStoreLimit}</Alert>
+      ) : (
+        <Paper
+          component="form"
+          variant="outlined"
+          sx={{ p: 2 }}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void connect();
+          }}
+        >
+          <Stack direction={{ xs: 'column', sm: 'row' }} gap={2}>
+            <TextField
+              fullWidth
+              required
+              label={copy.storeUrl}
+              value={storeUrl}
+              onChange={(event) => setStoreUrl(event.target.value)}
+              placeholder="https://shop.example"
+            />
+            <Button type="submit" variant="contained" disabled={!storeUrl.trim()}>
+              {copy.connect}
+            </Button>
+          </Stack>
+          <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+            {copy.externalOnly}
+          </Typography>
+        </Paper>
+      )}
       {connections.length === 0 ? (
         <Alert severity="info">{copy.noConnections}</Alert>
       ) : (
@@ -1036,23 +1041,43 @@ function SettingsWorkspace({
   const [failed, setFailed] = useState(false);
   const [message, setMessage] = useState('');
   const [role, setRole] = useState<AuthenticatedUser['role'] | null>(null);
+  const [connections, setConnections] = useState<Connection[]>([]);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetConfirmation, setResetConfirmation] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
   const [resetting, setResetting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [disconnectConnection, setDisconnectConnection] = useState<Connection | null>(null);
+  const [disconnectConfirmation, setDisconnectConfirmation] = useState('');
+  const [disconnectPassword, setDisconnectPassword] = useState('');
+  const closeResetDialog = () => {
+    setResetOpen(false);
+    setResetConfirmation('');
+    setResetPassword('');
+  };
+  const closeDisconnectDialog = () => {
+    setDisconnectConnection(null);
+    setDisconnectConfirmation('');
+    setDisconnectPassword('');
+  };
   const load = async () => {
     setLoading(true);
     setFailed(false);
     try {
-      const body = await apiRequest<{ account: Account; user: AuthenticatedUser }>(
-        '/api/v1/account',
-        onSessionExpired,
-      );
+      const [body, connectionBody] = await Promise.all([
+        apiRequest<{ account: Account; user: AuthenticatedUser }>(
+          '/api/v1/account',
+          onSessionExpired,
+        ),
+        apiRequest<{ items: Connection[] }>('/api/v1/connections', onSessionExpired),
+      ]);
       setAccount(body.account);
       setRole(body.user.role);
       setName(body.account.name);
       setLocale(body.account.locale);
       setTimezone(body.account.timezone);
       setBaseCurrency(body.account.baseCurrency);
+      setConnections(connectionBody.items ?? []);
     } catch (error) {
       setFailed(true);
       if (error instanceof AdminApiError && error.status === 403) setMessage('FORBIDDEN');
@@ -1096,17 +1121,54 @@ function SettingsWorkspace({
     setResetting(true);
     try {
       await apiRequest('/api/v1/account/reset', onSessionExpired, {
-        ...writeOptions({ confirmation: 'RESET', preserveConnections: true }),
+        ...writeOptions({
+          confirmation: 'RESET',
+          preserveConnections: true,
+          currentPassword: resetPassword,
+        }),
       });
-      setResetOpen(false);
-      setResetConfirmation('');
+      closeResetDialog();
       setMessage(copy.resetComplete);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'REQUEST_FAILED');
+      setMessage(
+        error instanceof Error && error.message === 'AUTH_INVALID_CREDENTIALS'
+          ? copy.currentPasswordIncorrect
+          : error instanceof Error
+            ? error.message
+            : 'REQUEST_FAILED',
+      );
     } finally {
       setResetting(false);
     }
   };
+  const disconnectStore = async () => {
+    if (!disconnectConnection) return;
+    setDisconnecting(true);
+    try {
+      await apiRequest(
+        `/api/v1/connections/${encodeURIComponent(disconnectConnection.id)}/disable`,
+        onSessionExpired,
+        writeOptions({
+          confirmation: 'DISCONNECT',
+          currentPassword: disconnectPassword,
+        }),
+      );
+      closeDisconnectDialog();
+      setMessage(copy.disconnectComplete);
+      await load();
+    } catch (error) {
+      setMessage(
+        error instanceof Error && error.message === 'AUTH_INVALID_CREDENTIALS'
+          ? copy.currentPasswordIncorrect
+          : error instanceof Error
+            ? error.message
+            : 'REQUEST_FAILED',
+      );
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+  const activeConnection = connections.find((connection) => connection.status !== 'disabled');
   if (loading) return <StateBlock copy={copy} loading error={false} onRetry={() => void load()} />;
   if (failed && message === 'FORBIDDEN')
     return (
@@ -1204,6 +1266,37 @@ function SettingsWorkspace({
           <Typography variant="h6" component="h2" color="error.main">
             {copy.dangerZone}
           </Typography>
+          <Typography fontWeight={700} sx={{ mt: 2 }}>
+            {copy.connectionManagement}
+          </Typography>
+          <Typography color="text.secondary" sx={{ my: 1 }}>
+            {copy.connectionManagementHelp}
+          </Typography>
+          {activeConnection && (
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              gap={1}
+              alignItems={{ sm: 'center' }}
+              sx={{ mb: 2 }}
+            >
+              <Box flex={1}>
+                <Typography variant="caption" color="text.secondary">
+                  {copy.connectedStore}
+                </Typography>
+                <Typography fontWeight={700} dir="ltr">
+                  {activeConnection.displayName ?? activeConnection.storeUrl}
+                </Typography>
+              </Box>
+              <Button
+                color="error"
+                variant="outlined"
+                onClick={() => setDisconnectConnection(activeConnection)}
+              >
+                {copy.disconnectStore}
+              </Button>
+            </Stack>
+          )}
+          <Divider sx={{ my: 2 }} />
           <Typography color="text.secondary" sx={{ my: 1 }}>
             {copy.resetAccountHelp}
           </Typography>
@@ -1212,7 +1305,7 @@ function SettingsWorkspace({
           </Button>
         </Paper>
       )}
-      <Dialog open={resetOpen} onClose={() => !resetting && setResetOpen(false)}>
+      <Dialog open={resetOpen} onClose={() => !resetting && closeResetDialog()}>
         <DialogTitle>{copy.resetDialogTitle}</DialogTitle>
         <DialogContent>
           <Typography sx={{ mb: 2 }}>{copy.resetDialogBody}</Typography>
@@ -1223,18 +1316,69 @@ function SettingsWorkspace({
             value={resetConfirmation}
             onChange={(event) => setResetConfirmation(event.target.value)}
           />
+          <TextField
+            fullWidth
+            type="password"
+            autoComplete="current-password"
+            label={copy.currentPassword}
+            value={resetPassword}
+            onChange={(event) => setResetPassword(event.target.value)}
+            sx={{ mt: 2 }}
+          />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setResetOpen(false)} disabled={resetting}>
+          <Button onClick={closeResetDialog} disabled={resetting}>
             {copy.cancel}
           </Button>
           <Button
             color="error"
             variant="contained"
-            disabled={resetting || resetConfirmation !== 'RESET'}
+            disabled={resetting || resetConfirmation !== 'RESET' || resetPassword.length < 12}
             onClick={() => void resetAccount()}
           >
             {copy.resetAction}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={disconnectConnection !== null}
+        onClose={() => !disconnecting && closeDisconnectDialog()}
+      >
+        <DialogTitle>{copy.disconnectDialogTitle}</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 2 }}>{copy.disconnectDialogBody}</Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            label={copy.disconnectConfirmation}
+            value={disconnectConfirmation}
+            onChange={(event) => setDisconnectConfirmation(event.target.value)}
+          />
+          <TextField
+            fullWidth
+            type="password"
+            autoComplete="current-password"
+            label={copy.currentPassword}
+            value={disconnectPassword}
+            onChange={(event) => setDisconnectPassword(event.target.value)}
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeDisconnectDialog} disabled={disconnecting}>
+            {copy.cancel}
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={
+              disconnecting ||
+              disconnectConfirmation !== 'DISCONNECT' ||
+              disconnectPassword.length < 12
+            }
+            onClick={() => void disconnectStore()}
+          >
+            {copy.disconnectAction}
           </Button>
         </DialogActions>
       </Dialog>
