@@ -177,6 +177,26 @@ test('organizes printable outputs and exposes useful downloads without the manif
   await expect(page.getByRole('link', { name: 'Download', exact: true })).toHaveCount(5);
 });
 
+test('preserves the selected export history tab across refreshes @exports', async ({ page }) => {
+  await mockExports(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'English' }).click();
+  await page.locator('[data-testid="navigation-exports"]:visible').click();
+
+  const documentsTab = page.getByRole('tab', { name: 'Invoices & print' });
+  await documentsTab.click();
+  await expect(page).toHaveURL(/\/exports\?history=documents$/u);
+  await page.reload();
+  await expect(documentsTab).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('export-document-jobs')).toBeVisible();
+
+  const excelTab = page.getByRole('tab', { name: 'Excel' });
+  await excelTab.click();
+  await expect(page).toHaveURL(/\/exports$/u);
+  await page.reload();
+  await expect(excelTab).toHaveAttribute('aria-selected', 'true');
+});
+
 test('export workspace has no automated accessibility violations @a11y @exports', async ({
   page,
 }) => {

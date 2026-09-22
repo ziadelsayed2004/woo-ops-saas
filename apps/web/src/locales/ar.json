@@ -508,7 +508,9 @@
       "searchDocumentFiles": "ابحث بنوع المستند أو رقم الطلب أو التاريخ",
       "noMatchingDocumentFiles": "لا توجد ملفات مطابقة",
       "previousPage": "السابق",
-      "nextPage": "التالي"
+      "nextPage": "التالي",
+      "documentRendererUnavailable": "توقف محرك PDF مؤقتًا. أعد محاولة الأمر؛ الملفات المكتملة محفوظة.",
+      "documentBatchAllItemsFailed": "تعذر إنشاء أي مستند. راجع الأمر ثم أعد المحاولة."
     },
     "admin": {
       "yourUnifiedOrderOperationsWorkspace": "مساحة عمل موحدة لإدارة الطلبات والتحليلات",

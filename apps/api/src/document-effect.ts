@@ -16,6 +16,13 @@ import { readPrivateDocumentArtifact, writePrivateDocumentArtifact } from './doc
 
 type DocumentEffect = (job: DurableJob, context: JobExecutionContext) => void | Promise<void>;
 
+type DocumentEffectOptions = Readonly<{
+  createRenderSession?: () => Promise<HtmlPdfRenderSession>;
+  maxDocumentsPerSession?: number;
+}>;
+
+const DEFAULT_MAX_DOCUMENTS_PER_SESSION = 50;
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -41,13 +48,17 @@ const progress = (processed: number, total: number, lower: number, upper: number
 
 const safeDocumentError = (error: unknown): string => {
   if (!(error instanceof Error)) return 'DOCUMENT_GENERATION_FAILED';
+  if (error.message === 'DOCUMENT_RENDER_SESSION_CLOSED') return 'DOCUMENT_RENDERER_UNAVAILABLE';
   if (/^DOCUMENT_[A-Z0-9_]+$/u.test(error.message)) return error.message;
   const message = error.message.toLowerCase();
   if (
     message.includes('executable') ||
     message.includes('failed to launch') ||
     message.includes('playwright') ||
-    message.includes('browser')
+    message.includes('browser') ||
+    message.includes('target page') ||
+    message.includes('connection closed') ||
+    message.includes('page crashed')
   )
     return 'DOCUMENT_RENDERER_UNAVAILABLE';
   return 'DOCUMENT_GENERATION_FAILED';
@@ -129,7 +140,12 @@ const documentArtifactName = (
 };
 
 export const createDocumentEffect =
-  (store: SqliteStore, storageRoot: string, fontBytes?: Uint8Array): DocumentEffect =>
+  (
+    store: SqliteStore,
+    storageRoot: string,
+    fontBytes?: Uint8Array,
+    options: DocumentEffectOptions = {},
+  ): DocumentEffect =>
   async (job, execution) => {
     const batchId = batchIdFrom(job.payload);
     const context = workerContext(job, execution);
@@ -141,8 +157,19 @@ export const createDocumentEffect =
       else if (batch.status === 'running' || batch.status === 'failed')
         batch = store.resumeDocumentBatchForWorker(context, batchId);
       const template = documentTemplateForEngine(batch.template, fontBytes);
+      const createRenderSession = options.createRenderSession ?? createHtmlPdfRenderSession;
+      const maxDocumentsPerSession = Math.max(
+        1,
+        Math.min(100, options.maxDocumentsPerSession ?? DEFAULT_MAX_DOCUMENTS_PER_SESSION),
+      );
       let renderSession: HtmlPdfRenderSession | undefined;
-      let renderSessionError: unknown;
+      let renderedDocuments = 0;
+      const closeRenderSession = async (): Promise<void> => {
+        const current = renderSession;
+        renderSession = undefined;
+        renderedDocuments = 0;
+        await current?.close().catch(() => undefined);
+      };
       try {
         for (;;) {
           await throwIfCancelled(execution);
@@ -162,13 +189,9 @@ export const createDocumentEffect =
                 code !== 'ENOENT'
               )
                 throw error;
-              if (renderSessionError) throw renderSessionError;
-              try {
-                renderSession ??= await createHtmlPdfRenderSession();
-              } catch (error) {
-                renderSessionError = error;
-                throw error;
-              }
+              if (renderSession && renderedDocuments >= maxDocumentsPerSession)
+                await closeRenderSession();
+              renderSession ??= await createRenderSession();
               const result = await generateDocument(
                 {
                   order: item.snapshot as DocumentOrder,
@@ -180,6 +203,7 @@ export const createDocumentEffect =
                 },
                 renderSession.render,
               );
+              renderedDocuments += 1;
               const stored = writePrivateDocumentArtifact(
                 storageRoot,
                 context.accountId,
@@ -207,18 +231,18 @@ export const createDocumentEffect =
             void artifact;
             store.completeDocumentBatchItemForWorker(context, batchId, item.position, artifactId);
           } catch (error) {
-            store.failDocumentBatchItemForWorker(
-              context,
-              batchId,
-              item.position,
-              safeDocumentError(error),
-            );
+            const safeError = safeDocumentError(error);
+            if (safeError === 'DOCUMENT_RENDERER_UNAVAILABLE') {
+              await closeRenderSession();
+              throw new Error(safeError);
+            }
+            store.failDocumentBatchItemForWorker(context, batchId, item.position, safeError);
           }
           batch = store.getDocumentBatchForWorker(context, batchId);
           await execution.reportProgress(progress(batch.processedCount, batch.totalCount, 5, 88));
         }
       } finally {
-        await renderSession?.close();
+        await closeRenderSession();
       }
 
       batch = store.getDocumentBatchForWorker(context, batchId);
@@ -362,14 +386,21 @@ export const createDocumentEffect =
       });
       await execution.reportProgress(100);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'DOCUMENT_BATCH_FAILED';
+      const rawMessage = error instanceof Error ? error.message : 'DOCUMENT_BATCH_FAILED';
+      const message = rawMessage === 'JOB_CANCELLED' ? rawMessage : safeDocumentError(error);
       if (message === 'JOB_CANCELLED') {
         store.cancelDocumentBatchForWorker(context, batchId);
       } else {
         const current = store.getDocumentBatchForWorker(context, batchId);
-        if (current.status !== 'completed' && current.status !== 'partial')
+        const waitingForDurableRetry =
+          message === 'DOCUMENT_RENDERER_UNAVAILABLE' && job.attempts < job.maxAttempts;
+        if (
+          !waitingForDurableRetry &&
+          current.status !== 'completed' &&
+          current.status !== 'partial'
+        )
           store.failDocumentBatchForWorker(context, batchId, message);
       }
-      throw error;
+      throw new Error(message);
     }
   };
