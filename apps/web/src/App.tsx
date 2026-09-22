@@ -286,6 +286,16 @@ const columns = [
   'createdAt',
   'updatedAt',
 ] as const;
+const standardWooOrderStatuses = [
+  'pending',
+  'processing',
+  'on-hold',
+  'completed',
+  'cancelled',
+  'refunded',
+  'failed',
+  'checkout-draft',
+] as const;
 const defaultOrderColumns: readonly (typeof columns)[number][] = [
   'orderNumber',
   'remoteStatus',
@@ -325,6 +335,17 @@ const emptyOrderFilters = (): OrderFilters => ({
   from: '',
   to: '',
 });
+
+const wooSourceFilter: JsonRecord = { field: 'source', operator: 'equals', value: 'woo' };
+
+const scopeQueryToWooOrders = (query: JsonRecord): JsonRecord => {
+  const filter = query.filter;
+  return {
+    ...query,
+    filter:
+      filter === undefined ? wooSourceFilter : { op: 'and', children: [wooSourceFilter, filter] },
+  };
+};
 
 type SavedOrderView = {
   id: string;
@@ -3578,7 +3599,7 @@ export function App({
   const [authUser, setAuthUser] = useState<AuthenticatedUser | null>(null);
   const [sessionMessage, setSessionMessage] = useState('');
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState('processing');
   const [filters, setFilters] = useState<OrderFilters>(emptyOrderFilters);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [savedFiltersOpen, setSavedFiltersOpen] = useState(false);
@@ -3717,17 +3738,20 @@ export function App({
   }, [filters, status]);
   const currentOrderQuery = useMemo<JsonRecord>(
     () =>
-      activeSavedQuery ?? {
-        search: search || undefined,
-        filter: orderFilter,
-        sort: { field: 'remoteCreatedAt', direction: 'desc' },
-      },
+      scopeQueryToWooOrders(
+        activeSavedQuery ?? {
+          search: search || undefined,
+          filter: orderFilter,
+          sort: { field: 'remoteCreatedAt', direction: 'desc' },
+        },
+      ),
     [activeSavedQuery, orderFilter, search],
   );
 
   const loadOrders = async (append = false, queryOverride?: JsonRecord) => {
-    const query = queryOverride ??
-      activeSavedQuery ?? { search: search || undefined, filter: orderFilter };
+    const query = scopeQueryToWooOrders(
+      queryOverride ?? activeSavedQuery ?? { search: search || undefined, filter: orderFilter },
+    );
     setLoading(true);
     setError(false);
     setAuthRequired(false);
@@ -3802,7 +3826,7 @@ export function App({
         headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
         body: JSON.stringify({
           name: viewName.trim(),
-          query: { search: search || undefined, filter: orderFilter },
+          query: scopeQueryToWooOrders({ search: search || undefined, filter: orderFilter }),
           sort: { field: 'remoteCreatedAt', direction: 'desc' },
           columns: visibleColumns,
           pageSize: 50,
@@ -3893,11 +3917,7 @@ export function App({
     const body = selectAllMatching
       ? {
           mode: 'query',
-          query: {
-            search: search || undefined,
-            filter: orderFilter,
-            sort: { field: 'remoteCreatedAt', direction: 'desc' },
-          },
+          query: currentOrderQuery,
         }
       : { mode: 'explicit', orderIds: [...selectedIds] };
     try {
@@ -4234,14 +4254,29 @@ export function App({
   };
 
   useEffect(() => {
-    if (authStatus !== 'authenticated') return;
+    if (authStatus !== 'authenticated' || view !== 'orders') return;
     void loadOrders();
+  }, [status, authStatus, view]);
+
+  useEffect(() => {
+    if (authStatus !== 'authenticated') return;
     void loadSavedViews();
-  }, [status, authStatus]);
+  }, [authStatus]);
 
   const renderedColumns = useMemo(
     () => columns.filter((column) => visibleColumns.includes(column)),
     [visibleColumns],
+  );
+  const remoteStatusOptions = useMemo(
+    () => [
+      ...new Set([
+        ...standardWooOrderStatuses,
+        ...(orderFacets
+          .find((facet) => facet.field === 'remoteStatus')
+          ?.values.map((item) => item.value) ?? []),
+      ]),
+    ],
+    [orderFacets],
   );
   const labelFor = (column: string) =>
     ({
@@ -4337,7 +4372,6 @@ export function App({
       view: 'catalog',
       label: tr(locale, 'inline.app.productsStock'),
     },
-    { view: 'manual', label: tr(locale, 'inline.app.manualOrders') },
     {
       view: 'exports',
       label: tr(locale, 'inline.app.exports'),
@@ -4363,13 +4397,11 @@ export function App({
         direction={direction}
         locale={locale}
         userEmail={authUser.email}
-        active={view}
+        active={view === 'manual' || view === 'manual-create' ? 'orders' : view}
         navigation={navigation.map((item) => ({
           id: item.view,
           label: item.label,
-          group: ['overview', 'orders', 'catalog', 'manual', 'exports', 'analytics'].includes(
-            item.view,
-          )
+          group: ['overview', 'orders', 'catalog', 'exports', 'analytics'].includes(item.view)
             ? ('workspace' as const)
             : ('management' as const),
         }))}
@@ -4391,6 +4423,29 @@ export function App({
                 )
               : tr(locale, 'inline.app.woocommerceAuthorizationWasNotApproved')}
           </Alert>
+        )}
+        {(view === 'orders' || view === 'manual') && (
+          <Paper variant="outlined" sx={{ mb: 2, borderRadius: '12px', overflow: 'hidden' }}>
+            <Tabs
+              value={view === 'manual' ? 'manual' : 'woo'}
+              onChange={(_event, value: 'woo' | 'manual') =>
+                setView(value === 'manual' ? 'manual' : 'orders')
+              }
+              aria-label={tr(locale, 'inline.app.orderSourceTabs')}
+              variant="fullWidth"
+            >
+              <Tab
+                value="woo"
+                label={tr(locale, 'inline.app.woocommerceOrders')}
+                data-testid="orders-tab-woo"
+              />
+              <Tab
+                value="manual"
+                label={tr(locale, 'inline.app.manualOrders')}
+                data-testid="orders-tab-manual"
+              />
+            </Tabs>
+          </Paper>
         )}
         {isAdminView ? (
           <AdminWorkspace
@@ -4420,6 +4475,7 @@ export function App({
             onCancel={() => setView('manual')}
             onSaved={(order) => {
               setOrders((previous) => [order, ...previous]);
+              setView('manual');
             }}
           />
         ) : (
@@ -4508,7 +4564,7 @@ export function App({
                     }}
                   >
                     <MenuItem value="">{t.all}</MenuItem>
-                    {facetValues('remoteStatus').map((value) => (
+                    {remoteStatusOptions.map((value) => (
                       <MenuItem key={value} value={value}>
                         {(
                           {

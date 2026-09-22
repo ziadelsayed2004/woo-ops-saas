@@ -479,6 +479,8 @@
       "exportedInWoocommerce": "تم التصدير في WooCommerce",
       "notExportedInWoocommerce": "لم يُصدّر في WooCommerce",
       "productsStock": "المنتجات والمخزون",
+      "orderSourceTabs": "نوع الطلبات",
+      "woocommerceOrders": "طلبات WooCommerce",
       "manualOrders": "الطلبات اليدوية",
       "exports": "التصديرات",
       "woocommerceApprovedAccessWaitForTheStoreToAppearThenStartTheInit": "تمت الموافقة في WooCommerce. انتظر ظهور المتجر ثم ابدأ المزامنة الأولية.",

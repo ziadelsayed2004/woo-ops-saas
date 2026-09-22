@@ -479,6 +479,8 @@
       "exportedInWoocommerce": "Exported in WooCommerce",
       "notExportedInWoocommerce": "Not exported in WooCommerce",
       "productsStock": "Products & stock",
+      "orderSourceTabs": "Order source",
+      "woocommerceOrders": "WooCommerce orders",
       "manualOrders": "Manual orders",
       "exports": "Exports",
       "woocommerceApprovedAccessWaitForTheStoreToAppearThenStartTheInit": "WooCommerce approved access. Wait for the store to appear, then start the initial sync.",

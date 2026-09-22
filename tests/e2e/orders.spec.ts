@@ -68,6 +68,18 @@ const order = {
   auditHistory: [],
 };
 
+const manualOrder = {
+  ...order,
+  id: 'manual-order-1',
+  orderNumber: 'MAN-000001',
+  externalOrderId: undefined,
+  origin: 'manual',
+  connectionId: undefined,
+  remoteStatus: undefined,
+  syncPolicy: 'never',
+  inventoryPolicy: 'ignore',
+};
+
 async function mockOrderApi(page: Page) {
   const queryBodies: Record<string, unknown>[] = [];
   await page.route('**/api/v1/auth/session', async (route: Route) => {
@@ -79,16 +91,20 @@ async function mockOrderApi(page: Page) {
   });
   await page.route('**/api/v1/orders/query', async (route: Route) => {
     const raw = route.request().postData();
-    if (raw) queryBodies.push(JSON.parse(raw) as Record<string, unknown>);
+    const query = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    if (raw) queryBodies.push(query);
+    const manual = JSON.stringify(query.filter).includes('"value":"manual"');
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        items: [order],
+        items: [manual ? manualOrder : order],
         nextCursor: null,
         hasMore: false,
         facets: [
-          { field: 'remoteStatus', values: [{ value: 'processing', count: 1 }] },
+          ...(manual
+            ? []
+            : [{ field: 'remoteStatus', values: [{ value: 'processing', count: 1 }] }]),
           { field: 'governorate', values: [{ value: 'Cairo', count: 1 }] },
         ],
       }),
@@ -109,6 +125,43 @@ async function mockOrderApi(page: Page) {
   });
   return queryBodies;
 }
+
+test('defaults Woo orders to processing and separates manual orders into a tab @orders', async ({
+  page,
+}) => {
+  const queryBodies = await mockOrderApi(page);
+  await page.goto('/');
+
+  await expect(page.getByTestId('orders-tab-woo')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('orders-tab-manual')).toHaveAttribute('aria-selected', 'false');
+  await expect(page.getByTestId('navigation-manual')).toHaveCount(0);
+  await expect
+    .poll(() => JSON.stringify(queryBodies[0]?.filter ?? null))
+    .toContain('"field":"source","operator":"equals","value":"woo"');
+  await expect
+    .poll(() => JSON.stringify(queryBodies[0]?.filter ?? null))
+    .toContain('"field":"remoteStatus","operator":"equals","value":"processing"');
+
+  await page.getByTestId('orders-tab-manual').click();
+  await expect(page).toHaveURL(/\/manual$/u);
+  await expect(page.getByTestId('manual-orders-workspace')).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'MAN-000001' })).toBeVisible();
+  await expect
+    .poll(() => JSON.stringify(queryBodies.at(-1)?.filter ?? null))
+    .toContain('"field":"origin","operator":"equals","value":"manual"');
+
+  await page.getByTestId('orders-tab-woo').click();
+  await expect(page).toHaveURL(/\/$/u);
+  await expect(page.getByTestId('orders-table')).toBeVisible();
+  await expect(page.getByTestId('order-row-order-1')).toBeVisible();
+});
+
+test('keeps the legacy manual orders URL on the manual tab @orders', async ({ page }) => {
+  await mockOrderApi(page);
+  await page.goto('/manual');
+  await expect(page.getByTestId('orders-tab-manual')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('manual-orders-workspace')).toBeVisible();
+});
 
 test('creates the Woo-layout XLSX and offers repeat download in orders @orders @exports', async ({
   page,
@@ -342,14 +395,8 @@ test('renders bounded Arabic orders workspace and keyboard detail navigation @or
   await page.getByRole('option', { name: 'القاهرة' }).click();
   await page.getByRole('button', { name: 'بحث', exact: true }).click();
   await expect
-    .poll(() => queryBodies.at(-1))
-    .toMatchObject({
-      filter: {
-        field: 'governorate',
-        operator: 'contains',
-        value: 'Cairo',
-      },
-    });
+    .poll(() => JSON.stringify(queryBodies.at(-1)?.filter ?? null))
+    .toContain('"field":"governorate","operator":"contains","value":"Cairo"');
 
   const row = page.getByTestId('order-row-order-1');
   await expect(row).toHaveCount(1);
