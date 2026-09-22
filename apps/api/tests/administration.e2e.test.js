@@ -200,19 +200,41 @@ test('account administration API enforces CSRF, scopes invitations, and reports 
     const resetWithoutCsrf = await request('/api/v1/account/reset', {
       method: 'POST',
       headers: { cookie: ownerCookies },
-      body: JSON.stringify({ confirmation: 'RESET', preserveConnections: true }),
+      body: JSON.stringify({
+        confirmation: 'RESET',
+        preserveConnections: true,
+        currentPassword: 'correct horse battery staple',
+      }),
     });
     assert.equal(resetWithoutCsrf.response.status, 403);
     const invalidReset = await request('/api/v1/account/reset', {
       method: 'POST',
       headers: writeHeaders,
-      body: JSON.stringify({ confirmation: 'reset', preserveConnections: true }),
+      body: JSON.stringify({
+        confirmation: 'reset',
+        preserveConnections: true,
+        currentPassword: 'correct horse battery staple',
+      }),
     });
     assert.equal(invalidReset.response.status, 400);
+    const wrongPasswordReset = await request('/api/v1/account/reset', {
+      method: 'POST',
+      headers: writeHeaders,
+      body: JSON.stringify({
+        confirmation: 'RESET',
+        preserveConnections: true,
+        currentPassword: 'not the current password',
+      }),
+    });
+    assert.equal(wrongPasswordReset.response.status, 400);
     const accountReset = await request('/api/v1/account/reset', {
       method: 'POST',
       headers: writeHeaders,
-      body: JSON.stringify({ confirmation: 'RESET', preserveConnections: true }),
+      body: JSON.stringify({
+        confirmation: 'RESET',
+        preserveConnections: true,
+        currentPassword: 'correct horse battery staple',
+      }),
     });
     assert.equal(accountReset.response.status, 200);
     assert.equal(accountReset.body.reset, true);

@@ -3775,6 +3775,13 @@ export class SqliteStore {
     if (input.userId !== context.actorId) throw new Error('AUTHORIZATION_STATE_OWNER_INVALID');
     if (!/^[a-f0-9]{64}$/iu.test(input.stateHash) || input.storeUrl.length > 500)
       throw new Error('AUTHORIZATION_STATE_INVALID');
+    const activeConnection = this.db
+      .prepare(
+        "SELECT store_url FROM connections WHERE account_id = ? AND platform = 'woocommerce' AND status <> 'disabled' ORDER BY created_at LIMIT 1",
+      )
+      .get(context.accountId) as { store_url: string } | undefined;
+    if (activeConnection && activeConnection.store_url !== input.storeUrl)
+      throw new Error('CONNECTION_LIMIT_REACHED');
     const now = new Date().toISOString();
     this.db
       .prepare(
@@ -3804,6 +3811,13 @@ export class SqliteStore {
         .get(input.stateHash, now) as
         { account_id: string; user_id: string; store_url: string } | undefined;
       if (!state) throw new Error('CONNECTOR_CALLBACK_REPLAYED');
+      const activeConnection = this.db
+        .prepare(
+          "SELECT store_url FROM connections WHERE account_id = ? AND platform = 'woocommerce' AND status <> 'disabled' ORDER BY created_at LIMIT 1",
+        )
+        .get(state.account_id) as { store_url: string } | undefined;
+      if (activeConnection && activeConnection.store_url !== state.store_url)
+        throw new Error('CONNECTION_LIMIT_REACHED');
       const claimed = this.db
         .prepare(
           'UPDATE authorization_states SET used_at = ? WHERE state_hash = ? AND used_at IS NULL',
@@ -3850,6 +3864,12 @@ export class SqliteStore {
     this.assertConnection(context, connectionId);
     if (!encryptedCredentials || encryptedCredentials.length > 16 * 1024)
       throw new Error('CREDENTIAL_ENVELOPE_INVALID');
+    const activeConnection = this.db
+      .prepare(
+        "SELECT id FROM connections WHERE account_id = ? AND platform = 'woocommerce' AND status <> 'disabled' AND id <> ? LIMIT 1",
+      )
+      .get(context.accountId, connectionId) as { id: string } | undefined;
+    if (activeConnection) throw new Error('CONNECTION_LIMIT_REACHED');
     const now = new Date().toISOString();
     const result = this.db
       .prepare(
@@ -3886,15 +3906,21 @@ export class SqliteStore {
 
   disableConnection(context: AccountContext, connectionId: string): ConnectionSummary {
     const actorId = this.requireAccountAdmin(context);
-    this.assertConnection(context, connectionId);
+    const connection = this.assertConnection(context, connectionId);
     const now = new Date().toISOString();
     const result = this.db
       .prepare(
-        `UPDATE connections SET status = 'disabled', sync_status = 'idle', sync_finished_at = ?, updated_at = ?
-         WHERE account_id = ? AND id = ? AND status <> 'disabled'`,
+        `UPDATE connections SET status = 'disabled', encrypted_credentials = NULL,
+           encrypted_webhook_secret = NULL, sync_status = 'idle', sync_finished_at = ?, updated_at = ?
+         WHERE account_id = ? AND id = ?`,
       )
       .run(now, now, context.accountId, connectionId);
-    if (result.changes === 1)
+    if (
+      result.changes === 1 &&
+      (connection.status !== 'disabled' ||
+        connection.encrypted_credentials !== null ||
+        connection.encrypted_webhook_secret !== null)
+    )
       this.audit(context, 'connection.disabled', 'connection', connectionId, { actorId });
     return connectionSummary(this.connectionRow(context, connectionId));
   }

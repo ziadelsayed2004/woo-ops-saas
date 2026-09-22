@@ -216,10 +216,22 @@ test('connection lifecycle HTTP APIs enforce admin CSRF, hide secrets, and queue
     assert.equal(incremental.body.job.type, 'sync.incremental');
     assert.equal(Object.hasOwn(incremental.body.job, 'payload'), false);
 
+    const rejectedDisconnect = await request(`/api/v1/connections/${connectionId}/disable`, {
+      method: 'POST',
+      headers: writeHeaders,
+      body: JSON.stringify({
+        confirmation: 'DISCONNECT',
+        currentPassword: 'not the current password',
+      }),
+    });
+    assert.equal(rejectedDisconnect.response.status, 400);
     const disabled = await request(`/api/v1/connections/${connectionId}/disable`, {
       method: 'POST',
       headers: writeHeaders,
-      body: '{}',
+      body: JSON.stringify({
+        confirmation: 'DISCONNECT',
+        currentPassword: 'correct horse battery staple',
+      }),
     });
     assert.equal(disabled.response.status, 200);
     assert.equal(disabled.body.connection.status, 'disabled');

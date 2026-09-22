@@ -99,6 +99,52 @@ test('authorization is one-time, account scoped, encrypted, and credential-safe 
     () => store.completeAuthorization({ stateHash, encryptedCredentials, now }),
     /CONNECTOR_CALLBACK_REPLAYED/,
   );
+  const reconnectStateHash = createHash('sha256').update(randomUUID()).digest('hex');
+  store.createAuthorizationState(context, {
+    stateHash: reconnectStateHash,
+    userId: actorId,
+    storeUrl: 'https://connection-shop.example.test',
+    expiresAt: '2026-08-31T11:00:00.000Z',
+  });
+  const reconnected = store.completeAuthorization({
+    stateHash: reconnectStateHash,
+    encryptedCredentials,
+    now,
+  });
+  assert.equal(reconnected.id, connection.id);
+
+  const secondStoreStateHash = createHash('sha256').update(randomUUID()).digest('hex');
+  assert.throws(
+    () =>
+      store.createAuthorizationState(context, {
+        stateHash: secondStoreStateHash,
+        userId: actorId,
+        storeUrl: 'https://second-shop.example.test',
+        expiresAt: '2026-08-31T11:00:00.000Z',
+      }),
+    /CONNECTION_LIMIT_REACHED/,
+  );
+  store.db
+    .prepare(
+      'INSERT INTO authorization_states (state_hash, account_id, user_id, store_url, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    )
+    .run(
+      secondStoreStateHash,
+      accountId,
+      actorId,
+      'https://second-shop.example.test',
+      '2026-08-31T11:00:00.000Z',
+      now,
+    );
+  assert.throws(
+    () =>
+      store.completeAuthorization({
+        stateHash: secondStoreStateHash,
+        encryptedCredentials,
+        now,
+      }),
+    /CONNECTION_LIMIT_REACHED/,
+  );
 
   const workerRecord = store.getConnectionForWorker(context, connection.id);
   assert.equal(workerRecord.encryptedCredentials, encryptedCredentials);
@@ -149,9 +195,20 @@ test('health, rotation, webhook-secret and disable transitions are local and aud
     ),
     'connection-webhook-secret',
   );
+  assert.throws(() => store.disableConnection(otherContext, connection.id), /CONNECTION_NOT_FOUND/);
 
   const disabled = store.disableConnection(context, connection.id);
   assert.equal(disabled.status, 'disabled');
+  assert.equal(store.getConnectionForWorker(context, connection.id).encryptedCredentials, null);
+  assert.equal(store.getConnectionForWorker(context, connection.id).encryptedWebhookSecret, null);
+  assert.doesNotThrow(() =>
+    store.createAuthorizationState(context, {
+      stateHash: createHash('sha256').update(randomUUID()).digest('hex'),
+      userId: actorId,
+      storeUrl: 'https://replacement-shop.example.test',
+      expiresAt: '2026-08-31T11:00:00.000Z',
+    }),
+  );
   assert.throws(
     () => store.upsertRemoteOrder(context, connection.id, orderInput('900', 'reconcile:disabled')),
     /CONNECTION_DISABLED/,

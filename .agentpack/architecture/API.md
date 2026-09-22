@@ -25,6 +25,7 @@ POST   /auth/password/reset/confirm
 GET    /auth/session
 GET    /account
 PATCH  /account
+POST   /account/reset
 GET    /members
 GET    /members/invitations
 POST   /members/invitations
@@ -43,6 +44,8 @@ acceptance binds the one-time token to the authenticated user's normalized email
 returned only once to the creating administrator and is stored as a SHA-256 hash. Password reset
 requests return the same `202 { accepted: true }` response for known and unknown emails. Reset
 tokens are single-use, expire after 30 minutes, and are never returned by the API or written to logs.
+Account reset is owner-only and requires CSRF, the literal `RESET`, and the current password. It
+removes account-scoped operational data while preserving identity and connection configuration.
 
 ## Connections
 
@@ -71,6 +74,12 @@ initial and incremental endpoints accept an idempotency key and enqueue durable 
 reconciliation uses the same job contract and records remote deletions locally. Health responses
 contain only safe version/capability and status data. Rotation and webhook-secret configuration
 are account-administrator operations; secrets remain encrypted at rest.
+
+Only one non-disabled WooCommerce connection may exist per account. Reauthorizing the same
+canonical store reuses its connection record; a different store returns `CONNECTION_LIMIT_REACHED`.
+Disconnection is owner-only and requires CSRF, the literal `DISCONNECT`, and the current password.
+It stops ingestion and irreversibly clears the encrypted API credentials and webhook secret while
+retaining already synchronized local data according to account policy.
 
 The public Woo webhook endpoint accepts only verified `order.created`, `order.updated`, and
 `order.deleted` topics. It stores the raw checksum-bound inbox record before enqueueing an
