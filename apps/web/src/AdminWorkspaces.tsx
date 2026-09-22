@@ -1,4 +1,5 @@
 import { getAdminCopy, translate as tr } from './i18n';
+import './AdminWorkspaces.css';
 import { type FormEvent, useEffect, useState } from 'react';
 import {
   Alert,
@@ -1273,22 +1274,11 @@ function SettingsWorkspace({
             {copy.connectionManagementHelp}
           </Typography>
           {activeConnection && (
-            <Stack
-              data-testid="connected-store-management"
-              direction={{ xs: 'column', md: 'row' }}
-              gap={{ xs: 1.5, md: 3 }}
-              alignItems={{ xs: 'stretch', md: 'center' }}
-              sx={{
-                mt: 1.5,
-                mb: 2,
-                p: { xs: 1.5, sm: 2 },
-                border: '1px solid',
-                borderColor: 'divider',
-                borderRadius: 2,
-                bgcolor: 'background.default',
-              }}
-            >
-              <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Stack data-testid="connected-store-management" className="admin-connected-store">
+              <Box
+                data-testid="connected-store-identity"
+                className="admin-connected-store__identity"
+              >
                 <Typography variant="caption" color="text.secondary">
                   {copy.connectedStore}
                 </Typography>
@@ -1296,23 +1286,17 @@ function SettingsWorkspace({
                   data-testid="connected-store-url"
                   fontWeight={700}
                   dir="ltr"
-                  sx={{ textAlign: 'left', overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+                  className="admin-connected-store__url"
                 >
                   {activeConnection.displayName ?? activeConnection.storeUrl}
                 </Typography>
               </Box>
               <Button
                 data-testid="disconnect-store-button"
+                className="admin-connected-store__disconnect"
                 color="error"
                 variant="outlined"
                 onClick={() => setDisconnectConnection(activeConnection)}
-                sx={{
-                  alignSelf: { xs: 'stretch', md: 'center' },
-                  flexShrink: 0,
-                  minWidth: { xs: 0, md: 180 },
-                  px: 2,
-                  whiteSpace: 'nowrap',
-                }}
               >
                 {copy.disconnectStore}
               </Button>
