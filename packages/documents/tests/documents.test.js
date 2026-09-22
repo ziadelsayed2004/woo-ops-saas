@@ -159,14 +159,20 @@ test('brand HTML isolates identifiers and uses a dedicated shipping contents tab
     {},
   );
   assert.match(html, /dir="rtl"/);
+  assert.match(html, /class="invoice"/);
+  assert.doesNotMatch(html, /class="[^"]*thermal-receipt/);
   assert.match(html, /&lt;script&gt;bad&lt;\/script&gt;/);
   assert.match(html, /<bdi dir="ltr">\+201001234567<\/bdi>/);
   assert.match(html, /#1e4899/);
   assert.match(html, /#f8af28/);
   assert.match(html, /data:image\/svg\+xml;base64/);
+  const receipt = htmlDocument({ order, format: 'thermal-80mm', template }, {});
+  assert.match(receipt, /class="roll thermal-receipt"/);
+  assert.match(receipt, /\.thermal-receipt \.thanks \{ font-weight:700; \}/);
   const shipping = htmlDocument({ order, format: 'label-100x150mm', template }, {});
   assert.match(shipping, /بيانات المستلم/);
   assert.match(shipping, /class="roll shipping-label"/);
+  assert.doesNotMatch(shipping, /class="[^"]*thermal-receipt/);
   assert.doesNotMatch(shipping, /<th class="amount">/);
 });
 

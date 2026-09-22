@@ -98,6 +98,10 @@ h2 { font-size:13px; }
 .roll .contact { font-size:9px; }
 .roll .contact strong { color:#000; font-size:8px; }
 .roll .thanks { color:#000; font-size:8px; padding-top:2mm; }
+.thermal-receipt .document-footer,
+.thermal-receipt .contact,
+.thermal-receipt .tracking,
+.thermal-receipt .thanks { font-weight:700; }
 .shipping-label .customer-name { font-size:16px; }
 .shipping-label .items .product { width:83%; }
 .shipping-label .items .quantity { width:17%; }
