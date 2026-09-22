@@ -49,11 +49,17 @@ Required production environment:
 NODE_ENV=production
 WOO_OPS_DATA_DIR=/home/<account>/private/woo-ops-data
 WOO_OPS_DATABASE=/home/<account>/private/woo-ops-data/woo-ops.sqlite
+WOO_OPS_ORDER_SYNC_INTERVAL_SECONDS=60
 SESSION_SECRET=<at least 32 random bytes>
 TOKEN_ENCRYPTION_KEY=<base64 encoded 32-byte key>
 WEB_PUBLIC_URL=https://orders.example.com
 API_PUBLIC_URL=https://orders.example.com
 ```
+
+The 60-second order poll is incremental and single-flight per connection. It reads only orders
+modified since the last cursor (with the configured overlap window); catalog, stock, variations and
+shipping-rate refreshes remain on `WOO_OPS_SYNC_INTERVAL_MINUTES` (15 minutes by default) so the
+near-real-time order path does not multiply broader WooCommerce API traffic.
 
 Never commit these values, place the data directory under `public_html`, or expose its directory
 listing. The Node process serves `/` from `apps/web/dist` and leaves `/api/*` and `/health` under

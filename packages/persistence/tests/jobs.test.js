@@ -34,6 +34,8 @@ test('job idempotency and account scope', () => {
     payload: { connectionId: 'one' },
   });
   assert.equal(duplicate.id, first.id);
+  assert.equal(store.hasActiveAutomaticSync(accountA.accountId, 'one'), true);
+  assert.equal(store.hasActiveAutomaticSync(accountB.accountId, 'one'), false);
   assert.throws(
     () =>
       store.enqueueJob(accountA, {
@@ -46,6 +48,9 @@ test('job idempotency and account scope', () => {
   );
   assert.equal(store.claimNext(accountB), null);
   assert.equal(store.claimNext(accountA)?.id, first.id);
+  assert.equal(store.hasActiveAutomaticSync(accountA.accountId, 'one'), true);
+  store.complete(accountA, first.id);
+  assert.equal(store.hasActiveAutomaticSync(accountA.accountId, 'one'), false);
 });
 
 test('failed jobs become dead letters after max attempts', () => {

@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { documentStyles } from './document-styles.js';
 import { PDFDocument } from 'pdf-lib';
 import { launchDocumentBrowser } from '../runtime/browser.mjs';
+import type { Browser, Page } from 'playwright-chromium';
 
 import type { DocumentRequest } from './index.js';
 
@@ -65,7 +66,17 @@ const money = (minor: string, currency: string, locale: string): string => {
 const dataUrl = (mime: string, bytes: Uint8Array): string =>
   `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
 
-type RenderAssets = Readonly<{ barcode?: Uint8Array; qr?: Uint8Array }>;
+export type RenderAssets = Readonly<{ barcode?: Uint8Array; qr?: Uint8Array }>;
+export type HtmlPdfResult = Readonly<{
+  bytes: Uint8Array;
+  pageCount: number;
+  widthPoints: number;
+  heightPoints: number;
+}>;
+export type HtmlPdfRenderSession = Readonly<{
+  render: (request: DocumentRequest, assets: RenderAssets) => Promise<HtmlPdfResult>;
+  close: () => Promise<void>;
+}>;
 
 const translations = (arabic: boolean) =>
   arabic
@@ -227,62 +238,97 @@ export const htmlDocument = (request: DocumentRequest, assets: RenderAssets): st
   </main></body></html>`;
 };
 
+const renderHtmlPdfPage = async (
+  page: Page,
+  request: DocumentRequest,
+  assets: RenderAssets,
+): Promise<HtmlPdfResult> => {
+  await page.setContent(htmlDocument(request, assets), { waitUntil: 'load' });
+  await page.emulateMedia({ media: 'print' });
+  await page.evaluate(() => document.fonts.ready);
+  const widthMm =
+    request.format === 'label-100x150mm'
+      ? 80
+      : request.format === 'thermal-80mm'
+        ? 80
+        : request.format === 'a5'
+          ? 148
+          : 210;
+  let heightMm = request.format === 'a5' ? 210 : 297;
+  if (request.format === 'thermal-80mm' || request.format === 'label-100x150mm') {
+    const contentPx = await page
+      .locator('.page')
+      .evaluate((element) => Math.ceil(element.scrollHeight));
+    heightMm = request.thermalHeightMm ?? Math.max(50, Math.ceil((contentPx * 25.4) / 96) + 2);
+  }
+  if (heightMm > 2000) throw new Error('DOCUMENT_CONTENT_TOO_LONG');
+  const raw = await page.pdf({
+    width: `${widthMm}mm`,
+    height: `${heightMm}mm`,
+    printBackground: true,
+
+    preferCSSPageSize: false,
+    displayHeaderFooter: false,
+  });
+  const pdf = await PDFDocument.load(new Uint8Array(raw), { updateMetadata: false });
+  const exactWidth = widthMm * MM_TO_POINTS;
+  const exactHeight = heightMm * MM_TO_POINTS;
+  for (const pdfPage of pdf.getPages()) pdfPage.setSize(exactWidth, exactHeight);
+  pdf.setTitle(request.template.name);
+  pdf.setAuthor(request.template.companyName);
+  pdf.setSubject(`Woo Ops ${request.format}`);
+  pdf.setProducer('Woo Ops HTML PDF renderer');
+  pdf.setCreator('Woo Ops HTML layouts v4');
+  pdf.setCreationDate(new Date(0));
+  pdf.setModificationDate(new Date(0));
+  const bytes = await pdf.save({ useObjectStreams: true, addDefaultPage: false });
+  return {
+    bytes,
+    pageCount: pdf.getPageCount(),
+    widthPoints: exactWidth,
+    heightPoints: exactHeight,
+  };
+};
+
+export const createHtmlPdfRenderSession = async (): Promise<HtmlPdfRenderSession> => {
+  if (process.env.WOO_OPS_DOCUMENT_BROWSER_UNAVAILABLE_FOR_TEST === '1')
+    throw new Error('Playwright browser executable unavailable');
+  let browser: Browser | undefined;
+  let page: Page | undefined;
+  try {
+    browser = await launchDocumentBrowser();
+    page = await browser.newPage();
+    await page.route('**/*', (route) => route.abort());
+  } catch (error) {
+    await page?.close().catch(() => undefined);
+    await browser?.close().catch(() => undefined);
+    throw error;
+  }
+  const activeBrowser = browser;
+  const activePage = page;
+  let closed = false;
+  return {
+    render: async (request, assets) => {
+      if (closed) throw new Error('DOCUMENT_RENDER_SESSION_CLOSED');
+      return renderHtmlPdfPage(activePage, request, assets);
+    },
+    close: async () => {
+      if (closed) return;
+      closed = true;
+      await activePage.close().catch(() => undefined);
+      await activeBrowser.close();
+    },
+  };
+};
+
 export const renderHtmlPdf = async (
   request: DocumentRequest,
   assets: RenderAssets,
-): Promise<{ bytes: Uint8Array; pageCount: number; widthPoints: number; heightPoints: number }> => {
-  if (process.env.WOO_OPS_DOCUMENT_BROWSER_UNAVAILABLE_FOR_TEST === '1')
-    throw new Error('Playwright browser executable unavailable');
-  const browser = await launchDocumentBrowser();
+): Promise<HtmlPdfResult> => {
+  const session = await createHtmlPdfRenderSession();
   try {
-    const page = await browser.newPage();
-    await page.route('**/*', (route) => route.abort());
-    await page.setContent(htmlDocument(request, assets), { waitUntil: 'load' });
-    await page.emulateMedia({ media: 'print' });
-    await page.evaluate(() => document.fonts.ready);
-    const widthMm =
-      request.format === 'label-100x150mm'
-        ? 80
-        : request.format === 'thermal-80mm'
-          ? 80
-          : request.format === 'a5'
-            ? 148
-            : 210;
-    let heightMm = request.format === 'a5' ? 210 : 297;
-    if (request.format === 'thermal-80mm' || request.format === 'label-100x150mm') {
-      const contentPx = await page
-        .locator('.page')
-        .evaluate((element) => Math.ceil(element.scrollHeight));
-      heightMm = request.thermalHeightMm ?? Math.max(50, Math.ceil((contentPx * 25.4) / 96) + 2);
-    }
-    if (heightMm > 2000) throw new Error('DOCUMENT_CONTENT_TOO_LONG');
-    const raw = await page.pdf({
-      width: `${widthMm}mm`,
-      height: `${heightMm}mm`,
-      printBackground: true,
-
-      preferCSSPageSize: false,
-      displayHeaderFooter: false,
-    });
-    const pdf = await PDFDocument.load(new Uint8Array(raw), { updateMetadata: false });
-    const exactWidth = widthMm * MM_TO_POINTS;
-    const exactHeight = heightMm * MM_TO_POINTS;
-    for (const pdfPage of pdf.getPages()) pdfPage.setSize(exactWidth, exactHeight);
-    pdf.setTitle(request.template.name);
-    pdf.setAuthor(request.template.companyName);
-    pdf.setSubject(`Woo Ops ${request.format}`);
-    pdf.setProducer('Woo Ops HTML PDF renderer');
-    pdf.setCreator('Woo Ops HTML layouts v4');
-    pdf.setCreationDate(new Date(0));
-    pdf.setModificationDate(new Date(0));
-    const bytes = await pdf.save({ useObjectStreams: false, addDefaultPage: false });
-    return {
-      bytes,
-      pageCount: pdf.getPageCount(),
-      widthPoints: exactWidth,
-      heightPoints: exactHeight,
-    };
+    return await session.render(request, assets);
   } finally {
-    await browser.close();
+    await session.close();
   }
 };

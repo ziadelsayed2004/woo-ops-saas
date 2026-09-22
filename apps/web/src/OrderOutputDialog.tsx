@@ -51,7 +51,7 @@ export function OrderOutputDialog({ open, locale, count, onClose, onExcel, onDoc
       fullWidth
       maxWidth="sm"
       aria-labelledby="order-output-title"
-      PaperProps={{ dir: locale === 'ar' ? 'rtl' : 'ltr', sx: { borderRadius: 3 } }}
+      PaperProps={{ dir: locale === 'ar' ? 'rtl' : 'ltr', sx: { borderRadius: '12px' } }}
     >
       <DialogTitle id="order-output-title" sx={{ pb: 1 }}>
         {copy.title}

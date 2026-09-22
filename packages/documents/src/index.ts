@@ -2,7 +2,8 @@ import bwipjs from 'bwip-js';
 import { createHash } from 'node:crypto';
 import { PDFDocument } from 'pdf-lib';
 import QRCode from 'qrcode';
-import { renderHtmlPdf } from './html-renderer.js';
+import { createHtmlPdfRenderSession, renderHtmlPdf } from './html-renderer.js';
+import type { HtmlPdfResult, RenderAssets } from './html-renderer.js';
 
 export type DocumentFormat = 'a4' | 'a5' | 'thermal-80mm' | 'label-100x150mm';
 export type DocumentDirection = 'rtl' | 'ltr';
@@ -295,7 +296,15 @@ const barcodePng = async (value: string): Promise<Uint8Array> =>
 const qrPng = async (value: string): Promise<Uint8Array> =>
   imageBytes(await QRCode.toDataURL(value, { errorCorrectionLevel: 'M', margin: 1, width: 180 }));
 
-export const generateDocument = async (request: DocumentRequest): Promise<DocumentResult> => {
+type HtmlPdfRenderer = (request: DocumentRequest, assets: RenderAssets) => Promise<HtmlPdfResult>;
+export type HtmlPdfRenderSessionFactory = () => Promise<
+  Awaited<ReturnType<typeof createHtmlPdfRenderSession>>
+>;
+
+export const generateDocument = async (
+  request: DocumentRequest,
+  renderer: HtmlPdfRenderer = renderHtmlPdf,
+): Promise<DocumentResult> => {
   const normalized = normalizeRequest(request);
   const source = snapshotSource(normalized);
   const sourceHash = createHash('sha256').update(source).digest('hex');
@@ -317,7 +326,7 @@ export const generateDocument = async (request: DocumentRequest): Promise<Docume
     ...(qrValue ? { qr: await qrPng(qrValue) } : {}),
   };
   // Never silently change the customer's print layout when Chromium is unavailable.
-  const rendered = await renderHtmlPdf(renderRequest, assets);
+  const rendered = await renderer(renderRequest, assets);
   const bytes = pdfBytes(rendered.bytes);
   const checksum = createHash('sha256').update(bytes).digest('hex');
   const snapshot: DocumentSnapshot = {
@@ -341,21 +350,27 @@ export const generateDocument = async (request: DocumentRequest): Promise<Docume
 
 export const generateDocumentBatch = async (
   requests: readonly DocumentRequest[],
+  createRenderSession: HtmlPdfRenderSessionFactory = createHtmlPdfRenderSession,
 ): Promise<DocumentBatchResult> => {
   if (!Array.isArray(requests) || requests.length < 1 || requests.length > MAX_BATCH_DOCUMENTS)
     throw new Error('DOCUMENT_BATCH_SIZE_INVALID');
   const documents: DocumentResult[] = [];
   const failures: DocumentFailure[] = [];
-  for (const request of requests) {
-    const orderId = request.orderId ?? orderValue(request.order, 'id', 'orderId', 'orderNumber');
-    try {
-      documents.push(await generateDocument(request));
-    } catch (error) {
-      failures.push({
-        orderId: orderId || 'unknown',
-        error: error instanceof Error ? error.message : 'DOCUMENT_GENERATION_FAILED',
-      });
+  const session = await createRenderSession();
+  try {
+    for (const request of requests) {
+      const orderId = request.orderId ?? orderValue(request.order, 'id', 'orderId', 'orderNumber');
+      try {
+        documents.push(await generateDocument(request, session.render));
+      } catch (error) {
+        failures.push({
+          orderId: orderId || 'unknown',
+          error: error instanceof Error ? error.message : 'DOCUMENT_GENERATION_FAILED',
+        });
+      }
     }
+  } finally {
+    await session.close();
   }
   const mergedPdf = await mergeDocumentPdfs(documents.map((document) => document.bytes));
   return {
@@ -383,8 +398,11 @@ export const mergeDocumentPdfs = async (documents: readonly Uint8Array[]): Promi
   merged.setProducer('Woo Ops HTML PDF renderer');
   merged.setCreationDate(new Date(0));
   merged.setModificationDate(new Date(0));
-  return pdfBytes(await merged.save({ useObjectStreams: false, addDefaultPage: false }));
+  return pdfBytes(await merged.save({ useObjectStreams: true, addDefaultPage: false }));
 };
+
+export { createHtmlPdfRenderSession } from './html-renderer.js';
+export type { HtmlPdfRenderSession } from './html-renderer.js';
 
 const zipName = (name: string): Uint8Array => {
   if (

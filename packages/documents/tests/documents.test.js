@@ -3,7 +3,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDict, PDFDocument, PDFName } from 'pdf-lib';
 import test from 'node:test';
 import { htmlDocument } from '../dist/html-renderer.js';
 import {
@@ -224,7 +224,20 @@ test('Arabic A4 document embeds a font, QR/barcode assets, and is reproducible',
   assert.equal(pdf.getPageCount(), 1);
   assert.equal(pdf.getSubject(), 'Woo Ops a4');
   assert.equal(pdf.getAuthor(), template.companyName);
-  assert.match(new TextDecoder().decode(first.bytes), /\/Type \/Font/);
+  assert.equal(
+    pdf.context
+      .enumerateIndirectObjects()
+      .some(
+        ([, object]) =>
+          object instanceof PDFDict && object.get(PDFName.of('Type')) === PDFName.of('Font'),
+      ),
+    true,
+  );
+  const uncompressed = await pdf.save({ useObjectStreams: false, addDefaultPage: false });
+  assert.ok(
+    first.bytes.length < uncompressed.length,
+    `compressed=${first.bytes.length} uncompressed=${uncompressed.length}`,
+  );
   assert.match(first.checksum, /^[a-f0-9]{64}$/);
 });
 
@@ -400,6 +413,44 @@ test('batch generation isolates invalid documents and merges successful pages', 
   const merged = await PDFDocument.load(result.mergedPdf);
   assert.equal(merged.getPageCount(), 2);
   assert.match(result.checksum, /^[a-f0-9]{64}$/);
+});
+
+test('batch generation reuses one bounded renderer session and compressed PDFs', async () => {
+  const source = await PDFDocument.create();
+  source.addPage([100, 100]);
+  const sourceBytes = await source.save({ useObjectStreams: true });
+  let sessions = 0;
+  let renders = 0;
+  let closes = 0;
+  const result = await generateDocumentBatch(
+    [
+      { order, format: 'a4', template, orderId: 'bounded-1' },
+      { order, format: 'a4', template, orderId: 'bounded-2' },
+      { order, format: 'a4', template, orderId: 'bounded-3' },
+    ],
+    async () => {
+      sessions += 1;
+      return {
+        render: async () => {
+          renders += 1;
+          return {
+            bytes: sourceBytes,
+            pageCount: 1,
+            widthPoints: 100,
+            heightPoints: 100,
+          };
+        },
+        close: async () => {
+          closes += 1;
+        },
+      };
+    },
+  );
+  assert.equal(sessions, 1);
+  assert.equal(renders, 3);
+  assert.equal(closes, 1);
+  assert.equal(result.documents.length, 3);
+  assert.equal(Buffer.from(result.mergedPdf).includes(Buffer.from('/ObjStm')), true);
 });
 
 test('merged PDFs and private ZIP bundles are deterministic and path safe', async () => {

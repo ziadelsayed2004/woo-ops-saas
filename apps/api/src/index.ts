@@ -164,16 +164,23 @@ const automaticSyncMinutes = (() => {
   const raw = Number(process.env.WOO_OPS_SYNC_INTERVAL_MINUTES ?? 15);
   return Number.isInteger(raw) && raw >= 5 && raw <= 1440 ? raw : 15;
 })();
+const automaticOrderSyncSeconds = (() => {
+  const raw = Number(process.env.WOO_OPS_ORDER_SYNC_INTERVAL_SECONDS ?? 60);
+  return Number.isInteger(raw) && raw >= 30 && raw <= 3600 ? raw : 60;
+})();
 const automaticReconcileHours = (() => {
   const raw = Number(process.env.WOO_OPS_RECONCILE_INTERVAL_HOURS ?? 24);
   return Number.isInteger(raw) && raw >= 6 && raw <= 168 ? raw : 24;
 })();
-const enqueueAutomaticSync = (): void => {
-  const bucket = Math.floor(Date.now() / (automaticSyncMinutes * 60_000));
+const enqueueAutomaticSync = (scope: 'full' | 'orders' = 'full'): void => {
+  const intervalMs =
+    scope === 'orders' ? automaticOrderSyncSeconds * 1000 : automaticSyncMinutes * 60_000;
+  const bucket = Math.floor(Date.now() / intervalMs);
   const reconcileBucket = Math.floor(Date.now() / (automaticReconcileHours * 60 * 60_000));
   const reconcileBoundary =
     bucket % Math.max(1, Math.floor((automaticReconcileHours * 60) / automaticSyncMinutes)) === 0;
   for (const target of store.listAutomaticSyncTargets()) {
+    if (store.hasActiveAutomaticSync(target.accountId, target.connectionId)) continue;
     const context: AccountContext = {
       accountId: target.accountId,
       correlationId: `automatic-sync:${bucket}`,
@@ -181,11 +188,12 @@ const enqueueAutomaticSync = (): void => {
     try {
       store.enqueueJob(context, {
         id: randomUUID(),
-        type: reconcileBoundary ? 'sync.reconcile' : 'sync.incremental',
-        idempotencyKey: reconcileBoundary
-          ? `automatic-reconcile:${target.connectionId}:${reconcileBucket}`
-          : `automatic:${target.connectionId}:${bucket}`,
-        payload: { connectionId: target.connectionId },
+        type: scope === 'full' && reconcileBoundary ? 'sync.reconcile' : 'sync.incremental',
+        idempotencyKey:
+          scope === 'full' && reconcileBoundary
+            ? `automatic-reconcile:${target.connectionId}:${reconcileBucket}`
+            : `automatic-${scope}:${target.connectionId}:${bucket}`,
+        payload: { connectionId: target.connectionId, scope },
         maxAttempts: 5,
       });
     } catch (error) {
@@ -3103,16 +3111,25 @@ if (webDistDirectory) {
 
 const server = app.listen(port, process.env.WOO_OPS_BIND_HOST ?? '0.0.0.0', () => {
   jobRunner.start();
-  enqueueAutomaticSync();
+  enqueueAutomaticSync('full');
   console.log(`Woo Ops API listening on ${port}`);
 });
-const automaticSyncTimer = setInterval(enqueueAutomaticSync, automaticSyncMinutes * 60_000);
+const automaticSyncTimer = setInterval(
+  () => enqueueAutomaticSync('full'),
+  automaticSyncMinutes * 60_000,
+);
 automaticSyncTimer.unref();
+const automaticOrderSyncTimer = setInterval(
+  () => enqueueAutomaticSync('orders'),
+  automaticOrderSyncSeconds * 1000,
+);
+automaticOrderSyncTimer.unref();
 let shuttingDown = false;
 const shutdown = (): void => {
   if (shuttingDown) return;
   shuttingDown = true;
   clearInterval(automaticSyncTimer);
+  clearInterval(automaticOrderSyncTimer);
   void jobRunner
     .stop({ drain: true, timeoutMs: 5_000 })
     .catch(() => undefined)

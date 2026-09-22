@@ -500,7 +500,13 @@
       "invoiceAndPrintCommands": "Invoice and print commands",
       "thermalReceiptsShippingLabelsAndPdfJobsCreatedFromOrders": "Thermal receipts, shipping labels and PDF jobs created from orders.",
       "documentJobs": "Document jobs",
-      "showFiles": "Show files"
+      "showFiles": "Show files",
+      "documentFiles": "Document files",
+      "individualFiles": "Individual order files ({{count}})",
+      "searchDocumentFiles": "Search by document type, order number, or date",
+      "noMatchingDocumentFiles": "No matching document files",
+      "previousPage": "Previous",
+      "nextPage": "Next"
     },
     "admin": {
       "yourUnifiedOrderOperationsWorkspace": "Your unified order operations workspace",

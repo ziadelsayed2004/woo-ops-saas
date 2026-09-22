@@ -1,6 +1,11 @@
 import type { DurableJob, JobExecutionContext } from '@woo-ops/application';
-import { createZipArchive, generateDocument, mergeDocumentPdfs } from '@woo-ops/documents';
-import type { DocumentOrder, DocumentTemplate } from '@woo-ops/documents';
+import {
+  createHtmlPdfRenderSession,
+  createZipArchive,
+  generateDocument,
+  mergeDocumentPdfs,
+} from '@woo-ops/documents';
+import type { DocumentOrder, DocumentTemplate, HtmlPdfRenderSession } from '@woo-ops/documents';
 import type {
   AccountContext,
   DocumentBatchItemRecord,
@@ -61,6 +66,7 @@ const safeOrderNumber = (item: DocumentBatchItemRecord): string => {
 const safeOrderName = (
   item: DocumentBatchItemRecord,
   format: DocumentTemplateRecord['format'],
+  createdAt: string,
 ): string => {
   const prefix =
     format === 'a4'
@@ -70,7 +76,12 @@ const safeOrderName = (
         : format === 'thermal-80mm'
           ? 'receipt-80mm'
           : 'shipping-label-80mm';
-  return `${prefix}-order-${safeOrderNumber(item)}`;
+  return `${prefix}-order-${safeOrderNumber(item)}-${artifactDate(createdAt)}`;
+};
+
+const artifactDate = (createdAt: string): string => {
+  const value = createdAt.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/u.test(value) ? value : 'undated';
 };
 
 const artifactIdForOrder = (batchId: string, item: DocumentBatchItemRecord): string =>
@@ -100,8 +111,7 @@ const documentTemplateForEngine = (
 
 const documentArtifactName = (
   kind: 'merged' | 'zip' | 'manifest',
-  batchId: string,
-  attempt: number,
+  createdAt: string,
   format: DocumentTemplateRecord['format'],
 ): string => {
   const extension = kind === 'merged' ? 'pdf' : kind === 'zip' ? 'zip' : 'json';
@@ -113,7 +123,9 @@ const documentArtifactName = (
         : format === 'thermal-80mm'
           ? 'receipts-80mm'
           : 'shipping-labels-80mm';
-  return `${documentType}-${batchId.slice(0, 12)}-${kind}-${attempt}.${extension}`;
+  const date = artifactDate(createdAt);
+  if (kind === 'zip') return `${documentType}-${date}.zip`;
+  return `${documentType}-${date}-${kind}.${extension}`;
 };
 
 export const createDocumentEffect =
@@ -129,68 +141,84 @@ export const createDocumentEffect =
       else if (batch.status === 'running' || batch.status === 'failed')
         batch = store.resumeDocumentBatchForWorker(context, batchId);
       const template = documentTemplateForEngine(batch.template, fontBytes);
-      for (;;) {
-        await throwIfCancelled(execution);
-        const item = store.claimNextDocumentItem(context, batchId);
-        if (!item) break;
-        try {
-          const artifactId = artifactIdForOrder(batch.id, item);
-          let artifact;
+      let renderSession: HtmlPdfRenderSession | undefined;
+      let renderSessionError: unknown;
+      try {
+        for (;;) {
+          await throwIfCancelled(execution);
+          const item = store.claimNextDocumentItem(context, batchId);
+          if (!item) break;
           try {
-            artifact = store.getDocumentArtifactForWorker(context, artifactId);
-            readPrivateDocumentArtifact(storageRoot, artifact.relativePath, artifact.checksum);
+            const artifactId = artifactIdForOrder(batch.id, item);
+            let artifact;
+            try {
+              artifact = store.getDocumentArtifactForWorker(context, artifactId);
+              readPrivateDocumentArtifact(storageRoot, artifact.relativePath, artifact.checksum);
+            } catch (error) {
+              const code =
+                error instanceof Error ? (error as Error & { code?: string }).code : undefined;
+              if (
+                !(error instanceof Error && error.message === 'DOCUMENT_ARTIFACT_NOT_FOUND') &&
+                code !== 'ENOENT'
+              )
+                throw error;
+              if (renderSessionError) throw renderSessionError;
+              try {
+                renderSession ??= await createHtmlPdfRenderSession();
+              } catch (error) {
+                renderSessionError = error;
+                throw error;
+              }
+              const result = await generateDocument(
+                {
+                  order: item.snapshot as DocumentOrder,
+                  format: batch.format,
+                  template,
+                  orderId: item.orderId,
+                  ...(item.documentNumber === null ? {} : { documentNumber: item.documentNumber }),
+                  documentKind: batch.legalInvoiceEnabled ? 'invoice' : 'order',
+                },
+                renderSession.render,
+              );
+              const stored = writePrivateDocumentArtifact(
+                storageRoot,
+                context.accountId,
+                batch.id,
+                artifactId,
+                'pdf',
+                result.bytes,
+              );
+              artifact = store.registerDocumentArtifactForWorker(context, {
+                id: artifactId,
+                batchId: batch.id,
+                orderId: item.orderId,
+                templateId: batch.templateId,
+                templateVersion: batch.templateVersion,
+                format: batch.format,
+                kind: 'order-pdf',
+                relativePath: stored.relativePath,
+                filename: `${safeOrderName(item, batch.format, batch.createdAt)}.pdf`,
+                mimeType: 'application/pdf',
+                byteSize: stored.byteSize,
+                checksum: stored.checksum,
+                snapshotHash: item.snapshotHash,
+              });
+            }
+            void artifact;
+            store.completeDocumentBatchItemForWorker(context, batchId, item.position, artifactId);
           } catch (error) {
-            const code =
-              error instanceof Error ? (error as Error & { code?: string }).code : undefined;
-            if (
-              !(error instanceof Error && error.message === 'DOCUMENT_ARTIFACT_NOT_FOUND') &&
-              code !== 'ENOENT'
-            )
-              throw error;
-            const result = await generateDocument({
-              order: item.snapshot as DocumentOrder,
-              format: batch.format,
-              template,
-              orderId: item.orderId,
-              ...(item.documentNumber === null ? {} : { documentNumber: item.documentNumber }),
-              documentKind: batch.legalInvoiceEnabled ? 'invoice' : 'order',
-            });
-            const stored = writePrivateDocumentArtifact(
-              storageRoot,
-              context.accountId,
-              batch.id,
-              artifactId,
-              'pdf',
-              result.bytes,
+            store.failDocumentBatchItemForWorker(
+              context,
+              batchId,
+              item.position,
+              safeDocumentError(error),
             );
-            artifact = store.registerDocumentArtifactForWorker(context, {
-              id: artifactId,
-              batchId: batch.id,
-              orderId: item.orderId,
-              templateId: batch.templateId,
-              templateVersion: batch.templateVersion,
-              format: batch.format,
-              kind: 'order-pdf',
-              relativePath: stored.relativePath,
-              filename: `${safeOrderName(item, batch.format)}.pdf`,
-              mimeType: 'application/pdf',
-              byteSize: stored.byteSize,
-              checksum: stored.checksum,
-              snapshotHash: item.snapshotHash,
-            });
           }
-          void artifact;
-          store.completeDocumentBatchItemForWorker(context, batchId, item.position, artifactId);
-        } catch (error) {
-          store.failDocumentBatchItemForWorker(
-            context,
-            batchId,
-            item.position,
-            safeDocumentError(error),
-          );
+          batch = store.getDocumentBatchForWorker(context, batchId);
+          await execution.reportProgress(progress(batch.processedCount, batch.totalCount, 5, 88));
         }
-        batch = store.getDocumentBatchForWorker(context, batchId);
-        await execution.reportProgress(progress(batch.processedCount, batch.totalCount, 5, 88));
+      } finally {
+        await renderSession?.close();
       }
 
       batch = store.getDocumentBatchForWorker(context, batchId);
@@ -264,7 +292,7 @@ export const createDocumentEffect =
         format: batch.format,
         kind: 'manifest',
         relativePath: storedManifest.relativePath,
-        filename: documentArtifactName('manifest', batch.id, batch.attemptCount, batch.format),
+        filename: documentArtifactName('manifest', batch.createdAt, batch.format),
         mimeType: 'application/json',
         byteSize: storedManifest.byteSize,
         checksum: storedManifest.checksum,
@@ -291,7 +319,7 @@ export const createDocumentEffect =
           format: batch.format,
           kind: 'merged-pdf',
           relativePath: storedMerged.relativePath,
-          filename: documentArtifactName('merged', batch.id, batch.attemptCount, batch.format),
+          filename: documentArtifactName('merged', batch.createdAt, batch.format),
           mimeType: 'application/pdf',
           byteSize: storedMerged.byteSize,
           checksum: storedMerged.checksum,
@@ -321,7 +349,7 @@ export const createDocumentEffect =
         format: batch.format,
         kind: 'zip',
         relativePath: storedZip.relativePath,
-        filename: documentArtifactName('zip', batch.id, batch.attemptCount, batch.format),
+        filename: documentArtifactName('zip', batch.createdAt, batch.format),
         mimeType: 'application/zip',
         byteSize: storedZip.byteSize,
         checksum: storedZip.checksum,

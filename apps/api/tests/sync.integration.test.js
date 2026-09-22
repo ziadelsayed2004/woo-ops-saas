@@ -187,6 +187,38 @@ test('Woo sync health, resumable checkpoints, retry classification, and reconcil
     [{ value: 'Clothing', count: 1 }],
   );
 
+  const orderOnlyCallStart = calls.length;
+  const orderOnlyJob = store.enqueueJob(worker, {
+    id: randomUUID(),
+    type: 'sync.incremental',
+    idempotencyKey: 'sync-orders-only-60s',
+    payload: { connectionId, scope: 'orders' },
+    maxAttempts: 2,
+  });
+  await effect(orderOnlyJob, execution);
+  const orderOnlyPaths = calls.slice(orderOnlyCallStart).map(({ url }) => url.pathname);
+  assert.ok(orderOnlyPaths.some((path) => path.endsWith('/orders')));
+  assert.equal(
+    orderOnlyPaths.some(
+      (path) =>
+        path.endsWith('/products') ||
+        path.endsWith('/categories') ||
+        path.endsWith('/tags') ||
+        path.endsWith('/shipping_classes') ||
+        path.includes('/shipping/zones'),
+    ),
+    false,
+  );
+  assert.equal(
+    store.db
+      .prepare('SELECT COUNT(*) AS count FROM jobs WHERE account_id = ? AND id = ?')
+      .get(accountId, `analytics-${orderOnlyJob.id}`).count,
+    0,
+  );
+  store.db
+    .prepare("UPDATE jobs SET status = 'succeeded', progress = 100 WHERE account_id = ? AND id = ?")
+    .run(accountId, orderOnlyJob.id);
+
   reconcileMode = true;
   const reconcileJob = store.enqueueJob(worker, {
     id: randomUUID(),
