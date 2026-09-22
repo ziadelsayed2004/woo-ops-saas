@@ -152,7 +152,8 @@ test('creates a manual order through the local-only form', async ({ page }) => {
     buffer: Buffer.from('proof'),
   });
   await page.getByRole('button', { name: 'Save manual order' }).click();
-  await expect(page.getByText('Manual order saved locally')).toBeVisible();
+  await expect(page.getByTestId('orders-tab-manual')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('manual-orders-workspace')).toBeVisible();
   expect(payload?.currency).toBe('EGP');
   expect(payload?.lines).toEqual([
     {
