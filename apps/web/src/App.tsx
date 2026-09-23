@@ -1,3 +1,4 @@
+import './App.css';
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -419,7 +420,7 @@ function MoneyValue({
     <Box
       component="span"
       dir="ltr"
-      sx={{ display: 'inline-block', unicodeBidi: 'isolate', fontWeight }}
+      className={`app-directional-money ${fontWeight ? 'app-directional-money--strong' : ''}`}
     >
       {formatMinor(value, currency, locale)}
     </Box>
@@ -673,14 +674,14 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
   ) => setFilters((current) => ({ ...current, [key]: value }));
 
   return (
-    <Stack gap={3} data-testid="analytics-workspace">
+    <Stack data-testid="analytics-workspace" className="app-l676c5">
       <Box>
-        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={2}>
+        <Stack className="app-l678c9">
           <Box>
-            <Typography variant="h4" component="h1" fontWeight={800}>
+            <Typography variant="h4" component="h1" className="app-l680c13">
               {t.analyticsTitle}
             </Typography>
-            <Typography color="text.secondary">{t.analyticsSubtitle}</Typography>
+            <Typography className="app-l683c13">{t.analyticsSubtitle}</Typography>
           </Box>
           <Button
             variant="outlined"
@@ -709,32 +710,21 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
       <Paper
         component="form"
         variant="outlined"
-        sx={{ p: 2 }}
         data-testid="analytics-filters"
         onSubmit={(event) => {
           event.preventDefault();
           setAppliedFilters({ ...filters });
         }}
+        className="app-l709c7"
       >
-        <Stack gap={2}>
-          <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
+        <Stack className="app-l719c9">
+          <Stack className="app-l720c11">
             <Chip label={tr(locale, 'inline.app.woocommerceData')} />
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" className="app-l722c13">
               {t.currencySeparated}
             </Typography>
           </Stack>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: {
-                xs: '1fr',
-                sm: 'repeat(2, minmax(0, 1fr))',
-                lg: 'repeat(4, minmax(180px, 1fr))',
-              },
-              gap: 2,
-              '& .MuiFormControl-root': { width: '100%', minWidth: 0 },
-            }}
-          >
+          <Box className="app-l726c11">
             <TextField
               size="small"
               label={t.currencyFilter}
@@ -773,8 +763,8 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
               </Select>
             </FormControl>
           </Box>
-          <Stack direction="row" gap={1.5} justifyContent="flex-end" flexWrap="wrap">
-            <Button type="submit" variant="contained" disabled={loading} sx={{ minWidth: 140 }}>
+          <Stack className="app-l776c11">
+            <Button type="submit" variant="contained" disabled={loading} className="app-l777c13">
               {loading ? <CircularProgress size={18} aria-label={t.loading} /> : t.applyFilters}
             </Button>
             <Button
@@ -803,34 +793,28 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
 
       {summary && summary.currencies.length > 0 && (
         <>
-          <Stack direction={{ xs: 'column', md: 'row' }} gap={2} flexWrap="wrap">
+          <Stack className="app-l806c11">
             {summary.currencies.map((currency) => (
               <Card
                 key={currency.currency}
                 variant="outlined"
-                sx={{ flex: '1 1 300px', minWidth: 260 }}
                 data-testid={`analytics-currency-${currency.currency}`}
+                className="app-l808c15"
               >
                 <CardContent>
-                  <Stack gap={1.5}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center">
-                      <Typography variant="h6" component="h2" fontWeight={800}>
+                  <Stack className="app-l815c19">
+                    <Stack className="app-l816c21">
+                      <Typography variant="h6" component="h2" className="app-l817c23">
                         {currency.currency}
                       </Typography>
                       <Chip size="small" label={analyticsSourceLabel(summary.source, t)} />
                     </Stack>
-                    <Box
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: { xs: '1fr 1fr', lg: 'repeat(4, 1fr)' },
-                        gap: 2,
-                      }}
-                    >
+                    <Box className="app-l822c21">
                       <Box data-testid="analytics-revenue">
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography variant="caption" className="app-l830c25">
                           {t.revenue}
                         </Typography>
-                        <Typography variant="h5" component="div" fontWeight={800}>
+                        <Typography variant="h5" component="div" className="app-l833c25">
                           <MoneyValue
                             value={currency.totals.collectedRevenueMinor}
                             currency={currency.currency}
@@ -839,10 +823,10 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                         </Typography>
                       </Box>
                       <Box>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography variant="caption" className="app-l842c25">
                           {tr(locale, 'inline.app.netSales')}
                         </Typography>
-                        <Typography variant="h6" component="div" fontWeight={800}>
+                        <Typography variant="h6" component="div" className="app-l845c25">
                           <MoneyValue
                             value={(
                               BigInt(currency.totals.netMerchandiseMinor) -
@@ -854,10 +838,10 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                         </Typography>
                       </Box>
                       <Box>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography variant="caption" className="app-l857c25">
                           {tr(locale, 'inline.app.totalSales')}
                         </Typography>
-                        <Typography variant="h6" component="div" fontWeight={800}>
+                        <Typography variant="h6" component="div" className="app-l860c25">
                           <MoneyValue
                             value={(
                               BigInt(currency.totals.netMerchandiseMinor) -
@@ -871,18 +855,18 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                         </Typography>
                       </Box>
                       <Box>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography variant="caption" className="app-l874c25">
                           {t.ordersCount}
                         </Typography>
-                        <Typography variant="h6" component="div" fontWeight={800}>
+                        <Typography variant="h6" component="div" className="app-l877c25">
                           {currency.orderCount}
                         </Typography>
                       </Box>
                       <Box>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography variant="caption" className="app-l882c25">
                           {tr(locale, 'inline.app.averageOrderValue')}
                         </Typography>
-                        <Typography variant="h6" component="div" fontWeight={800}>
+                        <Typography variant="h6" component="div" className="app-l885c25">
                           <MoneyValue
                             value={
                               currency.orderCount > 0
@@ -914,10 +898,10 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                             key === 'contributionProfitMinor' ? 'analytics-profit' : undefined
                           }
                         >
-                          <Typography variant="caption" color="text.secondary">
+                          <Typography variant="caption" className="app-l917c27">
                             {label}
                           </Typography>
-                          <Typography fontWeight={700}>
+                          <Typography className="app-l920c27">
                             <MoneyValue
                               value={currency.totals[key]}
                               currency={currency.currency}
@@ -933,55 +917,49 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
             ))}
           </Stack>
 
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" className="app-l936c11">
             {tr(
               locale,
               'inline.app.calculatedFromReadOnlyWoocommerceOrderSnapshotsRefundsAreAttribu',
             )}
           </Typography>
 
-          <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
-            <Paper variant="outlined" sx={{ p: 2, flex: 1 }}>
-              <Typography variant="h6" component="h2" fontWeight={800} gutterBottom>
+          <Stack className="app-l943c11">
+            <Paper variant="outlined" className="app-l944c13">
+              <Typography variant="h6" component="h2" gutterBottom className="app-l945c15">
                 {t.freshness}
               </Typography>
               <Typography variant="body2">
                 {t.lastRebuilt}: {freshness ? dateText(freshness, locale) : t.coverageUnavailable}
               </Typography>
               {freshnessInfo?.status && (
-                <Typography variant="body2" sx={{ mt: 1 }} data-testid="analytics-freshness-job">
+                <Typography
+                  variant="body2"
+                  data-testid="analytics-freshness-job"
+                  className="app-l952c17"
+                >
                   {t.rebuildState}: {freshnessInfo.status} · {freshnessInfo.progress ?? 0}%
                 </Typography>
               )}
               {freshnessInfo?.error && (
-                <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+                <Typography variant="body2" color="error">
                   {t.rebuildError}: {freshnessInfo.error}
                 </Typography>
               )}
-              <Typography variant="body2" sx={{ mt: 1 }}>
+              <Typography variant="body2" className="app-l961c15">
                 {t.costCoverage} ({t.coverageScope}):{' '}
                 {coverage?.percentage === null || coverage === undefined
                   ? t.coverageUnavailable
                   : `${coverage.percentage}% (${coverage.coveredLines}/${coverage.totalLines})`}
               </Typography>
             </Paper>
-            <Paper variant="outlined" sx={{ p: 2, flex: 2 }}>
-              <Typography variant="h6" component="h2" fontWeight={800} gutterBottom>
+            <Paper variant="outlined" className="app-l968c13">
+              <Typography variant="h6" component="h2" gutterBottom className="app-l969c15">
                 {t.trend}
               </Typography>
               <TableContainer data-testid="analytics-trend">
                 <Table size="small" aria-label={t.trend}>
-                  <caption
-                    style={{
-                      position: 'absolute',
-                      width: 1,
-                      height: 1,
-                      overflow: 'hidden',
-                      clip: 'rect(0 0 0 0)',
-                    }}
-                  >
-                    {t.trend}
-                  </caption>
+                  <caption className="app-l974c19">{t.trend}</caption>
                   <TableHead>
                     <TableRow>
                       <TableCell>{t.created}</TableCell>
@@ -1004,7 +982,7 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
                         <TableRow key={`${item.date}-${item.currency}-${item.source}`}>
                           <TableCell dir="ltr">{item.date}</TableCell>
                           <TableCell>
-                            <Stack gap={0.5}>
+                            <Stack className="app-l1007c29">
                               <MoneyValue
                                 value={item.totals.collectedRevenueMinor}
                                 currency={item.currency}
@@ -1034,15 +1012,9 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
             </Paper>
           </Stack>
 
-          <Paper variant="outlined" sx={{ p: 2 }} data-testid="analytics-breakdown">
-            <Stack
-              direction={{ xs: 'column', sm: 'row' }}
-              justifyContent="space-between"
-              alignItems={{ sm: 'center' }}
-              gap={2}
-              mb={2}
-            >
-              <Typography variant="h6" component="h2" fontWeight={800}>
+          <Paper variant="outlined" data-testid="analytics-breakdown" className="app-l1037c11">
+            <Stack className="app-l1038c13">
+              <Typography variant="h6" component="h2" className="app-l1045c15">
                 {t.breakdown}
               </Typography>
             </Stack>
@@ -1053,7 +1025,7 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
               scrollButtons="auto"
               allowScrollButtonsMobile
               aria-label={t.breakdownDimension}
-              sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
+              className="app-l1049c13"
             >
               <Tab value="product" label={t.dimensionProduct} />
               <Tab value="category" label={t.dimensionCategory} />
@@ -1119,19 +1091,15 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
             </Table>
           </Paper>
 
-          <Paper
-            component="details"
-            variant="outlined"
-            sx={{ p: 2, '& summary': { cursor: 'pointer' } }}
-          >
-            <Typography variant="h6" component="summary" fontWeight={800} gutterBottom>
+          <Paper component="details" variant="outlined" className="app-l1122c11">
+            <Typography variant="h6" component="summary" gutterBottom className="app-l1127c13">
               {t.formulas}
             </Typography>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
+            <Typography variant="body2" gutterBottom className="app-l1130c13">
               {t.excludedStatuses}: {summary.excludedStatuses.join(', ')} · v
               {summary.metricsVersion}
             </Typography>
-            <Alert severity="info" sx={{ mb: 2 }} data-testid="analytics-metric-sources">
+            <Alert severity="info" data-testid="analytics-metric-sources" className="app-l1134c13">
               {t.metricScopeNote}
             </Alert>
             <Table size="small" aria-label={t.formulas}>
@@ -1161,11 +1129,11 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <Stack direction="row" justifyContent="space-between" gap={2} sx={{ py: 0.5 }}>
-      <Typography color="text.secondary" variant="body2">
+    <Stack className="app-l1164c5">
+      <Typography variant="body2" className="app-l1165c7">
         {label}
       </Typography>
-      <Typography fontWeight={700} textAlign="end" variant="body2" dir="auto">
+      <Typography variant="body2" dir="auto" className="app-l1168c7">
         {value}
       </Typography>
     </Stack>
@@ -1175,7 +1143,7 @@ function Fact({ label, value }: { label: string; value: string }) {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <Box>
-      <Typography variant="subtitle1" fontWeight={800} gutterBottom>
+      <Typography variant="subtitle1" gutterBottom className="app-l1178c7">
         {title}
       </Typography>
       {children}
@@ -1184,7 +1152,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function EmptyValue({ label }: { label: string }) {
-  return <Typography color="text.secondary">{label}</Typography>;
+  return <Typography className="app-l1187c10">{label}</Typography>;
 }
 
 function Address({
@@ -1229,11 +1197,11 @@ function HistoryList({
         <EmptyValue label={empty} />
       ) : (
         entries.map((entry, index) => (
-          <Paper key={String(entry.id ?? index)} variant="outlined" sx={{ p: 1, mb: 1 }}>
+          <Paper key={String(entry.id ?? index)} variant="outlined" className="app-l1232c11">
             <Typography variant="body2">
               {valueText(entry.action ?? entry.type ?? entry.status)}
             </Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" className="app-l1236c13">
               {valueText(entry.createdAt ?? entry.created_at)}
             </Typography>
           </Paper>
@@ -1308,9 +1276,9 @@ function OrderDetail({
   };
 
   return (
-    <Stack gap={2} role="document" aria-labelledby="order-detail-title">
-      <Stack direction="row" alignItems="center" gap={1}>
-        <Typography id="order-detail-title" variant="h5" fontWeight={800} sx={{ flexGrow: 1 }}>
+    <Stack role="document" aria-labelledby="order-detail-title" className="app-l1311c5">
+      <Stack className="app-l1312c7">
+        <Typography id="order-detail-title" variant="h5" className="app-l1313c9">
           {t.details} <span dir="ltr">#{valueText(order.orderNumber)}</span>
         </Typography>
         <Tooltip title={t.close}>
@@ -1319,7 +1287,7 @@ function OrderDetail({
           </IconButton>
         </Tooltip>
       </Stack>
-      <Stack direction="row" gap={1} flexWrap="wrap">
+      <Stack className="app-l1322c7">
         <Chip label={order.origin === 'manual' ? t.originManual : t.originWoo} />
         <Chip label={valueText(order.remoteStatus)} variant="outlined" />
         <Chip
@@ -1349,7 +1317,7 @@ function OrderDetail({
       </Tabs>
       <Box role="tabpanel" id={`order-tabpanel-${tab}`} aria-labelledby={`order-tab-${tab}`}>
         {tab === 0 && (
-          <Stack gap={2}>
+          <Stack className="app-l1352c11">
             <Section title={t.remote}>
               <Fact label={t.orderNumber} value={valueText(order.orderNumber)} />
               <Fact label={t.sourceId} value={valueText(order.externalOrderId)} />
@@ -1412,7 +1380,7 @@ function OrderDetail({
           </Section>
         )}
         {tab === 2 && (
-          <Stack gap={2}>
+          <Stack className="app-l1415c11">
             <Section title={t.customer}>
               <Fact label={t.externalCustomer} value={valueText(order.externalCustomerId)} />
               <Fact label={t.customer} value={orderCustomerName(order)} />
@@ -1429,7 +1397,7 @@ function OrderDetail({
           </Stack>
         )}
         {tab === 3 && (
-          <Stack gap={2}>
+          <Stack className="app-l1432c11">
             <Section title={t.payment}>
               <Fact
                 label={t.method}
@@ -1523,13 +1491,13 @@ function OrderDetail({
           </Stack>
         )}
         {tab === 4 && (
-          <Stack gap={2}>
+          <Stack className="app-l1526c11">
             {workflowMessage && <Alert severity="success">{workflowMessage}</Alert>}
             {order.origin === 'woo' && (
               <Button
                 variant="outlined"
                 onClick={() => void requestResync()}
-                sx={{ alignSelf: 'flex-start' }}
+                className="app-l1529c15"
               >
                 {t.resync}
               </Button>
@@ -1618,36 +1586,25 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
     void load();
   }, []);
   return (
-    <Stack gap={2} data-testid="catalog-workspace">
+    <Stack data-testid="catalog-workspace" className="app-l1621c5">
       <Box>
-        <Typography variant="h4" component="h1" fontWeight={800}>
+        <Typography variant="h4" component="h1" className="app-l1623c9">
           {tr(locale, 'inline.app.productsStockCatalog')}
         </Typography>
-        <Typography color="text.secondary">
+        <Typography className="app-l1626c9">
           {tr(locale, 'inline.app.aReadOnlyWoocommerceSnapshotPricesAndStockCannotBeEditedHere')}
         </Typography>
       </Box>
       <Paper
         component="form"
         variant="outlined"
-        sx={{ p: 2 }}
         onSubmit={(event) => {
           event.preventDefault();
           void load();
         }}
+        className="app-l1630c7"
       >
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: {
-              xs: '1fr',
-              md: 'repeat(2, minmax(0, 1fr))',
-              lg: 'repeat(3, minmax(0, 1fr))',
-            },
-            gap: 2,
-            '& .MuiFormControl-root': { minWidth: 0 },
-          }}
-        >
+        <Box className="app-l1639c9">
           <TextField
             fullWidth
             size="small"
@@ -1744,7 +1701,7 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
                         <Box
                           component="span"
                           dir="ltr"
-                          sx={{ unicodeBidi: 'isolate' }}
+                          className="app-l1744c25"
                         >{`${item.stockStatus ?? 'unknown'}${item.stockQuantity === null ? '' : ` · ${item.stockQuantity}`}`}</Box>
                       }
                     />
@@ -1764,11 +1721,11 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
         </TableContainer>
         {loading && <LinearProgress />}
         {!loading && items.length === 0 && (
-          <Stack p={5} gap={2} alignItems="center" textAlign="center">
-            <Typography fontWeight={700}>
+          <Stack className="app-l1767c11">
+            <Typography className="app-l1768c13">
               {tr(locale, 'inline.app.noWoocommerceProductsHaveBeenSynchronizedYet')}
             </Typography>
-            <Typography color="text.secondary">
+            <Typography className="app-l1771c13">
               {tr(locale, 'inline.app.openTheWoocommerceConnectionVerifyItThenRunTheInitialSync')}
             </Typography>
             <Button variant="contained" onClick={onSync}>
@@ -1812,13 +1769,13 @@ function ManualOrdersWorkspace({ locale, onCreate }: { locale: Locale; onCreate:
     void load();
   }, []);
   return (
-    <Stack gap={2} data-testid="manual-orders-workspace">
-      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={2}>
+    <Stack data-testid="manual-orders-workspace" className="app-l1815c5">
+      <Stack className="app-l1816c7">
         <Box>
-          <Typography variant="h4" component="h1" fontWeight={800}>
+          <Typography variant="h4" component="h1" className="app-l1818c11">
             {tr(locale, 'inline.app.manualOrderOperations')}
           </Typography>
-          <Typography color="text.secondary">
+          <Typography className="app-l1821c11">
             {tr(locale, 'inline.app.aSeparateLocalQueueThatNeverWritesToWoocommerceOrInventory')}
           </Typography>
         </Box>
@@ -1868,11 +1825,7 @@ function ManualOrdersWorkspace({ locale, onCreate }: { locale: Locale; onCreate:
           </Table>
         </TableContainer>
         {loading && <LinearProgress />}
-        {!loading && orders.length === 0 && (
-          <Box p={4} textAlign="center">
-            —
-          </Box>
-        )}
+        {!loading && orders.length === 0 && <Box className="app-l1872c11">—</Box>}
       </Paper>
     </Stack>
   );
@@ -2139,25 +2092,19 @@ function ManualOrderForm({
   };
 
   return (
-    <Paper component="form" onSubmit={submit} variant="outlined" sx={{ p: { xs: 2, md: 4 } }}>
-      <Stack gap={3}>
+    <Paper component="form" onSubmit={submit} variant="outlined" className="app-l2142c5">
+      <Stack className="app-l2143c7">
         <Box>
-          <Typography variant="h4" component="h1" fontWeight={800}>
+          <Typography variant="h4" component="h1" className="app-l2145c11">
             {t.manualTitle}
           </Typography>
-          <Typography color="text.secondary">{t.localOnly}</Typography>
+          <Typography className="app-l2148c11">{t.localOnly}</Typography>
         </Box>
         <Alert severity="info">{t.localOnly}</Alert>
         {error && <Alert severity="error">{t.invalidManual}</Alert>}
         {saved && <Alert severity="success">{t.createdManual}</Alert>}
         <Section title={t.customer}>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
-              gap: 2,
-            }}
-          >
+          <Box className="app-l2154c11">
             <TextField
               required
               fullWidth
@@ -2180,15 +2127,7 @@ function ManualOrderForm({
               onChange={(event) => setCustomerPhone(event.target.value)}
             />
           </Box>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 2fr) minmax(260px, 1fr)' },
-              gap: 2,
-              mt: 2,
-              alignItems: 'start',
-            }}
-          >
+          <Box className="app-l2183c11">
             <TextField
               required
               fullWidth
@@ -2208,13 +2147,7 @@ function ManualOrderForm({
               >
                 {governorateRates.map(({ code, rate }) => (
                   <MenuItem key={code} value={code} disabled={!rate}>
-                    <Stack
-                      direction="row"
-                      justifyContent="space-between"
-                      alignItems="center"
-                      gap={2}
-                      width="100%"
-                    >
+                    <Stack className="app-l2211c21">
                       <span>{egyptianGovernorateName(code, locale)}</span>
                       {rate ? (
                         <MoneyValue value={rate.amountMinor} currency={currency} locale={locale} />
@@ -2228,7 +2161,7 @@ function ManualOrderForm({
             </FormControl>
           </Box>
           {config && !shippingRatesConfigured && (
-            <Alert severity="warning" sx={{ mt: 2 }} data-testid="shipping-rates-empty">
+            <Alert severity="warning" data-testid="shipping-rates-empty" className="app-l2231c13">
               {tr(
                 locale,
                 'inline.app.noWoocommerceShippingRatesMappedToEgyptianGovernoratesWereFoundR',
@@ -2238,7 +2171,7 @@ function ManualOrderForm({
         </Section>
         <Section title={t.items}>
           {catalog.length === 0 && config && (
-            <Alert severity="warning" sx={{ mb: 2 }} data-testid="manual-catalog-empty">
+            <Alert severity="warning" data-testid="manual-catalog-empty" className="app-l2241c13">
               {tr(
                 locale,
                 'inline.app.noPricedProductsAreAvailableRunWoocommerceSyncThenReopenTheManua',
@@ -2256,13 +2189,13 @@ function ManualOrderForm({
             noOptionsText={tr(locale, 'inline.app.noMatchingProducts')}
             renderOption={(props, item) => (
               <Box component="li" {...props} key={item.id}>
-                <Stack width="100%" gap={0.25}>
-                  <Typography fontWeight={700}>{item.name}</Typography>
-                  <Stack direction="row" justifyContent="space-between" gap={2}>
-                    <Typography variant="caption" color="text.secondary">
+                <Stack className="app-l2259c17">
+                  <Typography className="app-l2260c19">{item.name}</Typography>
+                  <Stack className="app-l2261c19">
+                    <Typography variant="caption" className="app-l2262c21">
                       {item.stockStatus || 'unknown'}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">
+                    <Typography variant="caption" className="app-l2265c21">
                       {item.price} {currency}
                     </Typography>
                   </Stack>
@@ -2273,14 +2206,7 @@ function ManualOrderForm({
               <TextField {...params} required={manualLines.length === 0} label={t.productName} />
             )}
           />
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(140px, 1fr))' },
-              gap: 2,
-              mt: 2,
-            }}
-          >
+          <Box className="app-l2276c11">
             <TextField
               required
               label={t.quantity}
@@ -2298,7 +2224,7 @@ function ManualOrderForm({
               InputProps={{ readOnly: true }}
             />
           </Box>
-          <Stack direction="row" justifyContent="flex-end" mt={2}>
+          <Stack className="app-l2301c11">
             <Button
               type="button"
               variant="outlined"
@@ -2309,7 +2235,7 @@ function ManualOrderForm({
             </Button>
           </Stack>
           {manualLines.length > 0 && (
-            <TableContainer component={Paper} variant="outlined" sx={{ mt: 2 }}>
+            <TableContainer component={Paper} variant="outlined" className="app-l2312c13">
               <Table size="small" aria-label={tr(locale, 'inline.app.orderProducts')}>
                 <TableHead>
                   <TableRow>
@@ -2352,17 +2278,7 @@ function ManualOrderForm({
           )}
         </Section>
         <Section title={t.finance}>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: {
-                xs: '1fr',
-                sm: 'repeat(2, minmax(0, 1fr))',
-                lg: 'repeat(5, minmax(140px, 1fr))',
-              },
-              gap: 2,
-            }}
-          >
+          <Box className="app-l2355c11">
             <TextField label={t.currency} value={currency} InputProps={{ readOnly: true }} />
             <TextField
               label={t.shippingMinor}
@@ -2393,19 +2309,16 @@ function ManualOrderForm({
               onChange={(event) => setFeesMinor(event.target.value)}
             />
           </Box>
-          <Paper
-            variant="outlined"
-            sx={{ mt: 2, p: 2, display: 'flex', justifyContent: 'space-between', gap: 2 }}
-          >
-            <Typography fontWeight={800}>{t.total}</Typography>
+          <Paper variant="outlined" className="app-l2396c11">
+            <Typography className="app-l2400c13">{t.total}</Typography>
             <MoneyValue
               value={totalMinor}
               currency={currency.toUpperCase()}
               locale={locale}
-              fontWeight={800}
+              fontWeight={700}
             />
           </Paper>
-          <Button component="label" variant="outlined" sx={{ mt: 2, minWidth: 220 }}>
+          <Button component="label" variant="outlined" className="app-l2408c11">
             {paymentProof ? paymentProof.name : tr(locale, 'inline.app.uploadTransferProof')}
             <input
               hidden
@@ -2415,26 +2328,19 @@ function ManualOrderForm({
             />
           </Button>
           {paymentProof && (
-            <Alert severity="success" sx={{ mt: 1 }} data-testid="payment-proof-selected">
+            <Alert severity="success" data-testid="payment-proof-selected" className="app-l2418c13">
               {tr(locale, 'inline.app.transferProofSelected')}{' '}
-              <Box component="span" dir="ltr" sx={{ unicodeBidi: 'isolate' }}>
+              <Box component="span" dir="ltr" className="app-l2420c15">
                 {paymentProof.name}
               </Box>
             </Alert>
           )}
-          <Typography display="block" variant="caption" color="text.secondary">
+          <Typography variant="caption" className="app-l2425c11">
             {tr(locale, 'inline.app.jpgPngOrPdfUpTo5Mb')}
           </Typography>
         </Section>
         <Section title={t.workflow}>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', md: 'minmax(180px, .7fr) 1fr 1.3fr' },
-              gap: 2,
-              alignItems: 'start',
-            }}
-          >
+          <Box className="app-l2430c11">
             <TextField
               fullWidth
               label={t.tagsInput}
@@ -2449,7 +2355,7 @@ function ManualOrderForm({
             />
           </Box>
         </Section>
-        <Stack direction="row" gap={2} justifyContent="flex-end">
+        <Stack className="app-l2452c9">
           <Button type="button" onClick={onCancel} disabled={saving}>
             {t.cancel}
           </Button>
@@ -2658,13 +2564,13 @@ function DocumentsWorkspace({ direction, t }: { direction: Direction; t: (typeof
   };
 
   return (
-    <Stack gap={3} data-testid="documents-workspace">
+    <Stack data-testid="documents-workspace" className="app-l2661c5">
       <Box>
-        <Typography variant="h4" component="h1" fontWeight={800}>
+        <Typography variant="h4" component="h1" className="app-l2663c9">
           {t.documentsTitle}
         </Typography>
-        <Typography color="text.secondary">{t.templateSafety}</Typography>
-        <Typography variant="caption" color="text.secondary" dir="ltr">
+        <Typography className="app-l2666c9">{t.templateSafety}</Typography>
+        <Typography variant="caption" dir="ltr" className="app-l2667c9">
           {t.templateTokens}
         </Typography>
       </Box>
@@ -2672,9 +2578,9 @@ function DocumentsWorkspace({ direction, t }: { direction: Direction; t: (typeof
       {loading ? (
         <CircularProgress aria-label={t.loading} />
       ) : (
-        <Stack direction={{ xs: 'column', lg: 'row' }} gap={3} alignItems="stretch">
-          <Paper variant="outlined" sx={{ p: 3, flex: 1, minWidth: 0 }}>
-            <Stack gap={2}>
+        <Stack className="app-l2675c9">
+          <Paper variant="outlined" className="app-l2676c11">
+            <Stack className="app-l2677c13">
               {templates.length > 0 && (
                 <FormControl size="small">
                   <InputLabel id="document-template-label">{t.documentTemplateName}</InputLabel>
@@ -2738,7 +2644,7 @@ function DocumentsWorkspace({ direction, t }: { direction: Direction; t: (typeof
                 inputProps={{ 'aria-label': t.documentBody }}
                 helperText={t.templateTokens}
               />
-              <Stack direction="row" gap={1} flexWrap="wrap">
+              <Stack className="app-l2741c15">
                 <Button variant="contained" onClick={() => void save()} disabled={saving}>
                   {saving ? <CircularProgress size={18} aria-label={t.loading} /> : t.saveTemplate}
                 </Button>
@@ -2755,34 +2661,32 @@ function DocumentsWorkspace({ direction, t }: { direction: Direction; t: (typeof
               </Stack>
             </Stack>
           </Paper>
-          <Paper variant="outlined" sx={{ p: 2, flex: 1, minHeight: 620 }}>
+          <Paper variant="outlined" className="app-l2758c11">
             {previewUrl ? (
               <Box
                 component="iframe"
                 title={t.previewDocument}
                 src={previewUrl}
-                width="100%"
-                height="600px"
-                sx={{ border: 0 }}
+                className="app-l2760c15"
               />
             ) : (
-              <Box display="grid" minHeight={580} sx={{ placeItems: 'center' }}>
-                <Typography color="text.secondary">{t.noTemplates}</Typography>
+              <Box className="app-l2769c15">
+                <Typography className="app-l2770c17">{t.noTemplates}</Typography>
               </Box>
             )}
           </Paper>
         </Stack>
       )}
-      <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 } }} data-testid="document-batches">
-        <Stack gap={2}>
-          <Typography variant="h5" component="h2" fontWeight={800}>
+      <Paper variant="outlined" data-testid="document-batches" className="app-l2776c7">
+        <Stack className="app-l2777c9">
+          <Typography variant="h5" component="h2" className="app-l2778c11">
             {t.documentBatches}
           </Typography>
           {batchError && <Alert severity="error">{t.documentBatchesLoadFailed}</Alert>}
           {batchesLoading ? (
             <CircularProgress aria-label={t.loading} />
           ) : batches.length === 0 ? (
-            <Typography color="text.secondary">{t.noDocumentBatches}</Typography>
+            <Typography className="app-l2785c13">{t.noDocumentBatches}</Typography>
           ) : (
             <TableContainer>
               <Table size="small">
@@ -2798,7 +2702,7 @@ function DocumentsWorkspace({ direction, t }: { direction: Direction; t: (typeof
                   {batches.map((batch) => (
                     <TableRow key={batch.id}>
                       <TableCell>
-                        <Stack gap={0.5}>
+                        <Stack className="app-l2801c25">
                           <Chip label={batch.status} size="small" />
                           <Typography variant="caption" dir="ltr">
                             {batch.id}
@@ -2811,7 +2715,7 @@ function DocumentsWorkspace({ direction, t }: { direction: Direction; t: (typeof
                       </TableCell>
                       <TableCell dir="ltr">{batch.format}</TableCell>
                       <TableCell>
-                        <Stack direction="row" gap={1} flexWrap="wrap">
+                        <Stack className="app-l2814c25">
                           <Button
                             size="small"
                             onClick={() => void loadBatchDetails(batch.id)}
@@ -2839,10 +2743,10 @@ function DocumentsWorkspace({ direction, t }: { direction: Direction; t: (typeof
           )}
           {expandedBatchId && batchDetails[expandedBatchId] && (
             <Box>
-              <Typography variant="subtitle1" fontWeight={700}>
+              <Typography variant="subtitle1" className="app-l2842c15">
                 {t.documentBatchDetails}: {expandedBatchId}
               </Typography>
-              <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mt: 1 }}>
+              <Stack className="app-l2845c15">
                 {batchDetails[expandedBatchId].artifacts.map((artifact) => (
                   <Button
                     key={artifact.id}
@@ -3206,18 +3110,18 @@ function ExportsWorkspace({
     exportJobStatusLabel(status, direction);
 
   return (
-    <Stack gap={3} data-testid="exports-workspace" dir={direction}>
+    <Stack data-testid="exports-workspace" dir={direction} className="app-l3209c5">
       <Box>
         <Typography
           variant={historyOnly ? 'h6' : 'h4'}
           component={historyOnly ? 'h2' : 'h1'}
-          fontWeight={800}
+          className="app-l3211c9"
         >
           {historyOnly
             ? tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.exportAndPrintCommands')
             : t.exportsTitle}
         </Typography>
-        <Typography color="text.secondary">
+        <Typography className="app-l3220c9">
           {historyOnly
             ? tr(
                 direction === 'rtl' ? 'ar' : 'en',
@@ -3227,7 +3131,7 @@ function ExportsWorkspace({
         </Typography>
       </Box>
       {message && <Alert severity={message.endsWith('FAILED') ? 'error' : 'info'}>{message}</Alert>}
-      <Paper variant="outlined" sx={{ px: 2, pt: 1 }}>
+      <Paper variant="outlined" className="app-l3230c7">
         <Tabs
           value={historyTab}
           onChange={(_event, value: ExportHistoryTab) => selectHistoryTab(value)}
@@ -3243,13 +3147,13 @@ function ExportsWorkspace({
         </Tabs>
       </Paper>
       {!historyOnly && (
-        <Paper variant="outlined" sx={{ p: 2 }}>
-          <Stack gap={2}>
-            <Typography variant="h6" component="h2" fontWeight={800}>
+        <Paper variant="outlined" className="app-l3246c9">
+          <Stack className="app-l3247c11">
+            <Typography variant="h6" component="h2" className="app-l3248c13">
               {t.createExport}
             </Typography>
-            <Stack direction={{ xs: 'column', md: 'row' }} gap={2} flexWrap="wrap">
-              <FormControl size="small" sx={{ minWidth: 260 }}>
+            <Stack className="app-l3251c13">
+              <FormControl size="small" className="app-l3252c15">
                 <InputLabel id="export-source-label">
                   {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.ordersToExport')}
                 </InputLabel>
@@ -3290,10 +3194,11 @@ function ExportsWorkspace({
       )}
       <Paper
         variant="outlined"
-        sx={{ p: 2, display: historyTab !== 'spreadsheets' ? 'none' : 'block' }}
+        hidden={historyTab !== 'spreadsheets'}
+        className="app-export-history-panel"
       >
-        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
-          <Typography variant="h6" component="h2" fontWeight={800}>
+        <Stack className="app-l3295c9">
+          <Typography variant="h6" component="h2" className="app-l3296c11">
             {t.exportBatches}
           </Typography>
           <Button size="small" onClick={() => void loadBatches(true)} disabled={loading}>
@@ -3314,7 +3219,7 @@ function ExportsWorkspace({
               {batches.map((batch) => (
                 <TableRow key={batch.id}>
                   <TableCell>
-                    <Stack gap={0.5} alignItems="flex-start">
+                    <Stack className="app-l3317c21">
                       <Chip size="small" label={statusLabel(batch.status)} />
                       {batch.status === 'failed' && batch.error && (
                         <Typography variant="caption" color="error">
@@ -3324,9 +3229,9 @@ function ExportsWorkspace({
                     </Stack>
                   </TableCell>
                   <TableCell>
-                    <Stack gap={0.25}>
-                      <Typography fontWeight={700}>{batch.format.toUpperCase()}</Typography>
-                      <Typography variant="caption" color="text.secondary">
+                    <Stack className="app-l3327c21">
+                      <Typography className="app-l3328c23">{batch.format.toUpperCase()}</Typography>
+                      <Typography variant="caption" className="app-l3329c23">
                         {exportRowModeLabel(batch.rowMode, direction)}
                       </Typography>
                     </Stack>
@@ -3335,13 +3240,13 @@ function ExportsWorkspace({
                     {batch.orderCount} / {batch.rowCount}
                   </TableCell>
                   <TableCell>
-                    <Stack direction="row" gap={1} alignItems="center">
+                    <Stack className="app-l3338c21">
                       {batch.job && (
                         <LinearProgress
                           variant="determinate"
                           value={Math.min(batch.job.progress, 100)}
-                          sx={{ width: 80 }}
                           aria-label={t.loading}
+                          className="app-l3340c25"
                         />
                       )}
                       {batch.status === 'completed' && (
@@ -3364,23 +3269,20 @@ function ExportsWorkspace({
             </TableBody>
           </Table>
         </TableContainer>
-        {batches.length === 0 && (
-          <Typography color="text.secondary" sx={{ py: 2 }}>
-            {t.noData}
-          </Typography>
-        )}
+        {batches.length === 0 && <Typography className="app-l3368c11">{t.noData}</Typography>}
       </Paper>
       <Paper
         variant="outlined"
-        sx={{ p: 2, display: historyTab !== 'documents' ? 'none' : 'block' }}
+        hidden={historyTab !== 'documents'}
+        className="app-export-history-panel"
         data-testid="export-document-jobs"
       >
-        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+        <Stack className="app-l3378c9">
           <Box>
-            <Typography variant="h6" component="h2" fontWeight={800}>
+            <Typography variant="h6" component="h2" className="app-l3380c13">
               {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.invoiceAndPrintCommands')}
             </Typography>
-            <Typography color="text.secondary" variant="body2">
+            <Typography variant="body2" className="app-l3383c13">
               {tr(
                 direction === 'rtl' ? 'ar' : 'en',
                 'inline.app.thermalReceiptsShippingLabelsAndPdfJobsCreatedFromOrders',
@@ -3408,7 +3310,7 @@ function ExportsWorkspace({
               {documentBatches.map((batch) => (
                 <TableRow key={batch.id}>
                   <TableCell>
-                    <Stack gap={0.5} alignItems="flex-start">
+                    <Stack className="app-l3411c21">
                       <Chip
                         size="small"
                         label={exportJobStatusLabel(batch.status, direction)}
@@ -3434,7 +3336,7 @@ function ExportsWorkspace({
                     {batch.succeededCount}/{batch.totalCount}
                   </TableCell>
                   <TableCell>
-                    <Stack direction="row" gap={1} flexWrap="wrap">
+                    <Stack className="app-l3437c21">
                       <Button
                         size="small"
                         onClick={() =>
@@ -3475,26 +3377,24 @@ function ExportsWorkspace({
           </Table>
         </TableContainer>
         {documentBatches.length === 0 && (
-          <Typography color="text.secondary" sx={{ py: 2 }}>
-            {t.noData}
-          </Typography>
+          <Typography className="app-l3478c11">{t.noData}</Typography>
         )}
       </Paper>
       <Dialog
         open={documentFilesBatchId !== null}
         onClose={() => setDocumentFilesBatchId(null)}
         fullWidth
-        maxWidth="md"
         PaperProps={{
           dir: direction,
           sx: { borderRadius: '12px', maxHeight: '85vh' },
         }}
+        className="app-l3483c7"
       >
         <DialogTitle>
           {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.documentFiles')}
         </DialogTitle>
         <DialogContent>
-          <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} sx={{ mb: 2 }}>
+          <Stack className="app-l3497c11">
             {visibleDocumentArtifacts
               .filter((artifact) => artifact.kind === 'zip' || artifact.kind === 'merged-pdf')
               .sort((left, right) => (left.kind === 'zip' ? -1 : right.kind === 'zip' ? 1 : 0))
@@ -3511,7 +3411,7 @@ function ExportsWorkspace({
                 </Button>
               ))}
           </Stack>
-          <Typography variant="subtitle2" fontWeight={800} sx={{ mb: 1 }}>
+          <Typography variant="subtitle2" className="app-l3514c11">
             {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.individualFiles', {
               count: individualDocumentArtifacts.length,
             })}
@@ -3525,17 +3425,17 @@ function ExportsWorkspace({
               setDocumentFilePage(0);
             }}
             placeholder={tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.searchDocumentFiles')}
-            sx={{ mb: 1.5 }}
+            className="app-l3519c11"
           />
-          <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: '12px' }}>
+          <TableContainer component={Paper} variant="outlined" className="app-l3530c11">
             <Table size="small">
               <TableBody>
                 {pagedDocumentArtifacts.map((artifact) => (
                   <TableRow key={artifact.id}>
-                    <TableCell sx={{ wordBreak: 'break-word' }} dir="ltr">
+                    <TableCell dir="ltr" className="app-l3535c21">
                       {artifact.filename}
                     </TableCell>
-                    <TableCell width={120}>
+                    <TableCell className="app-l3538c21">
                       <Button
                         size="small"
                         component="a"
@@ -3552,17 +3452,12 @@ function ExportsWorkspace({
             </Table>
           </TableContainer>
           {pagedDocumentArtifacts.length === 0 && (
-            <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
+            <Typography className="app-l3555c13">
               {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.noMatchingDocumentFiles')}
             </Typography>
           )}
           {documentFilePageCount > 1 && (
-            <Stack
-              direction="row"
-              justifyContent="space-between"
-              alignItems="center"
-              sx={{ mt: 2 }}
-            >
+            <Stack className="app-l3560c13">
               <Button
                 size="small"
                 disabled={documentFilePage === 0}
@@ -4384,7 +4279,7 @@ export function App({
 
   if (authStatus === 'checking')
     return (
-      <Box minHeight="100vh" display="grid" sx={{ placeItems: 'center' }}>
+      <Box className="app-l4387c7">
         <CircularProgress aria-label={t.loading} />
       </Box>
     );
@@ -4451,7 +4346,7 @@ export function App({
           <Alert
             severity={connectionNotice === 'success' ? 'success' : 'warning'}
             onClose={() => setConnectionNotice('')}
-            sx={{ mb: 2 }}
+            className="app-l4451c11"
           >
             {connectionNotice === 'success'
               ? tr(
@@ -4462,7 +4357,7 @@ export function App({
           </Alert>
         )}
         {(view === 'orders' || view === 'manual') && (
-          <Paper variant="outlined" sx={{ mb: 2, borderRadius: '12px', overflow: 'hidden' }}>
+          <Paper variant="outlined" className="app-l4465c11">
             <Tabs
               value={view === 'manual' ? 'manual' : 'woo'}
               onChange={(_event, value: 'woo' | 'manual') =>
@@ -4517,27 +4412,21 @@ export function App({
           />
         ) : (
           <>
-            <Stack
-              direction={{ xs: 'column', md: 'row' }}
-              alignItems={{ md: 'center' }}
-              justifyContent="space-between"
-              gap={2}
-              mb={3}
-            >
+            <Stack className="app-l4520c13">
               <Box>
-                <Typography variant="h4" fontWeight={800} component="h1">
+                <Typography variant="h4" component="h1" className="app-l4528c17">
                   {t.orders}
                 </Typography>
-                <Typography color="text.secondary">{t.subtitle}</Typography>
-                <Typography variant="body2" color="text.secondary">
+                <Typography className="app-l4531c17">{t.subtitle}</Typography>
+                <Typography variant="body2" className="app-l4532c17">
                   {t.totalResults}: {totalCount}
                 </Typography>
               </Box>
-              <Stack direction="row" gap={1}>
+              <Stack className="app-l4536c15">
                 <Button variant="outlined" onClick={() => void loadOrders()} disabled={loading}>
                   {loading ? <CircularProgress size={18} aria-label={t.loading} /> : t.refresh}
                 </Button>
-                <FormControl size="small" sx={{ minWidth: 150 }}>
+                <FormControl size="small" className="app-l4540c17">
                   <InputLabel id="orders-columns-label">{t.columns}</InputLabel>
                   <Select
                     multiple
@@ -4558,7 +4447,6 @@ export function App({
             </Stack>
             <Paper
               variant="outlined"
-              sx={{ p: 2, mb: 2 }}
               component="form"
               onSubmit={(event) => {
                 event.preventDefault();
@@ -4566,20 +4454,9 @@ export function App({
                 setActiveSavedQuery(null);
                 void loadOrders(false, { search: search || undefined, filter: orderFilter });
               }}
+              className="app-l4559c13"
             >
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: '1fr',
-                    md: 'repeat(2, minmax(0, 1fr))',
-                    lg: 'minmax(240px, 2fr) repeat(3, minmax(130px, 1fr))',
-                  },
-                  gap: 1.5,
-                  alignItems: 'start',
-                  '& .MuiFormControl-root': { minWidth: 0, width: '100%' },
-                }}
-              >
+              <Box className="app-l4570c15">
                 <TextField
                   fullWidth
                   size="small"
@@ -4588,7 +4465,7 @@ export function App({
                   placeholder={t.search}
                   inputProps={{ 'aria-label': t.search }}
                 />
-                <FormControl size="small" sx={{ minWidth: 170 }}>
+                <FormControl size="small" className="app-l4591c17">
                   <InputLabel id="orders-status-label">{t.status}</InputLabel>
                   <Select
                     value={status}
@@ -4661,7 +4538,7 @@ export function App({
                   {t.searchButton}
                 </Button>
               </Box>
-              <Stack direction="row" gap={1} mt={2} flexWrap="wrap" alignItems="center">
+              <Stack className="app-l4664c15">
                 <Button
                   type="button"
                   size="small"
@@ -4687,14 +4564,10 @@ export function App({
                   id="saved-order-filters"
                   data-testid="saved-order-filters"
                   variant="outlined"
-                  sx={{ mt: 2, p: 1.5, bgcolor: 'background.default' }}
+                  className="app-l4686c17"
                 >
-                  <Stack
-                    direction={{ xs: 'column', md: 'row' }}
-                    gap={1.5}
-                    alignItems={{ md: 'center' }}
-                  >
-                    <FormControl size="small" sx={{ minWidth: 220, flex: 1 }}>
+                  <Stack className="app-l4692c19">
+                    <FormControl size="small" className="app-l4697c21">
                       <InputLabel id="orders-saved-view-label">{t.savedViews}</InputLabel>
                       <Select
                         value={selectedSavedViewId}
@@ -4724,7 +4597,7 @@ export function App({
                       label={t.viewName}
                       value={viewName}
                       onChange={(event) => setViewName(event.target.value)}
-                      sx={{ minWidth: 220, flex: 1 }}
+                      className="app-l4722c21"
                     />
                     <Button
                       type="button"
@@ -4739,21 +4612,7 @@ export function App({
                 </Paper>
               )}
               {advancedOpen && (
-                <Box
-                  data-testid="advanced-order-filters"
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: {
-                      xs: 'minmax(0, 1fr)',
-                      sm: 'repeat(2, minmax(0, 1fr))',
-                      lg: 'repeat(4, minmax(180px, 1fr))',
-                    },
-                    gap: 2,
-                    mt: 2,
-                    alignItems: 'start',
-                    '& .MuiFormControl-root': { minWidth: 0, width: '100%' },
-                  }}
-                >
+                <Box data-testid="advanced-order-filters" className="app-l4742c17">
                   {(
                     [
                       ['paymentMethod', t.paymentFilter],
@@ -4799,13 +4658,9 @@ export function App({
               )}
             </Paper>
             {(selectedIds.size > 0 || selectAllMatching) && (
-              <Paper variant="outlined" sx={{ p: 1.5, mb: 2 }}>
-                <Stack
-                  direction={{ xs: 'column', sm: 'row' }}
-                  gap={1}
-                  alignItems={{ sm: 'center' }}
-                >
-                  <Typography fontWeight={700} sx={{ flexGrow: 1 }}>
+              <Paper variant="outlined" className="app-l4802c15">
+                <Stack className="app-l4803c17">
+                  <Typography className="app-l4808c19">
                     {selectAllMatching ? totalCount : selectedIds.size} {t.selected}
                   </Typography>
                   {!selectAllMatching && totalCount > orders.length && (
@@ -4850,7 +4705,7 @@ export function App({
                 severity={
                   selectionError || selectionMessage.endsWith('_FAILED') ? 'error' : 'success'
                 }
-                sx={{ mb: 2 }}
+                className="app-l4849c15"
               >
                 {selectionMessage}
               </Alert>
@@ -4858,62 +4713,34 @@ export function App({
             {error && (
               <Alert
                 severity="warning"
-                sx={{ mb: 2 }}
                 action={
                   <Button color="inherit" size="small" onClick={() => void loadOrders()}>
                     {t.retry}
                   </Button>
                 }
+                className="app-l4859c15"
               >
                 {authRequired ? t.authenticationRequired : t.errors}
               </Alert>
             )}
-            <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+            <Paper variant="outlined" className="app-l4871c13">
               <TableContainer
                 data-testid="orders-table-scroll"
                 tabIndex={0}
                 aria-label={`${t.orders} — ${tr(locale, 'inline.app.scrollHorizontallyToViewAllColumns')}`}
-                sx={{
-                  maxWidth: '100%',
-                  overflowX: 'auto',
-                  overscrollBehaviorInline: 'contain',
-                  WebkitOverflowScrolling: 'touch',
-                  '&:focus-visible': {
-                    outline: '3px solid',
-                    outlineColor: 'primary.main',
-                    outlineOffset: -3,
-                  },
-                }}
+                className="app-orders-table-scroll"
               >
                 <Table
                   stickyHeader
                   size="small"
                   aria-label={t.orders}
                   data-testid="orders-table"
-                  sx={{ minWidth: 1420, '& td, & th': { whiteSpace: 'nowrap' } }}
+                  className="app-l4888c17"
                 >
-                  <caption
-                    style={{
-                      position: 'absolute',
-                      width: 1,
-                      height: 1,
-                      overflow: 'hidden',
-                      clip: 'rect(0 0 0 0)',
-                    }}
-                  >
-                    {t.orders}
-                  </caption>
+                  <caption className="app-l4895c19">{t.orders}</caption>
                   <TableHead>
                     <TableRow>
-                      <TableCell
-                        padding="checkbox"
-                        sx={{
-                          position: 'sticky',
-                          insetInlineStart: 0,
-                          zIndex: 4,
-                          bgcolor: 'background.paper',
-                        }}
-                      >
+                      <TableCell padding="checkbox" className="app-l4908c23">
                         <Checkbox
                           inputProps={{ 'aria-label': t.selectAllMatching }}
                           checked={
@@ -4930,7 +4757,7 @@ export function App({
                         />
                       </TableCell>
                       {renderedColumns.map((column) => (
-                        <TableCell key={column} sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
+                        <TableCell key={column} className="app-l4933c25">
                           {labelFor(column)}
                         </TableCell>
                       ))}
@@ -4951,17 +4778,12 @@ export function App({
                             void openOrder(order);
                           }
                         }}
-                        sx={{ cursor: 'pointer' }}
+                        className="app-l4941c23"
                       >
                         <TableCell
                           padding="checkbox"
                           onClick={(event) => event.stopPropagation()}
-                          sx={{
-                            position: 'sticky',
-                            insetInlineStart: 0,
-                            zIndex: 2,
-                            bgcolor: 'background.paper',
-                          }}
+                          className="app-l4956c25"
                         >
                           <Checkbox
                             checked={selectedIds.has(order.id) || selectAllMatching}
@@ -4978,10 +4800,10 @@ export function App({
                                 size="small"
                                 label={display(order, column)}
                                 variant="outlined"
-                                sx={
+                                className={
                                   order.remoteStatus === 'completed'
-                                    ? { color: '#1b5e20', borderColor: '#1b5e20' }
-                                    : { color: '#8a4b00', borderColor: '#8a4b00' }
+                                    ? 'app-status-badge app-status-badge--completed'
+                                    : 'app-status-badge app-status-badge--pending'
                                 }
                               />
                             ) : column === 'remoteExportStatus' ? (
@@ -4999,16 +4821,12 @@ export function App({
                                 variant={
                                   order.remoteExportStatus === 'exported' ? 'filled' : 'outlined'
                                 }
-                                sx={{
-                                  fontWeight: 700,
-                                  ...(order.remoteExportStatus !== 'exported' &&
+                                className={`app-woo-export-badge ${
+                                  order.remoteExportStatus !== 'exported' &&
                                   order.remoteExportStatus !== 'not_exported'
-                                    ? {
-                                        borderColor: '#8a4b00',
-                                        '& .MuiChip-label': { color: '#8a4b00' },
-                                      }
-                                    : {}),
-                                }}
+                                    ? 'app-woo-export-badge--warning'
+                                    : ''
+                                }`}
                               />
                             ) : column === 'exportState' ? (
                               <Chip
@@ -5038,19 +4856,19 @@ export function App({
                 </Table>
               </TableContainer>
               {!loading && orders.length === 0 && (
-                <Box textAlign="center" py={8}>
-                  <Typography color="text.secondary">
+                <Box className="app-l5041c17">
+                  <Typography className="app-l5042c19">
                     {error ? t.noConnection : t.noOrders}
                   </Typography>
                 </Box>
               )}
               {loading && orders.length === 0 && (
-                <Box textAlign="center" py={6}>
+                <Box className="app-l5048c17">
                   <CircularProgress aria-label={t.loading} />
                 </Box>
               )}
               {hasMore && (
-                <Box textAlign="center" p={2}>
+                <Box className="app-l5053c17">
                   <Button onClick={() => void loadOrders(true)} disabled={loading}>
                     {t.loadMore}
                   </Button>

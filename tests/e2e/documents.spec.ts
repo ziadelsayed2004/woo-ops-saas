@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('keeps document generation in order and export workflows without a standalone page @documents', async ({
+test('keeps document generation in the dedicated export workflow without a documents page @documents', async ({
   page,
 }) => {
   await page.route('**/api/v1/auth/session', async (route) => {
@@ -22,7 +22,7 @@ test('keeps document generation in order and export workflows without a standalo
   await page.goto('/');
   await page.getByRole('button', { name: 'English' }).click();
   await expect(page.getByRole('button', { name: 'Documents' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Exports' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Exports' }).click();
   await page.getByRole('tab', { name: 'Invoices & print' }).click();
   await expect(page.getByRole('heading', { name: 'Invoice and print commands' })).toBeVisible();
 });

@@ -1,4 +1,4 @@
-.admin-connected-store.MuiStack-root {
+#root .admin-connected-store.MuiStack-root {
   flex-direction: row;
   align-items: center;
   gap: 24px;
@@ -9,21 +9,21 @@
   background: #fff;
 }
 
-.admin-connected-store__identity {
+#root .admin-connected-store__identity {
   display: grid;
   flex: 1 1 auto;
   min-width: 0;
   justify-items: flex-start;
 }
 
-.admin-connected-store__url {
+#root .admin-connected-store__url {
   max-width: 100%;
   overflow-wrap: anywhere;
   word-break: break-word;
   text-align: left;
 }
 
-.admin-connected-store .admin-connected-store__disconnect {
+#root .admin-connected-store .admin-connected-store__disconnect {
   align-self: center;
   flex-shrink: 0;
   min-width: 180px;
@@ -32,20 +32,783 @@
 }
 
 @media (max-width: 899.95px) {
-  .admin-connected-store.MuiStack-root {
+  #root .admin-connected-store.MuiStack-root {
     flex-direction: column;
     align-items: stretch;
     gap: 12px;
   }
 
-  .admin-connected-store .admin-connected-store__disconnect {
+  #root .admin-connected-store .admin-connected-store__disconnect {
     align-self: stretch;
     min-width: 0;
   }
 }
 
 @media (max-width: 599.95px) {
-  .admin-connected-store.MuiStack-root {
+  #root .admin-connected-store.MuiStack-root {
     padding: 12px;
   }
+}
+
+#root .admin-workspaces-l222c7 {
+  padding-top: 48px;
+  padding-bottom: 48px;
+}
+
+#root .admin-workspaces-l222c7 {
+  text-align: center;
+}
+
+#root .admin-workspaces-l238c11 {
+  color: inherit;
+}
+
+#root .admin-workspaces-l309c5 {
+  min-height: 100vh;
+}
+
+#root .admin-workspaces-l309c5 {
+  background-color: #f8fafc;
+}
+
+#root .admin-workspaces-l309c5 {
+  display: grid;
+}
+
+#root .admin-workspaces-l309c5 {
+  place-items: center;
+  padding: 16px;
+  background-image: radial-gradient(circle at 12% 12%, #e8f0fe, transparent 35%);
+}
+
+#root .admin-workspaces-l320c7 {
+  width: min(100%, 480px);
+  border: 1px solid #e5e7eb;
+  border-color: #e5e7eb;
+  border-radius: 48px;
+  box-shadow: 0 18px 55px rgba(15, 23, 42, 0.08);
+}
+
+#root .admin-workspaces-l320c7 {
+  padding: 24px;
+}
+
+@media (min-width: 600px) {
+  #root .admin-workspaces-l320c7 {
+    padding: 40px;
+  }
+}
+
+#root .admin-workspaces-l332c9 {
+  gap: 20px;
+}
+
+#root .admin-workspaces-l333c11 {
+  margin-bottom: 8px;
+}
+
+#root .admin-workspaces-l333c11 {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+#root .admin-workspaces-l343c13 {
+  width: 52px;
+  height: 52px;
+  margin-bottom: 16px;
+  border-radius: 36px;
+  background-color: #720eec;
+  color: white;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  font-size: 26;
+}
+
+#root .admin-workspaces-l359c13 {
+  font-weight: 900;
+}
+
+#root .admin-workspaces-l359c13 {
+  color: #720eec;
+}
+
+#root .admin-workspaces-l362c13 {
+  font-weight: 700;
+}
+
+#root .admin-workspaces-l362c13 {
+  margin-top: 8px;
+}
+
+#root .admin-workspaces-l365c13 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l365c13 {
+  margin-top: 4px;
+}
+
+#root .admin-workspaces-l457c5 {
+  gap: 24px;
+}
+
+#root .admin-workspaces-l459c9 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l462c9 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l465c7 {
+  flex-direction: column;
+}
+
+@media (min-width: 900px) {
+  #root .admin-workspaces-l465c7 {
+    flex-direction: row;
+  }
+}
+
+#root .admin-workspaces-l465c7 {
+  gap: 16px;
+}
+
+#root .admin-workspaces-l466c9 {
+  flex: 1;
+}
+
+#root .admin-workspaces-l469c13 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l472c13 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l477c9 {
+  flex: 1;
+}
+
+#root .admin-workspaces-l480c13 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l483c13 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l488c9 {
+  flex: 1;
+}
+
+#root .admin-workspaces-l491c13 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l494c13 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l500c7 {
+  padding: 16px;
+}
+
+#root .admin-workspaces-l501c9 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l501c9 {
+  margin-bottom: 16px;
+}
+
+#root .admin-workspaces-l507c11 {
+  gap: 12px;
+}
+
+#root .admin-workspaces-l509c15 {
+  flex-direction: column;
+}
+
+@media (min-width: 600px) {
+  #root .admin-workspaces-l509c15 {
+    flex-direction: row;
+  }
+}
+
+#root .admin-workspaces-l509c15 {
+  gap: 8px;
+}
+
+@media (min-width: 600px) {
+  #root .admin-workspaces-l509c15 {
+    align-items: center;
+  }
+}
+
+#root .admin-workspaces-l515c17 {
+  flex: 1;
+}
+
+#root .admin-workspaces-l516c19 {
+  font-weight: 700;
+}
+
+#root .admin-workspaces-l519c19 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l616c5 {
+  gap: 24px;
+}
+
+#root .admin-workspaces-l618c9 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l621c9 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l622c9 {
+  margin-top: 8px;
+}
+
+#root .admin-workspaces-l635c9 {
+  padding: 16px;
+}
+
+#root .admin-workspaces-l644c11 {
+  flex-direction: column;
+}
+
+@media (min-width: 600px) {
+  #root .admin-workspaces-l644c11 {
+    flex-direction: row;
+  }
+}
+
+#root .admin-workspaces-l644c11 {
+  gap: 16px;
+}
+
+#root .admin-workspaces-l657c11 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l657c11 {
+  display: block;
+}
+
+#root .admin-workspaces-l657c11 {
+  margin-top: 8px;
+}
+
+#root .admin-workspaces-l665c9 {
+  gap: 16px;
+}
+
+#root .admin-workspaces-l669c17 {
+  gap: 12px;
+}
+
+#root .admin-workspaces-l670c19 {
+  flex-direction: column;
+}
+
+@media (min-width: 600px) {
+  #root .admin-workspaces-l670c19 {
+    flex-direction: row;
+  }
+}
+
+#root .admin-workspaces-l670c19 {
+  gap: 8px;
+}
+
+@media (min-width: 600px) {
+  #root .admin-workspaces-l670c19 {
+    align-items: center;
+  }
+}
+
+#root .admin-workspaces-l675c21 {
+  flex: 1;
+}
+
+#root .admin-workspaces-l679c23 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l684c19 {
+  flex-direction: row;
+}
+
+#root .admin-workspaces-l684c19 {
+  gap: 8px;
+}
+
+#root .admin-workspaces-l684c19 {
+  flex-wrap: wrap;
+}
+
+#root .admin-workspaces-l739c23 {
+  gap: 8px;
+}
+
+#root .admin-workspaces-l756c19 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l866c5 {
+  gap: 24px;
+}
+
+#root .admin-workspaces-l868c9 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l871c9 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l894c11 {
+  padding: 16px;
+}
+
+#root .admin-workspaces-l895c13 {
+  margin-bottom: 16px;
+}
+
+#root .admin-workspaces-l929c11 {
+  padding: 16px;
+}
+
+#root .admin-workspaces-l935c13 {
+  margin-bottom: 16px;
+}
+
+#root .admin-workspaces-l938c13 {
+  flex-direction: column;
+}
+
+@media (min-width: 900px) {
+  #root .admin-workspaces-l938c13 {
+    flex-direction: row;
+  }
+}
+
+#root .admin-workspaces-l938c13 {
+  gap: 16px;
+}
+
+#root .admin-workspaces-l953c15 {
+  min-width: 150px;
+}
+
+#root .admin-workspaces-l987c13 {
+  padding: 16px;
+}
+
+#root .admin-workspaces-l1179c5 {
+  gap: 24px;
+}
+
+#root .admin-workspaces-l1180c7 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l1185c7 {
+  padding: 16px;
+}
+
+#root .admin-workspaces-l1191c9 {
+  margin-bottom: 16px;
+}
+
+#root .admin-workspaces-l1194c9 {
+  gap: 16px;
+}
+
+#root .admin-workspaces-l1200c11 {
+  flex-direction: column;
+}
+
+@media (min-width: 900px) {
+  #root .admin-workspaces-l1200c11 {
+    flex-direction: row;
+  }
+}
+
+#root .admin-workspaces-l1200c11 {
+  gap: 16px;
+}
+
+#root .admin-workspaces-l1227c11 {
+  align-self: flex-start;
+}
+
+#root .admin-workspaces-l1232c7 {
+  padding: 16px;
+}
+
+#root .admin-workspaces-l1238c9 {
+  margin-bottom: 16px;
+}
+
+#root .admin-workspaces-l1241c9 {
+  flex-direction: column;
+}
+
+@media (min-width: 600px) {
+  #root .admin-workspaces-l1241c9 {
+    flex-direction: row;
+  }
+}
+
+#root .admin-workspaces-l1241c9 {
+  gap: 16px;
+}
+
+#root .admin-workspaces-l1262c9 {
+  padding: 16px;
+  border-color: #d32f2f;
+}
+
+#root .admin-workspaces-l1267c11 {
+  color: #d32f2f;
+}
+
+#root .admin-workspaces-l1270c11 {
+  font-weight: 700;
+}
+
+#root .admin-workspaces-l1270c11 {
+  margin-top: 16px;
+}
+
+#root .admin-workspaces-l1273c11 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l1273c11 {
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+#root .admin-workspaces-l1282c17 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l1285c17 {
+  font-weight: 700;
+}
+
+#root .admin-workspaces-l1305c11 {
+  margin-top: 16px;
+  margin-bottom: 16px;
+}
+
+#root .admin-workspaces-l1306c11 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l1306c11 {
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+#root .admin-workspaces-l1317c11 {
+  margin-bottom: 16px;
+}
+
+#root .admin-workspaces-l1325c11 {
+  margin-top: 16px;
+}
+
+#root .admin-workspaces-l1355c11 {
+  margin-bottom: 16px;
+}
+
+#root .admin-workspaces-l1363c11 {
+  margin-top: 16px;
+}
+
+#root .admin-workspaces-l1443c5 {
+  gap: 24px;
+}
+
+#root .admin-workspaces-l1445c9 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l1448c9 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l1456c7 {
+  max-width: 520px;
+}
+
+#root .admin-workspaces-l1501c11 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l1501c11 {
+  padding: 24px;
+}
+
+#root .admin-workspaces-l1587c5 {
+  gap: 24px;
+}
+
+#root .admin-workspaces-l1589c9 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l1592c9 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l1600c7 {
+  max-width: 520px;
+}
+
+#root .admin-workspaces-l1621c17 {
+  cursor: pointer;
+}
+
+#root .admin-workspaces-l1634c21 {
+  gap: 2px;
+}
+
+#root .admin-workspaces-l1643c21 {
+  gap: 2px;
+}
+
+#root .admin-workspaces-l1664c11 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l1664c11 {
+  padding: 24px;
+}
+
+#root .admin-workspaces-l1674c7 {
+  max-width: md;
+}
+
+#root .admin-workspaces-l1678c13 {
+  gap: 24px;
+}
+
+#root .admin-workspaces-l1679c15 {
+  flex-direction: column;
+}
+
+@media (min-width: 600px) {
+  #root .admin-workspaces-l1679c15 {
+    flex-direction: row;
+  }
+}
+
+#root .admin-workspaces-l1679c15 {
+  gap: 16px;
+}
+
+#root .admin-workspaces-l1679c15 {
+  flex-wrap: wrap;
+}
+
+#root .admin-workspaces-l1688c17 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l1697c17 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l1703c17 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l1709c17 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l1709c17 {
+  margin-bottom: 8px;
+}
+
+#root .admin-workspaces-l1825c5 {
+  gap: 24px;
+}
+
+#root .admin-workspaces-l1826c7 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l1832c7 {
+  padding: 16px;
+}
+
+#root .admin-workspaces-l1838c9 {
+  flex-direction: column;
+}
+
+@media (min-width: 600px) {
+  #root .admin-workspaces-l1838c9 {
+    flex-direction: row;
+  }
+}
+
+#root .admin-workspaces-l1838c9 {
+  gap: 16px;
+}
+
+#root .admin-workspaces-l1847c11 {
+  min-width: 150px;
+}
+
+#root .admin-workspaces-l1865c7 {
+  padding: 16px;
+}
+
+#root .admin-workspaces-l1895c11 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l1895c11 {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+#root .admin-workspaces-l1900c7 {
+  padding: 16px;
+}
+
+#root .admin-workspaces-l1901c9 {
+  margin-bottom: 8px;
+}
+
+#root .admin-workspaces-l1905c11 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l1908c13 {
+  flex-direction: row;
+}
+
+#root .admin-workspaces-l1908c13 {
+  justify-content: space-between;
+}
+
+#root .admin-workspaces-l1908c13 {
+  gap: 8px;
+}
+
+#root .admin-workspaces-l1908c13 {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+#root .admin-workspaces-l1994c5 {
+  gap: 24px;
+}
+
+#root .admin-workspaces-l1995c7 {
+  flex-direction: column;
+}
+
+@media (min-width: 600px) {
+  #root .admin-workspaces-l1995c7 {
+    flex-direction: row;
+  }
+}
+
+#root .admin-workspaces-l1995c7 {
+  justify-content: space-between;
+}
+
+#root .admin-workspaces-l1995c7 {
+  gap: 8px;
+}
+
+#root .admin-workspaces-l1997c11 {
+  font-weight: 800;
+}
+
+#root .admin-workspaces-l2000c11 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l2002c9 {
+  flex-direction: row;
+}
+
+#root .admin-workspaces-l2002c9 {
+  gap: 8px;
+}
+
+#root .admin-workspaces-l2013c7 {
+  flex-direction: column;
+}
+
+@media (min-width: 600px) {
+  #root .admin-workspaces-l2013c7 {
+    flex-direction: row;
+  }
+}
+
+#root .admin-workspaces-l2013c7 {
+  gap: 16px;
+}
+
+#root .admin-workspaces-l2014c9 {
+  flex: 1;
+}
+
+#root .admin-workspaces-l2020c13 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l2025c9 {
+  flex: 1;
+}
+
+#root .admin-workspaces-l2031c13 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l2040c9 {
+  margin-bottom: 8px;
+}
+
+#root .admin-workspaces-l2069c5 {
+  padding: 16px;
+}
+
+#root .admin-workspaces-l2088c19 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l2092c17 {
+  min-width: 150px;
+}
+
+#root .admin-workspaces-l2102c21 {
+  display: block;
+}
+
+#root .admin-workspaces-l2126c9 {
+  color: #64748b;
+}
+
+#root .admin-workspaces-l2126c9 {
+  padding-top: 16px;
+  padding-bottom: 16px;
 }

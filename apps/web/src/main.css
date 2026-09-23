@@ -1,0 +1,133 @@
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: #111827;
+  background: #f8fafc;
+  font-family: Cairo, Inter, Tahoma, Arial, sans-serif;
+}
+
+html .MuiPaper-root {
+  background-image: none;
+}
+
+html .MuiButton-root {
+  min-height: 40px;
+  border-radius: 10px;
+  font-weight: 700;
+  text-transform: none;
+}
+
+html .MuiButton-startIcon {
+  margin-inline: 0 8px;
+}
+
+html .MuiButton-endIcon {
+  margin-inline: 8px 0;
+}
+
+html .MuiCard-root {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+html .MuiTableCell-root {
+  direction: inherit;
+  text-align: start;
+}
+
+html .MuiInputLabel-root {
+  transform-origin: top left;
+}
+
+[dir='rtl'] .MuiInputBase-input,
+[dir='rtl'] .MuiSelect-select,
+[dir='rtl'] .MuiTableCell-root {
+  text-align: right;
+}
+
+[dir='rtl'] .MuiOutlinedInput-notchedOutline,
+[dir='rtl'] .MuiOutlinedInput-notchedOutline legend {
+  direction: rtl;
+  text-align: right;
+}
+
+[dir='rtl'] .MuiInputLabel-root,
+[dir='rtl'] .MuiInputLabel-outlined {
+  right: 14px;
+  left: auto;
+  transform: translate(0, 16px) scale(1);
+  transform-origin: top right;
+}
+
+[dir='rtl'] .MuiInputLabel-outlined.MuiInputLabel-sizeSmall {
+  transform: translate(0, 9px) scale(1);
+}
+
+[dir='rtl'] .MuiInputLabel-outlined.MuiInputLabel-shrink {
+  transform: translate(-2px, -9px) scale(0.75);
+}
+
+[dir='rtl'] .MuiFormControl-root .MuiInputLabel-shrink + .MuiOutlinedInput-root legend {
+  margin-inline-start: 6px;
+  padding-inline: 5px;
+}
+
+[dir='ltr'] .MuiSelect-select {
+  padding-right: 44px;
+  padding-left: 16px;
+  text-align: left;
+}
+
+[dir='rtl'] .MuiSelect-select {
+  padding-right: 16px !important;
+  padding-left: 52px !important;
+}
+
+[dir='ltr'] .MuiSelect-icon {
+  right: 14px;
+  left: auto;
+  pointer-events: none;
+}
+
+[dir='rtl'] .MuiSelect-icon {
+  right: auto !important;
+  left: 14px !important;
+  pointer-events: none;
+}
+
+[dir='ltr'] .MuiAutocomplete-inputRoot {
+  padding-right: 42px !important;
+}
+
+[dir='rtl'] .MuiAutocomplete-inputRoot {
+  padding-right: 12px !important;
+  padding-left: 48px !important;
+}
+
+[dir='ltr'] .MuiAutocomplete-endAdornment {
+  right: 10px;
+  left: auto;
+}
+
+[dir='rtl'] .MuiAutocomplete-endAdornment {
+  right: auto !important;
+  left: 10px !important;
+  pointer-events: none;
+}
+
+[dir='rtl'] .MuiAutocomplete-endAdornment button {
+  pointer-events: auto;
+}
+
+[dir='rtl'] .MuiAutocomplete-input {
+  padding-right: 6px !important;
+  padding-left: 8px !important;
+}
+
+[dir='rtl'] .MuiAutocomplete-root .MuiInputLabel-outlined {
+  max-width: calc(100% - 70px);
+}

@@ -219,7 +219,7 @@ function StateBlock({
 }) {
   if (loading)
     return (
-      <Box py={6} textAlign="center" data-testid="admin-loading">
+      <Box data-testid="admin-loading" className="admin-workspaces-l222c7">
         <CircularProgress aria-label={copy.loading} />
       </Box>
     );
@@ -235,7 +235,7 @@ function StateBlock({
         severity="error"
         data-testid="admin-error"
         action={
-          <Button color="inherit" size="small" onClick={onRetry}>
+          <Button size="small" onClick={onRetry} className="admin-workspaces-l238c11">
             {copy.retry}
           </Button>
         }
@@ -306,63 +306,22 @@ export function LoginScreen({
   };
 
   return (
-    <Box
-      minHeight="100vh"
-      bgcolor="background.default"
-      dir={direction}
-      display="grid"
-      sx={{
-        placeItems: 'center',
-        p: 2,
-        backgroundImage: 'radial-gradient(circle at 12% 12%, #e8f0fe, transparent 35%)',
-      }}
-    >
-      <Paper
-        component="main"
-        elevation={0}
-        sx={{
-          p: { xs: 3, sm: 5 },
-          width: 'min(100%, 480px)',
-          border: 1,
-          borderColor: 'divider',
-          borderRadius: 4,
-          boxShadow: '0 18px 55px rgba(15, 23, 42, 0.08)',
-        }}
-      >
-        <Stack component="form" gap={2.5} onSubmit={(event) => void submit(event)}>
-          <Box
-            mb={1}
-            sx={{
-              width: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              textAlign: 'center',
-            }}
-          >
-            <Box
-              sx={{
-                width: 52,
-                height: 52,
-                mb: 2,
-                borderRadius: 3,
-                bgcolor: 'primary.main',
-                color: 'white',
-                display: 'grid',
-                placeItems: 'center',
-                fontWeight: 900,
-                fontSize: 26,
-              }}
-            >
-              W
-            </Box>
-            <Typography variant="h4" component="h1" fontWeight={900} color="primary.main">
+    <Box dir={direction} className="admin-workspaces-l309c5">
+      <Paper component="main" elevation={0} className="admin-workspaces-l320c7">
+        <Stack
+          component="form"
+          onSubmit={(event) => void submit(event)}
+          className="admin-workspaces-l332c9"
+        >
+          <Box className="admin-workspaces-l333c11">
+            <Box className="admin-workspaces-l343c13">W</Box>
+            <Typography variant="h4" component="h1" className="admin-workspaces-l359c13">
               Woo Ops
             </Typography>
-            <Typography variant="h6" component="h2" fontWeight={700} mt={1}>
+            <Typography variant="h6" component="h2" className="admin-workspaces-l362c13">
               {register ? copy.register : copy.signIn}
             </Typography>
-            <Typography variant="body2" color="text.secondary" mt={0.5}>
+            <Typography variant="body2" className="admin-workspaces-l365c13">
               {tr(locale, 'inline.admin.yourUnifiedOrderOperationsWorkspace')}
             </Typography>
           </Box>
@@ -454,69 +413,64 @@ function OverviewWorkspace({
   if (!account && failed)
     return <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />;
   return (
-    <Stack gap={3} data-testid="admin-overview">
+    <Stack data-testid="admin-overview" className="admin-workspaces-l457c5">
       <Box>
-        <Typography variant="h4" component="h1" fontWeight={800}>
+        <Typography variant="h4" component="h1" className="admin-workspaces-l459c9">
           {copy.overview}
         </Typography>
-        <Typography color="text.secondary">{copy.readOnly}</Typography>
+        <Typography className="admin-workspaces-l462c9">{copy.readOnly}</Typography>
       </Box>
       {failed && <Alert severity="warning">{copy.partial}</Alert>}
-      <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
-        <Card variant="outlined" sx={{ flex: 1 }}>
+      <Stack className="admin-workspaces-l465c7">
+        <Card variant="outlined" className="admin-workspaces-l466c9">
           <CardContent>
             <Typography variant="overline">{copy.account}</Typography>
-            <Typography variant="h5" component="p" fontWeight={800}>
+            <Typography variant="h5" component="p" className="admin-workspaces-l469c13">
               {account?.name ?? copy.empty}
             </Typography>
-            <Typography color="text.secondary">
+            <Typography className="admin-workspaces-l472c13">
               {account?.timezone} · {account?.baseCurrency}
             </Typography>
           </CardContent>
         </Card>
-        <Card variant="outlined" sx={{ flex: 1 }}>
+        <Card variant="outlined" className="admin-workspaces-l477c9">
           <CardContent>
             <Typography variant="overline">{copy.queue}</Typography>
-            <Typography variant="h5" component="p" fontWeight={800}>
+            <Typography variant="h5" component="p" className="admin-workspaces-l480c13">
               {health?.health.queue.queued ?? '—'}
             </Typography>
-            <Typography color="text.secondary">
+            <Typography className="admin-workspaces-l483c13">
               {copy.runner}: {health?.runner.running ? copy.connected : 'stopped'}
             </Typography>
           </CardContent>
         </Card>
-        <Card variant="outlined" sx={{ flex: 1 }}>
+        <Card variant="outlined" className="admin-workspaces-l488c9">
           <CardContent>
             <Typography variant="overline">{copy.database}</Typography>
-            <Typography variant="h5" component="p" fontWeight={800}>
+            <Typography variant="h5" component="p" className="admin-workspaces-l491c13">
               {health?.health.database ?? '—'}
             </Typography>
-            <Typography color="text.secondary">
+            <Typography className="admin-workspaces-l494c13">
               Schema {health?.health.schemaVersion ?? '—'}
             </Typography>
           </CardContent>
         </Card>
       </Stack>
-      <Paper variant="outlined" sx={{ p: 2 }}>
-        <Typography variant="h6" component="h2" fontWeight={800} mb={2}>
+      <Paper variant="outlined" className="admin-workspaces-l500c7">
+        <Typography variant="h6" component="h2" className="admin-workspaces-l501c9">
           {copy.connections}
         </Typography>
         {connections.length === 0 ? (
           <Alert severity="info">{copy.noConnections}</Alert>
         ) : (
-          <Stack gap={1.5}>
+          <Stack className="admin-workspaces-l507c11">
             {connections.map((connection) => (
-              <Stack
-                key={connection.id}
-                direction={{ xs: 'column', sm: 'row' }}
-                gap={1}
-                alignItems={{ sm: 'center' }}
-              >
-                <Box flex={1}>
-                  <Typography fontWeight={700}>
+              <Stack key={connection.id} className="admin-workspaces-l509c15">
+                <Box className="admin-workspaces-l515c17">
+                  <Typography className="admin-workspaces-l516c19">
                     {connection.displayName ?? connection.storeUrl}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" className="admin-workspaces-l519c19">
                     {connection.platform} · {connection.syncStatus}
                   </Typography>
                 </Box>
@@ -613,13 +567,13 @@ function ConnectionsWorkspace({
       <StateBlock copy={copy} loading={false} error={false} forbidden onRetry={() => void load()} />
     );
   return (
-    <Stack gap={3} data-testid="connections-workspace">
+    <Stack data-testid="connections-workspace" className="admin-workspaces-l616c5">
       <Box>
-        <Typography variant="h4" component="h1" fontWeight={800}>
+        <Typography variant="h4" component="h1" className="admin-workspaces-l618c9">
           {copy.connections}
         </Typography>
-        <Typography color="text.secondary">{copy.readOnly}</Typography>
-        <Button size="small" onClick={() => void load()} sx={{ mt: 1 }}>
+        <Typography className="admin-workspaces-l621c9">{copy.readOnly}</Typography>
+        <Button size="small" onClick={() => void load()} className="admin-workspaces-l622c9">
           {copy.retry}
         </Button>
       </Box>
@@ -635,13 +589,13 @@ function ConnectionsWorkspace({
         <Paper
           component="form"
           variant="outlined"
-          sx={{ p: 2 }}
           onSubmit={(event) => {
             event.preventDefault();
             void connect();
           }}
+          className="admin-workspaces-l635c9"
         >
-          <Stack direction={{ xs: 'column', sm: 'row' }} gap={2}>
+          <Stack className="admin-workspaces-l644c11">
             <TextField
               fullWidth
               required
@@ -654,7 +608,7 @@ function ConnectionsWorkspace({
               {copy.connect}
             </Button>
           </Stack>
-          <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+          <Typography variant="caption" className="admin-workspaces-l657c11">
             {copy.externalOnly}
           </Typography>
         </Paper>
@@ -662,26 +616,24 @@ function ConnectionsWorkspace({
       {connections.length === 0 ? (
         <Alert severity="info">{copy.noConnections}</Alert>
       ) : (
-        <Stack gap={2}>
+        <Stack className="admin-workspaces-l665c9">
           {connections.map((connection) => (
             <Card key={connection.id} variant="outlined">
               <CardContent>
-                <Stack gap={1.5}>
-                  <Stack
-                    direction={{ xs: 'column', sm: 'row' }}
-                    gap={1}
-                    alignItems={{ sm: 'center' }}
-                  >
-                    <Box flex={1}>
+                <Stack className="admin-workspaces-l669c17">
+                  <Stack className="admin-workspaces-l670c19">
+                    <Box className="admin-workspaces-l675c21">
                       <Typography variant="h6" component="h2">
                         {connection.displayName ?? connection.storeUrl}
                       </Typography>
-                      <Typography color="text.secondary">{connection.storeUrl}</Typography>
+                      <Typography className="admin-workspaces-l679c23">
+                        {connection.storeUrl}
+                      </Typography>
                     </Box>
                     <Chip label={`${connection.status} · ${connection.healthStatus}`} />
                   </Stack>
                   <Divider />
-                  <Stack direction="row" gap={1} flexWrap="wrap">
+                  <Stack className="admin-workspaces-l684c19">
                     <Button
                       size="small"
                       onClick={() =>
@@ -736,7 +688,7 @@ function ConnectionsWorkspace({
                   </Stack>
                   {webhookSetup?.connectionId === connection.id && (
                     <Alert severity="info">
-                      <Stack gap={1}>
+                      <Stack className="admin-workspaces-l739c23">
                         <Typography variant="body2">{copy.webhookInstructions}</Typography>
                         <TextField
                           label="Delivery URL"
@@ -753,7 +705,7 @@ function ConnectionsWorkspace({
                       </Stack>
                     </Alert>
                   )}
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" className="admin-workspaces-l756c19">
                     {connection.syncOrdersCount} orders · {connection.syncCatalogCount} catalog
                     items
                   </Typography>
@@ -863,12 +815,12 @@ function FieldMappingsWorkspace({
       <StateBlock copy={copy} loading={false} error={false} forbidden onRetry={() => void load()} />
     );
   return (
-    <Stack gap={3} data-testid="field-mappings-workspace">
+    <Stack data-testid="field-mappings-workspace" className="admin-workspaces-l866c5">
       <Box>
-        <Typography variant="h4" component="h1" fontWeight={800}>
+        <Typography variant="h4" component="h1" className="admin-workspaces-l868c9">
           {copy.mappings}
         </Typography>
-        <Typography color="text.secondary">{copy.readOnly}</Typography>
+        <Typography className="admin-workspaces-l871c9">{copy.readOnly}</Typography>
       </Box>
       {failed && <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />}
       {message && <Alert severity={message === 'FORBIDDEN' ? 'warning' : 'info'}>{message}</Alert>}
@@ -891,8 +843,8 @@ function FieldMappingsWorkspace({
         <Alert severity="info">{copy.noConnections}</Alert>
       ) : (
         <>
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Typography variant="h6" component="h2" mb={2}>
+          <Paper variant="outlined" className="admin-workspaces-l894c11">
+            <Typography variant="h6" component="h2" className="admin-workspaces-l895c13">
               {copy.fieldCatalog}
             </Typography>
             {catalog.length === 0 ? (
@@ -929,13 +881,13 @@ function FieldMappingsWorkspace({
           <Paper
             component="form"
             variant="outlined"
-            sx={{ p: 2 }}
             onSubmit={(event) => void saveMapping(event)}
+            className="admin-workspaces-l929c11"
           >
-            <Typography variant="h6" component="h2" mb={2}>
+            <Typography variant="h6" component="h2" className="admin-workspaces-l935c13">
               {copy.fieldMappings}
             </Typography>
-            <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
+            <Stack className="admin-workspaces-l938c13">
               <TextField
                 required
                 fullWidth
@@ -950,7 +902,7 @@ function FieldMappingsWorkspace({
                 value={label}
                 onChange={(event) => setLabel(event.target.value)}
               />
-              <FormControl size="small" sx={{ minWidth: 150 }}>
+              <FormControl size="small" className="admin-workspaces-l953c15">
                 <InputLabel id="admin-field-type-label">{copy.type}</InputLabel>
                 <Select
                   labelId="admin-field-type-label"
@@ -984,7 +936,7 @@ function FieldMappingsWorkspace({
           {mappings.length === 0 ? (
             <Alert severity="info">{copy.empty}</Alert>
           ) : (
-            <Paper variant="outlined" sx={{ p: 2 }}>
+            <Paper variant="outlined" className="admin-workspaces-l987c13">
               <TableContainer>
                 <Table size="small" aria-label={copy.fieldMappings}>
                   <TableHead>
@@ -1176,8 +1128,8 @@ function SettingsWorkspace({
       <StateBlock copy={copy} loading={false} error={false} forbidden onRetry={() => void load()} />
     );
   return (
-    <Stack gap={3} data-testid="settings-workspace">
-      <Typography variant="h4" component="h1" fontWeight={800}>
+    <Stack data-testid="settings-workspace" className="admin-workspaces-l1179c5">
+      <Typography variant="h4" component="h1" className="admin-workspaces-l1180c7">
         {copy.settings}
       </Typography>
       {failed && <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />}
@@ -1185,19 +1137,19 @@ function SettingsWorkspace({
       <Paper
         component="form"
         variant="outlined"
-        sx={{ p: 2 }}
         onSubmit={(event) => void save(event)}
+        className="admin-workspaces-l1185c7"
       >
-        <Typography variant="h6" component="h2" mb={2}>
+        <Typography variant="h6" component="h2" className="admin-workspaces-l1191c9">
           {copy.profile}
         </Typography>
-        <Stack gap={2}>
+        <Stack className="admin-workspaces-l1194c9">
           <TextField
             label={copy.accountName}
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
-          <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
+          <Stack className="admin-workspaces-l1200c11">
             <FormControl fullWidth>
               <InputLabel id="admin-locale-label">{copy.locale}</InputLabel>
               <Select
@@ -1224,7 +1176,7 @@ function SettingsWorkspace({
               inputProps={{ maxLength: 3 }}
             />
           </Stack>
-          <Button type="submit" variant="contained" sx={{ alignSelf: 'flex-start' }}>
+          <Button type="submit" variant="contained" className="admin-workspaces-l1227c11">
             {copy.save}
           </Button>
         </Stack>
@@ -1232,13 +1184,13 @@ function SettingsWorkspace({
       <Paper
         component="form"
         variant="outlined"
-        sx={{ p: 2 }}
         onSubmit={(event) => void changePassword(event)}
+        className="admin-workspaces-l1232c7"
       >
-        <Typography variant="h6" component="h2" mb={2}>
+        <Typography variant="h6" component="h2" className="admin-workspaces-l1238c9">
           {copy.password}
         </Typography>
-        <Stack direction={{ xs: 'column', sm: 'row' }} gap={2}>
+        <Stack className="admin-workspaces-l1241c9">
           <TextField
             required
             type="password"
@@ -1261,16 +1213,14 @@ function SettingsWorkspace({
       {role === 'owner' && (
         <Paper
           variant="outlined"
-          sx={{ p: 2, borderColor: 'error.main' }}
           data-testid="account-reset-zone"
+          className="admin-workspaces-l1262c9"
         >
-          <Typography variant="h6" component="h2" color="error.main">
+          <Typography variant="h6" component="h2" className="admin-workspaces-l1267c11">
             {copy.dangerZone}
           </Typography>
-          <Typography fontWeight={700} sx={{ mt: 2 }}>
-            {copy.connectionManagement}
-          </Typography>
-          <Typography color="text.secondary" sx={{ my: 1 }}>
+          <Typography className="admin-workspaces-l1270c11">{copy.connectionManagement}</Typography>
+          <Typography className="admin-workspaces-l1273c11">
             {copy.connectionManagementHelp}
           </Typography>
           {activeConnection && (
@@ -1279,14 +1229,13 @@ function SettingsWorkspace({
                 data-testid="connected-store-identity"
                 className="admin-connected-store__identity"
               >
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" className="admin-workspaces-l1282c17">
                   {copy.connectedStore}
                 </Typography>
                 <Typography
                   data-testid="connected-store-url"
-                  fontWeight={700}
                   dir="ltr"
-                  className="admin-connected-store__url"
+                  className="admin-connected-store__url admin-workspaces-l1285c17"
                 >
                   {activeConnection.displayName ?? activeConnection.storeUrl}
                 </Typography>
@@ -1302,10 +1251,8 @@ function SettingsWorkspace({
               </Button>
             </Stack>
           )}
-          <Divider sx={{ my: 2 }} />
-          <Typography color="text.secondary" sx={{ my: 1 }}>
-            {copy.resetAccountHelp}
-          </Typography>
+          <Divider className="admin-workspaces-l1305c11" />
+          <Typography className="admin-workspaces-l1306c11">{copy.resetAccountHelp}</Typography>
           <Button color="error" variant="outlined" onClick={() => setResetOpen(true)}>
             {copy.resetAccountData}
           </Button>
@@ -1314,7 +1261,7 @@ function SettingsWorkspace({
       <Dialog open={resetOpen} onClose={() => !resetting && closeResetDialog()}>
         <DialogTitle>{copy.resetDialogTitle}</DialogTitle>
         <DialogContent>
-          <Typography sx={{ mb: 2 }}>{copy.resetDialogBody}</Typography>
+          <Typography className="admin-workspaces-l1317c11">{copy.resetDialogBody}</Typography>
           <TextField
             autoFocus
             fullWidth
@@ -1329,7 +1276,7 @@ function SettingsWorkspace({
             label={copy.currentPassword}
             value={resetPassword}
             onChange={(event) => setResetPassword(event.target.value)}
-            sx={{ mt: 2 }}
+            className="admin-workspaces-l1325c11"
           />
         </DialogContent>
         <DialogActions>
@@ -1352,7 +1299,7 @@ function SettingsWorkspace({
       >
         <DialogTitle>{copy.disconnectDialogTitle}</DialogTitle>
         <DialogContent>
-          <Typography sx={{ mb: 2 }}>{copy.disconnectDialogBody}</Typography>
+          <Typography className="admin-workspaces-l1355c11">{copy.disconnectDialogBody}</Typography>
           <TextField
             autoFocus
             fullWidth
@@ -1367,7 +1314,7 @@ function SettingsWorkspace({
             label={copy.currentPassword}
             value={disconnectPassword}
             onChange={(event) => setDisconnectPassword(event.target.value)}
-            sx={{ mt: 2 }}
+            className="admin-workspaces-l1363c11"
           />
         </DialogContent>
         <DialogActions>
@@ -1440,12 +1387,12 @@ function CustomersWorkspace({
   };
   if (loading) return <StateBlock copy={copy} loading error={false} onRetry={() => void load()} />;
   return (
-    <Stack gap={3} data-testid="customers-workspace">
+    <Stack data-testid="customers-workspace" className="admin-workspaces-l1443c5">
       <Box>
-        <Typography variant="h4" component="h1" fontWeight={800}>
+        <Typography variant="h4" component="h1" className="admin-workspaces-l1445c9">
           {tr(locale, 'inline.admin.woocommerceCustomers')}
         </Typography>
-        <Typography color="text.secondary">
+        <Typography className="admin-workspaces-l1448c9">
           {tr(
             locale,
             'inline.admin.customersDerivedFromSynchronizedWoocommerceOrdersWithOrderCountA',
@@ -1457,7 +1404,7 @@ function CustomersWorkspace({
         value={search}
         onChange={(event) => setSearch(event.target.value)}
         label={tr(locale, 'inline.admin.searchCustomers')}
-        sx={{ maxWidth: 520 }}
+        className="admin-workspaces-l1456c7"
       />
       <Paper variant="outlined">
         <TableContainer>
@@ -1498,9 +1445,7 @@ function CustomersWorkspace({
           </Table>
         </TableContainer>
         {visible.length === 0 && (
-          <Typography color="text.secondary" p={3}>
-            {copy.empty}
-          </Typography>
+          <Typography className="admin-workspaces-l1501c11">{copy.empty}</Typography>
         )}
       </Paper>
     </Stack>
@@ -1584,12 +1529,12 @@ function CompleteCustomersWorkspace({
   if (loading && items.length === 0)
     return <StateBlock copy={copy} loading error={false} onRetry={() => void load()} />;
   return (
-    <Stack gap={3} data-testid="customers-workspace">
+    <Stack data-testid="customers-workspace" className="admin-workspaces-l1587c5">
       <Box>
-        <Typography variant="h4" component="h1" fontWeight={800}>
+        <Typography variant="h4" component="h1" className="admin-workspaces-l1589c9">
           {tr(locale, 'inline.admin.woocommerceCustomers')}
         </Typography>
-        <Typography color="text.secondary">
+        <Typography className="admin-workspaces-l1592c9">
           {tr(
             locale,
             'inline.admin.customerDirectoryFromSynchronizedOrdersIncludingContactAddresses',
@@ -1601,7 +1546,7 @@ function CompleteCustomersWorkspace({
         value={search}
         onChange={(event) => setSearch(event.target.value)}
         label={tr(locale, 'inline.admin.searchNameEmailOrPhone')}
-        sx={{ maxWidth: 520 }}
+        className="admin-workspaces-l1600c7"
       />
       {detailsLoading && <LinearProgress aria-label={copy.loading} />}
       <Paper variant="outlined">
@@ -1623,15 +1568,15 @@ function CompleteCustomersWorkspace({
                   hover
                   tabIndex={0}
                   role="button"
-                  sx={{ cursor: 'pointer' }}
                   onClick={() => void openCustomer(item)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') void openCustomer(item);
                   }}
+                  className="admin-workspaces-l1621c17"
                 >
                   <TableCell>{item.name ?? tr(locale, 'inline.admin.unnamedCustomer')}</TableCell>
                   <TableCell>
-                    <Stack gap={0.25}>
+                    <Stack className="admin-workspaces-l1634c21">
                       <span dir="ltr">{item.email ?? '—'}</span>
                       <span dir="ltr">{item.phone ?? '—'}</span>
                     </Stack>
@@ -1640,7 +1585,7 @@ function CompleteCustomersWorkspace({
                     <span dir="ltr">{item.orderCount}</span>
                   </TableCell>
                   <TableCell>
-                    <Stack gap={0.25}>
+                    <Stack className="admin-workspaces-l1643c21">
                       {item.currencies.map((entry) => (
                         <span dir="ltr" key={entry.currency}>
                           {money(entry.totalSpendMinor, entry.currency)}
@@ -1661,9 +1606,7 @@ function CompleteCustomersWorkspace({
           </Table>
         </TableContainer>
         {visible.length === 0 && (
-          <Typography color="text.secondary" p={3}>
-            {copy.empty}
-          </Typography>
+          <Typography className="admin-workspaces-l1664c11">{copy.empty}</Typography>
         )}
       </Paper>
       {nextCursor && (
@@ -1671,12 +1614,17 @@ function CompleteCustomersWorkspace({
           {tr(locale, 'inline.admin.loadMore')}
         </Button>
       )}
-      <Dialog open={selected !== null} onClose={() => setSelected(null)} fullWidth maxWidth="md">
+      <Dialog
+        open={selected !== null}
+        onClose={() => setSelected(null)}
+        fullWidth
+        className="admin-workspaces-l1674c7"
+      >
         <DialogTitle>{selected?.name ?? tr(locale, 'inline.admin.customerDetails')}</DialogTitle>
         {selected && (
           <DialogContent dividers>
-            <Stack gap={3}>
-              <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} flexWrap="wrap">
+            <Stack className="admin-workspaces-l1678c13">
+              <Stack className="admin-workspaces-l1679c15">
                 <Chip label={`${tr(locale, 'inline.admin.orders')}: ${selected.orderCount}`} />
                 {selected.externalCustomerId && (
                   <Chip label={`Woo ID: ${selected.externalCustomerId}`} />
@@ -1685,7 +1633,9 @@ function CompleteCustomersWorkspace({
                 <Typography dir="ltr">{selected.phone ?? '—'}</Typography>
               </Stack>
               <Box>
-                <Typography fontWeight={800}>{tr(locale, 'inline.admin.spend')}</Typography>
+                <Typography className="admin-workspaces-l1688c17">
+                  {tr(locale, 'inline.admin.spend')}
+                </Typography>
                 {selected.currencies.map((entry) => (
                   <Typography dir="ltr" key={entry.currency}>
                     {money(entry.totalSpendMinor, entry.currency)} · {entry.orderCount}{' '}
@@ -1694,19 +1644,19 @@ function CompleteCustomersWorkspace({
                 ))}
               </Box>
               <Box>
-                <Typography fontWeight={800}>
+                <Typography className="admin-workspaces-l1697c17">
                   {tr(locale, 'inline.admin.billingAddress')}
                 </Typography>
                 <Typography>{addressText(selected.billing) || '—'}</Typography>
               </Box>
               <Box>
-                <Typography fontWeight={800}>
+                <Typography className="admin-workspaces-l1703c17">
                   {tr(locale, 'inline.admin.shippingAddress')}
                 </Typography>
                 <Typography>{addressText(selected.shipping) || '—'}</Typography>
               </Box>
               <Box>
-                <Typography fontWeight={800} mb={1}>
+                <Typography className="admin-workspaces-l1709c17">
                   {tr(locale, 'inline.admin.recentOrders')}
                 </Typography>
                 <TableContainer>
@@ -1822,8 +1772,8 @@ function MembersWorkspace({
       <StateBlock copy={copy} loading={false} error={false} forbidden onRetry={() => void load()} />
     );
   return (
-    <Stack gap={3} data-testid="members-workspace">
-      <Typography variant="h4" component="h1" fontWeight={800}>
+    <Stack data-testid="members-workspace" className="admin-workspaces-l1825c5">
+      <Typography variant="h4" component="h1" className="admin-workspaces-l1826c7">
         {copy.membersTitle}
       </Typography>
       <Alert severity="info">{copy.membersHelper}</Alert>
@@ -1832,10 +1782,10 @@ function MembersWorkspace({
       <Paper
         component="form"
         variant="outlined"
-        sx={{ p: 2 }}
         onSubmit={(event) => void invite(event)}
+        className="admin-workspaces-l1832c7"
       >
-        <Stack direction={{ xs: 'column', sm: 'row' }} gap={2}>
+        <Stack className="admin-workspaces-l1838c9">
           <TextField
             required
             type="email"
@@ -1844,7 +1794,7 @@ function MembersWorkspace({
             value={email}
             onChange={(event) => setEmail(event.target.value)}
           />
-          <FormControl sx={{ minWidth: 150 }}>
+          <FormControl className="admin-workspaces-l1847c11">
             <InputLabel id="member-role-label">{copy.role}</InputLabel>
             <Select
               labelId="member-role-label"
@@ -1862,7 +1812,7 @@ function MembersWorkspace({
           </Button>
         </Stack>
       </Paper>
-      <Paper variant="outlined" sx={{ p: 2 }}>
+      <Paper variant="outlined" className="admin-workspaces-l1865c7">
         <TableContainer>
           <Table size="small" aria-label={copy.membersTitle}>
             <TableHead>
@@ -1892,26 +1842,18 @@ function MembersWorkspace({
           </Table>
         </TableContainer>
         {members.length === 0 && (
-          <Typography color="text.secondary" py={2}>
-            {copy.empty}
-          </Typography>
+          <Typography className="admin-workspaces-l1895c11">{copy.empty}</Typography>
         )}
       </Paper>
-      <Paper variant="outlined" sx={{ p: 2 }}>
-        <Typography variant="h6" component="h2" mb={1}>
+      <Paper variant="outlined" className="admin-workspaces-l1900c7">
+        <Typography variant="h6" component="h2" className="admin-workspaces-l1901c9">
           {copy.pendingInvitations}
         </Typography>
         {invitations.length === 0 ? (
-          <Typography color="text.secondary">{copy.empty}</Typography>
+          <Typography className="admin-workspaces-l1905c11">{copy.empty}</Typography>
         ) : (
           invitations.map((invitation) => (
-            <Stack
-              key={invitation.id}
-              direction="row"
-              justifyContent="space-between"
-              gap={1}
-              py={1}
-            >
+            <Stack key={invitation.id} className="admin-workspaces-l1908c13">
               <span>{invitation.email}</span>
               <Chip
                 size="small"
@@ -1991,15 +1933,15 @@ function OperationsWorkspace({
   };
   if (loading) return <StateBlock copy={copy} loading error={false} onRetry={() => void load()} />;
   return (
-    <Stack gap={3} data-testid="operations-workspace">
-      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1}>
+    <Stack data-testid="operations-workspace" className="admin-workspaces-l1994c5">
+      <Stack className="admin-workspaces-l1995c7">
         <Box>
-          <Typography variant="h4" component="h1" fontWeight={800}>
+          <Typography variant="h4" component="h1" className="admin-workspaces-l1997c11">
             {copy.operations}
           </Typography>
-          <Typography color="text.secondary">{copy.readOnly}</Typography>
+          <Typography className="admin-workspaces-l2000c11">{copy.readOnly}</Typography>
         </Box>
-        <Stack direction="row" gap={1}>
+        <Stack className="admin-workspaces-l2002c9">
           <Button variant="outlined" onClick={() => void runMaintenance()}>
             {copy.runMaintenance}
           </Button>
@@ -2010,25 +1952,25 @@ function OperationsWorkspace({
       </Stack>
       {failed && <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />}
       {message && <Alert severity="info">{message}</Alert>}
-      <Stack direction={{ xs: 'column', sm: 'row' }} gap={2}>
-        <Card variant="outlined" sx={{ flex: 1 }}>
+      <Stack className="admin-workspaces-l2013c7">
+        <Card variant="outlined" className="admin-workspaces-l2014c9">
           <CardContent>
             <Typography variant="overline">{copy.usage}</Typography>
             <Typography variant="h5" component="p">
               {usage?.total ?? 0}
             </Typography>
-            <Typography color="text.secondary">
+            <Typography className="admin-workspaces-l2020c13">
               {usage?.running ?? 0} running · {usage?.failed ?? 0} failed
             </Typography>
           </CardContent>
         </Card>
-        <Card variant="outlined" sx={{ flex: 1 }}>
+        <Card variant="outlined" className="admin-workspaces-l2025c9">
           <CardContent>
             <Typography variant="overline">{copy.queue}</Typography>
             <Typography variant="h5" component="p">
               {health?.health.queue.queued ?? 0}
             </Typography>
-            <Typography color="text.secondary">
+            <Typography className="admin-workspaces-l2031c13">
               {health?.health.queue.deadLettered ?? 0} dead letters · {health?.runner.active ?? 0}{' '}
               active
             </Typography>
@@ -2037,7 +1979,7 @@ function OperationsWorkspace({
       </Stack>
       <JobTable copy={copy} jobs={jobs} onAction={jobAction} emptyText={copy.noJobs} />
       <Box>
-        <Typography variant="h6" component="h2" mb={1}>
+        <Typography variant="h6" component="h2" className="admin-workspaces-l2040c9">
           {copy.deadLetters}
         </Typography>
         <JobTable
@@ -2066,7 +2008,7 @@ function JobTable({
   deadLetters?: boolean;
 }) {
   return (
-    <Paper variant="outlined" sx={{ p: 2 }}>
+    <Paper variant="outlined" className="admin-workspaces-l2069c5">
       <TableContainer>
         <Table size="small" aria-label={copy.jobs}>
           <TableHead>
@@ -2085,11 +2027,11 @@ function JobTable({
                 </TableCell>
                 <TableCell>
                   <Typography variant="body2">{job.type}</Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" className="admin-workspaces-l2088c19">
                     {job.id}
                   </Typography>
                 </TableCell>
-                <TableCell sx={{ minWidth: 150 }}>
+                <TableCell className="admin-workspaces-l2092c17">
                   <LinearProgress
                     variant="determinate"
                     value={Math.min(100, job.progress)}
@@ -2099,7 +2041,7 @@ function JobTable({
                     {job.progress}% · {job.attempts}/{job.maxAttempts}
                   </Typography>
                   {job.lastError && (
-                    <Typography variant="caption" color="error" display="block">
+                    <Typography variant="caption" color="error">
                       {job.lastError}
                     </Typography>
                   )}
@@ -2123,9 +2065,7 @@ function JobTable({
         </Table>
       </TableContainer>
       {jobs.length === 0 && (
-        <Typography color="text.secondary" py={2}>
-          {emptyText}
-        </Typography>
+        <Typography className="admin-workspaces-l2126c9">{emptyText}</Typography>
       )}
     </Paper>
   );
