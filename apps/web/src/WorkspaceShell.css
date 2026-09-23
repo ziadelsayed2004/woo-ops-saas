@@ -1,0 +1,338 @@
+#root .workspace-shell-l94c5 {
+  height: 100%;
+}
+
+#root .workspace-shell-l94c5 {
+  background-color: #fff;
+}
+
+#root .workspace-shell-l103c9 {
+  background-color: #720eec;
+  width: 40px;
+  height: 40px;
+  font-weight: 900;
+}
+
+#root .workspace-shell-l110c11 {
+  min-width: 0;
+}
+
+#root .workspace-shell-l111c13 {
+  font-weight: 900;
+}
+
+#root .workspace-shell-l111c13 {
+  line-height: 1.1;
+}
+
+#root .workspace-shell-l114c13 {
+  color: #64748b;
+}
+
+#root .workspace-shell-l114c13 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#root .workspace-shell-l121c7 {
+  overflow-y: auto;
+  flex: 1;
+  padding-left: 10px;
+  padding-right: 10px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+#root .workspace-shell-l123c11 {
+  margin-bottom: 12px;
+}
+
+#root .workspace-shell-l125c15 {
+  color: #64748b;
+}
+
+#root .workspace-shell-l125c15 {
+  font-weight: 800;
+}
+
+#root .workspace-shell-l125c15 {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+#root .workspace-shell-l166c25 {
+  min-width: 0;
+  color: inherit;
+  justify-content: center;
+}
+
+#root .workspace-shell-l191c7 {
+  padding: 10px;
+}
+
+#root .workspace-shell-l213c17 {
+  color: #64748b;
+}
+
+#root .workspace-shell-l213c17 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#root .workspace-shell-l213c17 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#root .workspace-shell-l225c15 {
+  display: inline-flex;
+}
+
+#root .workspace-shell-l225c15 {
+  flex-shrink: 0;
+}
+
+#root .workspace-shell-l242c11 {
+  color: #64748b;
+}
+
+#root .workspace-shell-l242c11 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#root .workspace-shell-l242c11 {
+  display: block;
+  padding-left: 10px;
+  padding-right: 10px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  background-color: #f8fafc;
+  border-radius: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#root .workspace-shell-l266c5 {
+  min-height: 100vh;
+}
+
+#root .workspace-shell-l266c5 {
+  background-color: #f8fafc;
+}
+
+#root .workspace-shell-l279c9 {
+  min-height: 72px !important;
+  gap: 8px;
+}
+
+@media (min-width: 900px) {
+  #root .workspace-shell-l280c11 {
+    display: none;
+  }
+}
+
+#root .workspace-shell-l287c11 {
+  flex: 1;
+}
+
+#root .workspace-shell-l288c11 {
+  display: none;
+}
+
+@media (min-width: 600px) {
+  #root .workspace-shell-l288c11 {
+    display: inline-flex;
+  }
+}
+
+#root .workspace-shell-l296c11 .MuiButton-startIcon {
+  margin: 0;
+}
+
+#root .workspace-shell-l296c11 {
+  gap: 6px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+#root .workspace-shell-l305c13 {
+  color: inherit;
+}
+
+#root .workspace-shell-l347c9 {
+  min-height: 72px !important;
+}
+
+#root .workspace-shell-l348c9 {
+  width: 100%;
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#root .workspace-shell-l348c9 {
+  padding-left: 16px;
+  padding-right: 16px;
+  padding-top: 20px;
+  padding-bottom: 20px;
+}
+
+@media (min-width: 600px) {
+  #root .workspace-shell-l348c9 {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
+
+@media (min-width: 1200px) {
+  #root .workspace-shell-l348c9 {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+}
+
+@media (min-width: 900px) {
+  #root .workspace-shell-l348c9 {
+    padding-top: 32px;
+    padding-bottom: 32px;
+  }
+}
+#root .workspace-shell__brand {
+  min-height: 72px !important;
+  gap: 12px;
+  padding-inline: 16px;
+}
+
+@media (min-width: 600px) {
+  #root .workspace-shell__brand {
+    padding-inline: 24px;
+  }
+}
+
+#root .workspace-shell__brand--collapsed {
+  padding-inline: 12px;
+}
+
+#root .workspace-shell__navigation-item {
+  min-height: 46px;
+  margin-block: 3.2px;
+  padding-inline: 14px;
+  border-radius: 36px;
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  text-align: start;
+}
+
+#root .workspace-shell__navigation-item--collapsed {
+  justify-content: center;
+  padding-inline: 12px;
+}
+
+#root .workspace-shell__navigation-item.Mui-selected {
+  color: #4d0a9e;
+  background-color: #f1e8ff;
+}
+
+#root .workspace-shell__item-text {
+  margin: 0;
+  text-align: start;
+}
+
+#root .workspace-shell__account-toggle {
+  display: flex;
+  justify-content: space-between;
+  min-width: 0;
+  width: 100%;
+  min-height: 48px;
+  padding-inline: 12px;
+  gap: 8px;
+  border-color: #e5e7eb;
+  background-color: #f8fafc;
+}
+
+#root .workspace-shell__account-toggle--collapsed {
+  justify-content: center;
+  padding-inline: 8px;
+  background-color: transparent;
+}
+
+#root .workspace-shell__app-bar {
+  border-bottom: 1px solid #e5e7eb;
+  transition:
+    width 225ms cubic-bezier(0.4, 0, 0.6, 1),
+    margin 225ms cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+#root .workspace-shell__mobile-drawer {
+  display: block;
+}
+
+#root .workspace-shell__mobile-drawer .MuiDrawer-paper {
+  width: 272px;
+}
+
+#root .workspace-shell__desktop-drawer {
+  display: none;
+  flex-shrink: 0;
+}
+
+#root .workspace-shell__drawer--expanded,
+#root .workspace-shell__drawer--expanded .MuiDrawer-paper {
+  width: 272px;
+}
+
+#root .workspace-shell__drawer--collapsed,
+#root .workspace-shell__drawer--collapsed .MuiDrawer-paper {
+  width: 76px;
+}
+
+#root .workspace-shell__desktop-drawer .MuiDrawer-paper {
+  box-sizing: border-box;
+  overflow-x: hidden;
+  transition: width 225ms cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+#root .workspace-shell__main {
+  min-width: 0;
+  transition: margin 225ms cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+@media (min-width: 900px) {
+  #root .workspace-shell__mobile-drawer {
+    display: none;
+  }
+
+  #root .workspace-shell__desktop-drawer {
+    display: block;
+  }
+
+  [dir='rtl'] .workspace-shell__offset--expanded {
+    margin-right: 272px;
+  }
+
+  [dir='ltr'] .workspace-shell__offset--expanded {
+    margin-left: 272px;
+  }
+
+  [dir='rtl'] .workspace-shell__offset--collapsed {
+    margin-right: 76px;
+  }
+
+  [dir='ltr'] .workspace-shell__offset--collapsed {
+    margin-left: 76px;
+  }
+
+  #root .workspace-shell__app-bar.workspace-shell__offset--expanded {
+    width: calc(100% - 272px);
+  }
+
+  #root .workspace-shell__app-bar.workspace-shell__offset--collapsed {
+    width: calc(100% - 76px);
+  }
+}

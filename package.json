@@ -29,6 +29,7 @@
     "typecheck": "node tools/run-workspaces.mjs build && node tools/run-workspaces.mjs typecheck",
     "lint": "node tools/run-workspaces.mjs build && node tools/run-workspaces.mjs lint",
     "format:check": "prettier --check \"apps/**/*.{ts,tsx,json,html}\" \"packages/**/*.{ts,json}\" \"tools/**/*.mjs\" \"tests/**/*.{ts,tsx,js}\" playwright.config.ts package.json tsconfig.base.json README.md .github/workflows/ci.yml",
+    "styles:check": "node tools/check-web-styles.mjs",
     "test:unit": "node tools/run-tests.mjs unit",
     "test:integration": "node tools/run-tests.mjs integration",
     "test:security": "node tools/run-tests.mjs security",

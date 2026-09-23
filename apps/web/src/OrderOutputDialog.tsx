@@ -1,3 +1,4 @@
+import './OrderOutputDialog.css';
 import { useState } from 'react';
 import {
   Box,
@@ -49,15 +50,15 @@ export function OrderOutputDialog({ open, locale, count, onClose, onExcel, onDoc
       open={open}
       onClose={onClose}
       fullWidth
-      maxWidth="sm"
       aria-labelledby="order-output-title"
       PaperProps={{ dir: locale === 'ar' ? 'rtl' : 'ltr', sx: { borderRadius: '12px' } }}
+      className="order-output-dialog-l48c5"
     >
-      <DialogTitle id="order-output-title" sx={{ pb: 1 }}>
+      <DialogTitle id="order-output-title" className="order-output-dialog-l56c7">
         {copy.title}
       </DialogTitle>
       <DialogContent>
-        <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
+        <Typography variant="body2" className="order-output-dialog-l60c9">
           {tr(locale, 'outputDialog.selectedOrders', { count })}
         </Typography>
         <Tabs
@@ -65,7 +66,7 @@ export function OrderOutputDialog({ open, locale, count, onClose, onExcel, onDoc
           onChange={(_event, value: 'download' | 'print') => setMode(value)}
           variant="fullWidth"
           aria-label={copy.title}
-          sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
+          className="order-output-dialog-l63c9"
         >
           <Tab
             id="output-download-tab"
@@ -80,13 +81,16 @@ export function OrderOutputDialog({ open, locale, count, onClose, onExcel, onDoc
             label={copy.print}
           />
         </Tabs>
-        <Stack id="output-panel" role="tabpanel" aria-labelledby={`output-${mode}-tab`} gap={1.5}>
+        <Stack
+          id="output-panel"
+          role="tabpanel"
+          aria-labelledby={`output-${mode}-tab`}
+          className="order-output-dialog-l83c9"
+        >
           {mode === 'download' && (
-            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: 'grey.50' }}>
-              <Typography fontWeight={700} sx={{ mb: 1 }}>
-                {copy.excelTables}
-              </Typography>
-              <Stack direction="row" gap={1} flexWrap="wrap">
+            <Paper variant="outlined" className="order-output-dialog-l85c13">
+              <Typography className="order-output-dialog-l86c15">{copy.excelTables}</Typography>
+              <Stack className="order-output-dialog-l89c15">
                 <Button
                   variant="outlined"
                   onClick={() => {
@@ -109,17 +113,16 @@ export function OrderOutputDialog({ open, locale, count, onClose, onExcel, onDoc
             </Paper>
           )}
           {documents.map((item) => (
-            <Paper key={item.action} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-              <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
+            <Paper key={item.action} variant="outlined" className="order-output-dialog-l112c13">
+              <Stack className="order-output-dialog-l113c15">
                 <Box>
-                  <Typography fontWeight={700}>{item.title}</Typography>
-                  <Typography color="text.secondary" variant="body2">
+                  <Typography className="order-output-dialog-l115c19">{item.title}</Typography>
+                  <Typography variant="body2" className="order-output-dialog-l116c19">
                     {item.description}
                   </Typography>
                 </Box>
                 <Button
                   variant={mode === 'print' ? 'contained' : 'outlined'}
-                  sx={{ flexShrink: 0, minWidth: 95 }}
                   aria-label={
                     item.action === 'generate-invoice'
                       ? mode === 'print'
@@ -137,13 +140,14 @@ export function OrderOutputDialog({ open, locale, count, onClose, onExcel, onDoc
                     onClose();
                     onDocument(item.action, mode === 'print');
                   }}
+                  className="order-output-dialog-l120c17"
                 >
                   {mode === 'print' ? copy.print : copy.pdf}
                 </Button>
               </Stack>
             </Paper>
           ))}
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" className="order-output-dialog-l146c11">
             {mode === 'print' ? copy.printHint : copy.downloadHint}
           </Typography>
         </Stack>
