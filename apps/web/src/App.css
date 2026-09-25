@@ -380,12 +380,16 @@
   gap: 20px;
 }
 
-.order-detail__section {
+.order-detail .app-section {
   min-width: 0;
 }
 
-.order-detail__section-title {
+#root .app-section__title,
+.order-detail .app-section__title {
   font-weight: 800;
+}
+
+.order-detail .app-section__title {
   padding-bottom: 6px;
   border-bottom: 1px solid #e5e7eb;
 }

@@ -1142,8 +1142,8 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Box className="order-detail__section">
-      <Typography variant="subtitle1" gutterBottom className="order-detail__section-title">
+    <Box className="app-section">
+      <Typography variant="subtitle1" gutterBottom className="app-section__title">
         {title}
       </Typography>
       {children}
