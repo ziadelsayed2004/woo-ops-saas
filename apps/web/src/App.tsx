@@ -1129,11 +1129,11 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <Stack className="app-l1164c5">
-      <Typography variant="body2" className="app-l1165c7">
+    <Stack className="order-detail__fact">
+      <Typography variant="body2" className="order-detail__fact-label">
         {label}
       </Typography>
-      <Typography variant="body2" dir="auto" className="app-l1168c7">
+      <Typography variant="body2" dir="auto" className="order-detail__fact-value">
         {value}
       </Typography>
     </Stack>
@@ -1142,8 +1142,8 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Box>
-      <Typography variant="subtitle1" gutterBottom className="app-l1178c7">
+    <Box className="order-detail__section">
+      <Typography variant="subtitle1" gutterBottom className="order-detail__section-title">
         {title}
       </Typography>
       {children}
@@ -1152,7 +1152,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function EmptyValue({ label }: { label: string }) {
-  return <Typography className="app-l1187c10">{label}</Typography>;
+  return <Typography className="order-detail__empty">{label}</Typography>;
 }
 
 function Address({
@@ -1197,11 +1197,15 @@ function HistoryList({
         <EmptyValue label={empty} />
       ) : (
         entries.map((entry, index) => (
-          <Paper key={String(entry.id ?? index)} variant="outlined" className="app-l1232c11">
+          <Paper
+            key={String(entry.id ?? index)}
+            variant="outlined"
+            className="order-detail__history-entry"
+          >
             <Typography variant="body2">
               {valueText(entry.action ?? entry.type ?? entry.status)}
             </Typography>
-            <Typography variant="caption" className="app-l1236c13">
+            <Typography variant="caption" className="order-detail__history-date">
               {valueText(entry.createdAt ?? entry.created_at)}
             </Typography>
           </Paper>
@@ -1276,9 +1280,9 @@ function OrderDetail({
   };
 
   return (
-    <Stack role="document" aria-labelledby="order-detail-title" className="app-l1311c5">
-      <Stack className="app-l1312c7">
-        <Typography id="order-detail-title" variant="h5" className="app-l1313c9">
+    <Stack role="document" aria-labelledby="order-detail-title" className="order-detail">
+      <Stack className="order-detail__header">
+        <Typography id="order-detail-title" variant="h5" className="order-detail__title">
           {t.details} <span dir="ltr">#{valueText(order.orderNumber)}</span>
         </Typography>
         <Tooltip title={t.close}>
@@ -1287,7 +1291,7 @@ function OrderDetail({
           </IconButton>
         </Tooltip>
       </Stack>
-      <Stack className="app-l1322c7">
+      <Stack className="order-detail__badges">
         <Chip label={order.origin === 'manual' ? t.originManual : t.originWoo} />
         <Chip label={valueText(order.remoteStatus)} variant="outlined" />
         <Chip
@@ -1305,6 +1309,7 @@ function OrderDetail({
         variant="scrollable"
         scrollButtons="auto"
         aria-label={t.details}
+        className="order-detail__tabs"
       >
         {tabLabels.map((label, index) => (
           <Tab
@@ -1315,9 +1320,14 @@ function OrderDetail({
           />
         ))}
       </Tabs>
-      <Box role="tabpanel" id={`order-tabpanel-${tab}`} aria-labelledby={`order-tab-${tab}`}>
+      <Box
+        role="tabpanel"
+        id={`order-tabpanel-${tab}`}
+        aria-labelledby={`order-tab-${tab}`}
+        className="order-detail__panel"
+      >
         {tab === 0 && (
-          <Stack className="app-l1352c11">
+          <Stack className="order-detail__panel-sections">
             <Section title={t.remote}>
               <Fact label={t.orderNumber} value={valueText(order.orderNumber)} />
               <Fact label={t.sourceId} value={valueText(order.externalOrderId)} />
@@ -1380,7 +1390,7 @@ function OrderDetail({
           </Section>
         )}
         {tab === 2 && (
-          <Stack className="app-l1415c11">
+          <Stack className="order-detail__panel-sections">
             <Section title={t.customer}>
               <Fact label={t.externalCustomer} value={valueText(order.externalCustomerId)} />
               <Fact label={t.customer} value={orderCustomerName(order)} />
@@ -1397,7 +1407,7 @@ function OrderDetail({
           </Stack>
         )}
         {tab === 3 && (
-          <Stack className="app-l1432c11">
+          <Stack className="order-detail__panel-sections">
             <Section title={t.payment}>
               <Fact
                 label={t.method}
@@ -1491,13 +1501,13 @@ function OrderDetail({
           </Stack>
         )}
         {tab === 4 && (
-          <Stack className="app-l1526c11">
+          <Stack className="order-detail__panel-sections">
             {workflowMessage && <Alert severity="success">{workflowMessage}</Alert>}
             {order.origin === 'woo' && (
               <Button
                 variant="outlined"
                 onClick={() => void requestResync()}
-                className="app-l1529c15"
+                className="order-detail__resync"
               >
                 {t.resync}
               </Button>
@@ -4883,7 +4893,7 @@ export function App({
         open={Boolean(selected)}
         onClose={() => setSelected(null)}
         aria-labelledby="order-detail-title"
-        PaperProps={{ sx: { width: { xs: '100%', sm: 560 }, p: 3 } }}
+        PaperProps={{ className: 'order-detail-drawer__paper', dir: direction }}
       >
         {selected && (
           <OrderDetail

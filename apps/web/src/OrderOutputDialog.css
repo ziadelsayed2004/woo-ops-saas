@@ -1,96 +1,120 @@
-#root .order-output-dialog-l48c5 {
-  max-width: sm;
+.MuiDialog-paper.order-output-dialog__paper {
+  width: min(calc(100% - 32px), 640px);
+  max-width: 640px;
+  max-height: min(90dvh, 820px);
+  border-radius: 12px;
 }
 
-#root .order-output-dialog-l56c7 {
-  padding-bottom: 8px;
+.MuiDialogTitle-root.order-output-dialog__title {
+  padding: 24px 24px 8px;
+  font-weight: 800;
 }
 
-#root .order-output-dialog-l60c9 {
+.MuiDialogContent-root.order-output-dialog__content {
+  padding: 8px 24px 16px;
+}
+
+.order-output-dialog__summary {
   color: #64748b;
-}
-
-#root .order-output-dialog-l60c9 {
   margin-bottom: 16px;
 }
 
-#root .order-output-dialog-l63c9 {
-  margin-bottom: 16px;
+.order-output-dialog__tabs {
   border-bottom: 1px solid #e5e7eb;
-  border-color: #e5e7eb;
+  margin-bottom: 20px;
 }
 
-#root .order-output-dialog-l83c9 {
+.order-output-dialog__choices {
   gap: 12px;
 }
 
-#root .order-output-dialog-l85c13 {
-  padding: 16px;
-  border-radius: 24px;
-  background-color: #fafafa;
-  margin-top: 16px;
+.order-output-dialog__option {
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: #fff;
 }
 
-#root .order-output-dialog-l85c13 button {
-  margin: 8px 0;
-}
-
-#root .order-output-dialog-l86c15 {
+.order-output-dialog__option-title {
   font-weight: 700;
+  line-height: 1.5;
 }
 
-#root .order-output-dialog-l86c15 {
-  margin-bottom: 8px;
-}
-
-#root .order-output-dialog-l89c15 {
+.MuiStack-root.order-output-dialog__excel-actions {
   flex-direction: row;
-}
-
-#root .order-output-dialog-l89c15 {
-  gap: 8px;
-}
-
-#root .order-output-dialog-l89c15 {
   flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
 }
 
-#root .order-output-dialog-l112c13 {
-  padding: 16px;
-  border-radius: 24px;
-  margin-top: 16px;
+.order-output-dialog__excel-actions > .MuiButton-root {
+  margin: 0;
 }
 
-#root .order-output-dialog-l113c15 {
+.MuiStack-root.order-output-dialog__document-row {
   flex-direction: row;
-}
-
-#root .order-output-dialog-l113c15 {
   align-items: center;
-}
-
-#root .order-output-dialog-l113c15 {
   justify-content: space-between;
-}
-
-#root .order-output-dialog-l113c15 {
   gap: 16px;
 }
 
-#root .order-output-dialog-l115c19 {
-  font-weight: 700;
+.order-output-dialog__document-copy {
+  flex: 1;
+  min-width: 0;
 }
 
-#root .order-output-dialog-l116c19 {
+.order-output-dialog__description {
   color: #64748b;
+  overflow-wrap: anywhere;
 }
 
-#root .order-output-dialog-l120c17 {
-  flex-shrink: 0;
-  min-width: 95px;
+.order-output-dialog__document-action {
+  flex: 0 0 auto;
+  min-width: 96px;
 }
 
-#root .order-output-dialog-l146c11 {
+.order-output-dialog__hint {
   color: #64748b;
-  margin-top: 8px;
+  margin-top: 4px;
+}
+
+.MuiDialogActions-root.order-output-dialog__footer {
+  padding: 8px 24px 16px;
+}
+
+@media (max-width: 520px) {
+  .MuiDialog-paper.order-output-dialog__paper {
+    width: calc(100% - 24px);
+    margin: 12px;
+    max-height: calc(100dvh - 24px);
+  }
+
+  .MuiDialogTitle-root.order-output-dialog__title {
+    padding: 20px 16px 8px;
+  }
+
+  .MuiDialogContent-root.order-output-dialog__content {
+    padding: 8px 16px 12px;
+  }
+
+  .order-output-dialog__option {
+    padding: 14px;
+  }
+
+  .MuiStack-root.order-output-dialog__document-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .order-output-dialog__document-action {
+    width: 100%;
+  }
+
+  .order-output-dialog__excel-actions > .MuiButton-root {
+    flex: 1 1 150px;
+  }
+
+  .MuiDialogActions-root.order-output-dialog__footer {
+    padding: 8px 16px 12px;
+  }
 }
