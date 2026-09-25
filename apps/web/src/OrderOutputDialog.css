@@ -28,6 +28,11 @@
   padding: 16px;
   border-radius: 24px;
   background-color: #fafafa;
+  margin-top: 16px;
+}
+
+#root .order-output-dialog-l85c13 button {
+  margin: 8px 0;
 }
 
 #root .order-output-dialog-l86c15 {
@@ -53,6 +58,7 @@
 #root .order-output-dialog-l112c13 {
   padding: 16px;
   border-radius: 24px;
+  margin-top: 16px;
 }
 
 #root .order-output-dialog-l113c15 {
@@ -86,4 +92,5 @@
 
 #root .order-output-dialog-l146c11 {
   color: #64748b;
+  margin-top: 8px;
 }
