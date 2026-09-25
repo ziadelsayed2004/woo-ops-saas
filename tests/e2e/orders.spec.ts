@@ -461,6 +461,59 @@ test('separates download and print in an accessible RTL dialog @orders', async (
   await expect(page.getByTestId('order-row-order-1').getByRole('checkbox')).toBeChecked();
 });
 
+test('keeps export choices and order details aligned across viewport and language @orders @exports', async ({
+  page,
+}) => {
+  await mockOrderApi(page);
+  await page.goto('/');
+  await page.getByTestId('order-row-order-1').getByRole('checkbox').check();
+  await page.getByRole('button', { name: /تصدير وطباعة/u }).click();
+
+  const dialog = page.getByRole('dialog');
+  const paper = page.locator('.order-output-dialog__paper');
+  await expect(paper).toHaveCSS('border-radius', '12px');
+  await expect(dialog.locator('.order-output-dialog__document-row').first()).toHaveCSS(
+    'flex-direction',
+    'row',
+  );
+  const firstCopy = await dialog
+    .locator('.order-output-dialog__document-copy')
+    .first()
+    .boundingBox();
+  const firstAction = await dialog
+    .locator('.order-output-dialog__document-action')
+    .first()
+    .boundingBox();
+  expect(firstCopy).not.toBeNull();
+  expect(firstAction).not.toBeNull();
+  expect(firstAction!.x + firstAction!.width).toBeLessThanOrEqual(firstCopy!.x);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(dialog.locator('.order-output-dialog__document-row').first()).toHaveCSS(
+    'flex-direction',
+    'column',
+  );
+  const mobilePaper = await paper.boundingBox();
+  expect(mobilePaper).not.toBeNull();
+  expect(mobilePaper!.x).toBeGreaterThanOrEqual(0);
+  expect(mobilePaper!.x + mobilePaper!.width).toBeLessThanOrEqual(390);
+  await page.keyboard.press('Escape');
+
+  await page.getByTestId('order-row-order-1').press('Enter');
+  const drawer = page.locator('.MuiDrawer-paper.order-detail-drawer__paper');
+  await expect(drawer).toHaveAttribute('dir', 'rtl');
+  await expect(drawer.locator('.order-detail__badges')).toHaveCSS('flex-direction', 'row');
+  await expect(drawer.locator('.order-detail__fact').first()).toHaveCSS('display', 'grid');
+  const mobileDrawer = await drawer.boundingBox();
+  expect(mobileDrawer?.width).toBe(390);
+  await drawer.getByRole('button', { name: /إغلاق/u }).click();
+
+  await page.getByRole('button', { name: 'English' }).click();
+  await page.getByTestId('order-row-order-1').press('Enter');
+  await expect(drawer).toHaveAttribute('dir', 'ltr');
+  await expect(drawer.locator('.order-detail__fact').first()).toHaveCSS('display', 'grid');
+});
+
 test('has no automated accessibility violations in the orders workspace @a11y @orders', async ({
   page,
 }) => {
