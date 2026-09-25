@@ -3414,6 +3414,13 @@
       "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:e2e -- --grep \"orders|navigation|localization\"", "npm run build", "git diff --check"]
     }
     ,{
+      "id": "T0951", "epic": "E09", "title": "Repair order overlays and semantic CSS layout", "type": "fix", "phase": 9, "priority": "P0", "estimate": "M", "parallelGroup": "web-styling", "dependencies": ["T0950"],
+      "references": ["AGENTS.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/TESTING.md", "apps/web/src/OrderOutputDialog.tsx", "apps/web/src/OrderOutputDialog.css", "apps/web/src/App.tsx", "apps/web/src/App.css", "tests/e2e/orders.spec.ts", "tests/e2e/exports.spec.ts"],
+      "scope": ["Fix export dialog and order-detail drawer spacing, dimensions and responsive RTL/LTR layout", "Replace location-derived CSS class names in the affected overlays with semantic component names and remove overlay inline styling", "Add focused regression coverage for dialog and drawer layout"],
+      "acceptance": ["Export choices and actions have clear spacing without overlaps in Arabic, English and narrow viewports", "Order detail badges, tabs and facts have readable alignment and wrapping in both directions", "Affected overlay selectors work when MUI renders them through a portal and use semantic class names", "Affected formatting, lint, typecheck, E2E and build checks pass"],
+      "validation": ["npm run agent:validate", "npm run format:check", "npm run lint", "npm run typecheck", "npm run test:e2e -- --grep \"orders|exports\"", "npm run build", "npm run styles:check", "git diff --check"]
+    }
+    ,{
       "id": "T0940", "epic": "E09", "title": "Make HTML PDF rendering portable on Hostinger", "type": "fix", "phase": 9, "priority": "P0", "estimate": "M", "parallelGroup": "document-rendering", "dependencies": ["T0939"],
       "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/DEPLOYMENT.md", ".agentpack/architecture/TESTING.md", "tools/install-document-browser.mjs", "packages/documents/package.json", "packages/documents/src/html-renderer.ts", "packages/documents/tests/documents.test.js"],
       "scope": ["Replace the Hostinger-incompatible system-library-dependent Chromium path with a portable Linux HTML-to-PDF browser runtime", "Keep local Windows development and CI browser behavior deterministic", "Separate harmless transitive ExcelJS deprecation warnings from actionable browser readiness failures"],
