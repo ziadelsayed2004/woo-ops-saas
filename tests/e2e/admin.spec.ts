@@ -27,6 +27,20 @@ const connection = {
   syncOrdersCount: 12,
   syncCatalogCount: 8,
 };
+const analyticsTotals = {
+  grossSalesMinor: '0',
+  discountMinor: '0',
+  netMerchandiseMinor: '0',
+  shippingCollectedMinor: '0',
+  taxMinor: '0',
+  refundsMinor: '0',
+  collectedRevenueMinor: '0',
+  cogsMinor: '0',
+  actualShippingCostMinor: '0',
+  paymentFeesMinor: '0',
+  returnCostMinor: '0',
+  contributionProfitMinor: '0',
+};
 
 async function mockAdminApi(page: Page, session: 'authenticated' | 'expired' = 'authenticated') {
   let sessionCalls = 0;
@@ -164,7 +178,90 @@ async function mockAdminApi(page: Page, session: 'authenticated' | 'expired' = '
   await page.route('**/api/v1/members/invitations', async (route: Route) => {
     await route.fulfill({ json: { items: [] } });
   });
+  await page.route('**/api/v1/analytics/summary', async (route: Route) => {
+    await route.fulfill({
+      json: {
+        summary: {
+          source: 'combined',
+          from: null,
+          to: null,
+          excludedStatuses: ['cancelled', 'failed', 'trash'],
+          metricsVersion: 1,
+          definitions: [],
+          currencies: [
+            {
+              currency: 'EGP',
+              orderCount: 3,
+              lineCount: 4,
+              totals: { ...analyticsTotals, collectedRevenueMinor: '12500', refundsMinor: '500' },
+            },
+            {
+              currency: 'USD',
+              orderCount: 1,
+              lineCount: 1,
+              totals: { ...analyticsTotals, collectedRevenueMinor: '2500' },
+            },
+          ],
+          freshness: { lastRebuiltAt: '2026-08-31T08:00:00.000Z', status: 'succeeded' },
+          costCoverage: { coveredLines: 2, totalLines: 5, percentage: 40 },
+        },
+      },
+    });
+  });
+  await page.route('**/api/v1/analytics/timeseries', async (route: Route) => {
+    await route.fulfill({
+      json: {
+        timeseries: {
+          items: [
+            {
+              date: new Date().toISOString().slice(0, 10),
+              currency: 'EGP',
+              source: 'woo',
+              orderCount: 3,
+              lineCount: 4,
+              totals: { ...analyticsTotals, collectedRevenueMinor: '12500' },
+            },
+            {
+              date: new Date().toISOString().slice(0, 10),
+              currency: 'USD',
+              source: 'manual',
+              orderCount: 1,
+              lineCount: 1,
+              totals: { ...analyticsTotals, collectedRevenueMinor: '2500' },
+            },
+          ],
+        },
+      },
+    });
+  });
   await page.route('**/api/v1/analytics/breakdown', async (route: Route) => {
+    if ((route.request().postDataJSON() as { dimension?: string }).dimension === 'product') {
+      await route.fulfill({
+        json: {
+          breakdown: {
+            items: [
+              {
+                key: 'product-1',
+                label: 'Notebook',
+                currency: 'EGP',
+                orderCount: 3,
+                lineCount: 4,
+                totals: { ...analyticsTotals, netMerchandiseMinor: '9000' },
+              },
+              {
+                key: 'product-2',
+                label: 'Pen',
+                currency: 'USD',
+                orderCount: 1,
+                lineCount: 1,
+                totals: { ...analyticsTotals, netMerchandiseMinor: '2000' },
+              },
+            ],
+          },
+        },
+      });
+      return;
+    }
     await route.fulfill({
       json: {
         breakdown: {
@@ -235,12 +332,17 @@ async function mockAdminApi(page: Page, session: 'authenticated' | 'expired' = '
 
 test('admin navigation exposes authenticated operational workspaces and route states @admin', async ({
   page,
-}) => {
+}, testInfo) => {
   await mockAdminApi(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'English' }).click();
   await page.getByRole('button', { name: 'Overview' }).click();
   await expect(page.getByTestId('admin-overview')).toBeVisible();
+  await expect(page.getByTestId('overview-currency-EGP')).toContainText('125.00 EGP');
+  await expect(page.getByTestId('overview-currency-USD')).toContainText('25.00 USD');
+  await expect(page.getByTestId('overview-currency-EGP')).toContainText('Notebook');
+  await expect(page.getByTestId('admin-overview')).not.toContainText('Job queue');
+  await page.screenshot({ path: testInfo.outputPath('overview.png'), fullPage: true });
   await page.getByRole('button', { name: 'WooCommerce connection' }).click();
   await expect(page.getByTestId('connections-workspace')).toBeVisible();
   await expect(
@@ -251,6 +353,9 @@ test('admin navigation exposes authenticated operational workspaces and route st
   await expect(page.getByRole('button', { name: 'Start WooCommerce connection' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.getByTestId('settings-workspace')).toBeVisible();
+  await expect(page.getByTestId('settings-data-health')).toContainText('Job queue');
+  await expect(page.getByTestId('settings-data-health')).toContainText('Demo shop');
+  await page.screenshot({ path: testInfo.outputPath('settings.png'), fullPage: true });
   await page.getByRole('button', { name: 'Customers' }).click();
   await expect(page.getByTestId('customers-workspace')).toBeVisible();
   await expect(page.getByText('Customer One')).toBeVisible();
@@ -264,6 +369,84 @@ test('admin navigation exposes authenticated operational workspaces and route st
   await expect(page.getByText('analytics.rebuild')).toBeVisible();
   await page.getByRole('button', { name: 'Run system maintenance' }).click();
   await expect(page.getByText('System maintenance was queued.')).toBeVisible();
+});
+
+test('overview keeps account currencies separate and shows partial analytics without hiding summary @admin', async ({
+  page,
+}) => {
+  await mockAdminApi(page);
+  let summaryFilter: { from?: string; to?: string } = {};
+  await page.route('**/api/v1/analytics/summary', async (route: Route) => {
+    summaryFilter = route.request().postDataJSON() as { from?: string; to?: string };
+    await route.fulfill({
+      json: {
+        summary: {
+          currencies: [
+            {
+              currency: 'EGP',
+              orderCount: 2,
+              lineCount: 2,
+              totals: { ...analyticsTotals, collectedRevenueMinor: '5000' },
+            },
+          ],
+          freshness: { lastRebuiltAt: null },
+          costCoverage: { coveredLines: 0, totalLines: 2, percentage: 0 },
+        },
+      },
+    });
+  });
+  await page.route('**/api/v1/analytics/timeseries', (route) =>
+    route.fulfill({ status: 503, json: { error: { code: 'UNAVAILABLE' } } }),
+  );
+  await page.goto('/overview');
+  await page.getByRole('button', { name: 'English' }).click();
+  await expect(page.getByTestId('overview-currency-EGP')).toContainText('50.00 EGP');
+  await expect(page.getByTestId('overview-currency-USD')).toHaveCount(0);
+  await expect(page.getByTestId('admin-overview')).toContainText('temporarily unavailable');
+  await expect(page.getByTestId('admin-overview')).toContainText('Profit is omitted');
+  expect(summaryFilter.from).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
+  expect(summaryFilter.to).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
+});
+
+test('settings diagnostics fail independently of editable account settings @admin', async ({
+  page,
+}) => {
+  await mockAdminApi(page);
+  await page.route('**/api/v1/operations/health', (route) =>
+    route.fulfill({ status: 503, json: { error: { code: 'UNAVAILABLE' } } }),
+  );
+  await page.goto('/settings');
+  await page.getByRole('button', { name: 'English' }).click();
+  await expect(page.getByTestId('settings-data-health')).toContainText(
+    'Some diagnostics are unavailable',
+  );
+  await expect(page.getByRole('textbox', { name: 'Account name' })).toHaveValue('Demo account');
+  await page.getByRole('textbox', { name: 'Account name' }).fill('Unsaved name');
+  await page.getByTestId('settings-data-health').getByRole('button', { name: 'Refresh' }).click();
+  await expect(page.getByRole('textbox', { name: 'Account name' })).toHaveValue('Unsaved name');
+});
+
+test('overview explains when the selected period has no analyzed orders @admin', async ({
+  page,
+}) => {
+  await mockAdminApi(page);
+  await page.route('**/api/v1/analytics/summary', (route) =>
+    route.fulfill({ json: { summary: { currencies: [], freshness: { lastRebuiltAt: null } } } }),
+  );
+  await page.goto('/overview');
+  await expect(page.getByTestId('overview-empty')).toBeVisible();
+  await expect(page.getByTestId('overview-currency-EGP')).toHaveCount(0);
+});
+
+test('overview and settings data status fit a narrow Arabic viewport @admin', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockAdminApi(page);
+  await page.goto('/overview');
+  await expect(page.getByTestId('overview-currency-EGP')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.goto('/settings');
+  await expect(page.getByTestId('settings-data-health')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
 test('filters the customer directory by purchased product and opens an order without losing customer context @admin', async ({

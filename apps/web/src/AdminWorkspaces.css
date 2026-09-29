@@ -152,114 +152,99 @@
   margin-top: 4px;
 }
 
-#root .admin-workspaces-l457c5 {
-  gap: 24px;
+#root .admin-overview {
+  gap: 18px;
 }
 
-#root .admin-workspaces-l459c9 {
-  font-weight: 800;
-}
-
-#root .admin-workspaces-l462c9 {
-  color: #64748b;
-}
-
-#root .admin-workspaces-l465c7 {
+#root .admin-overview__header,
+#root .admin-data-health__heading {
+  display: flex;
   flex-direction: column;
-}
-
-@media (min-width: 900px) {
-  #root .admin-workspaces-l465c7 {
-    flex-direction: row;
-  }
-}
-
-#root .admin-workspaces-l465c7 {
-  gap: 16px;
-}
-
-#root .admin-workspaces-l466c9 {
-  flex: 1;
-}
-
-#root .admin-workspaces-l469c13 {
-  font-weight: 800;
-}
-
-#root .admin-workspaces-l472c13 {
-  color: #64748b;
-}
-
-#root .admin-workspaces-l477c9 {
-  flex: 1;
-}
-
-#root .admin-workspaces-l480c13 {
-  font-weight: 800;
-}
-
-#root .admin-workspaces-l483c13 {
-  color: #64748b;
-}
-
-#root .admin-workspaces-l488c9 {
-  flex: 1;
-}
-
-#root .admin-workspaces-l491c13 {
-  font-weight: 800;
-}
-
-#root .admin-workspaces-l494c13 {
-  color: #64748b;
-}
-
-#root .admin-workspaces-l500c7 {
-  padding: 16px;
-}
-
-#root .admin-workspaces-l501c9 {
-  font-weight: 800;
-}
-
-#root .admin-workspaces-l501c9 {
-  margin-bottom: 16px;
-}
-
-#root .admin-workspaces-l507c11 {
   gap: 12px;
 }
 
-#root .admin-workspaces-l509c15 {
-  flex-direction: column;
-}
-
 @media (min-width: 600px) {
-  #root .admin-workspaces-l509c15 {
+  #root .admin-overview__header,
+  #root .admin-data-health__heading {
     flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
   }
 }
 
-#root .admin-workspaces-l509c15 {
-  gap: 8px;
+#root .admin-overview__title {
+  font-weight: 800;
 }
 
-@media (min-width: 600px) {
-  #root .admin-workspaces-l509c15 {
-    align-items: center;
-  }
+#root .admin-overview__currency {
+  gap: 14px;
 }
 
-#root .admin-workspaces-l515c17 {
-  flex: 1;
+#root .admin-overview__metrics,
+#root .admin-overview__details,
+#root .admin-data-health__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 14px;
 }
 
-#root .admin-workspaces-l516c19 {
-  font-weight: 700;
+#root .admin-overview__details {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
 }
 
-#root .admin-workspaces-l519c19 {
-  color: #64748b;
+#root .admin-overview__metric,
+#root .admin-overview__panel {
+  min-width: 0;
+}
+
+#root .admin-overview__value {
+  font-weight: 800;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+#root .admin-overview__panel,
+#root .admin-data-health {
+  padding: 18px;
+}
+
+#root .admin-overview__rows {
+  gap: 12px;
+  margin-top: 14px;
+}
+
+#root .admin-overview__trend-row {
+  display: grid;
+  grid-template-columns: minmax(85px, auto) minmax(40px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+#root .admin-overview__product-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 8px;
+}
+
+#root .admin-overview__product-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#root .admin-data-health__grid {
+  margin-top: 18px;
+}
+
+#root .admin-data-health__grid > *,
+#root .admin-data-health__connection {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#root .admin-data-health__connection {
+  margin-top: 8px;
 }
 
 #root .admin-workspaces-l616c5 {
