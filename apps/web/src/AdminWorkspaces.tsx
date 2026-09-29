@@ -36,6 +36,8 @@ export type AdminSection =
   'overview' | 'connections' | 'field-mappings' | 'settings' | 'members' | 'operations';
 export type AdminLocale = 'ar' | 'en';
 export type AdminDirection = 'rtl' | 'ltr';
+const displayNumberLocale = (locale: AdminLocale) =>
+  locale === 'ar' ? 'ar-EG-u-nu-latn' : 'en-US-u-nu-latn';
 export type AuthenticatedUser = {
   id: string;
   accountId: string;
@@ -412,8 +414,8 @@ function OverviewWorkspace({
   const [period, setPeriod] = useState({ from: '', to: '' });
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
-  const numberFormat = new Intl.NumberFormat(locale === 'ar' ? 'ar-EG' : 'en-US');
-  const dateFormat = new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', {
+  const numberFormat = new Intl.NumberFormat(displayNumberLocale(locale));
+  const dateFormat = new Intl.DateTimeFormat(displayNumberLocale(locale), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -482,7 +484,7 @@ function OverviewWorkspace({
       {summary.freshness?.lastRebuiltAt ? (
         <Typography variant="body2" color="text.secondary" data-testid="overview-freshness">
           {copy.overviewFreshness}:{' '}
-          {new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', {
+          {new Intl.DateTimeFormat(displayNumberLocale(locale), {
             dateStyle: 'medium',
             timeStyle: 'short',
           }).format(new Date(summary.freshness.lastRebuiltAt))}
@@ -1439,7 +1441,7 @@ function SettingsWorkspace({
                   <Typography color="text.secondary" variant="body2">
                     {copy.lastSync}:{' '}
                     {connection.syncLastSuccessAt
-                      ? new Intl.DateTimeFormat(interfaceLocale === 'ar' ? 'ar-EG' : 'en-US', {
+                      ? new Intl.DateTimeFormat(displayNumberLocale(interfaceLocale), {
                           dateStyle: 'medium',
                           timeStyle: 'short',
                         }).format(new Date(connection.syncLastSuccessAt))
