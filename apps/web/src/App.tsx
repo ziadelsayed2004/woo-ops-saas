@@ -3396,15 +3396,14 @@ function ExportsWorkspace({
         fullWidth
         PaperProps={{
           dir: direction,
-          sx: { borderRadius: '12px', maxHeight: '85vh' },
+          className: 'document-files-dialog__paper',
         }}
-        className="app-l3483c7"
       >
-        <DialogTitle>
+        <DialogTitle className="document-files-dialog__title">
           {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.documentFiles')}
         </DialogTitle>
-        <DialogContent>
-          <Stack className="app-l3497c11">
+        <DialogContent className="document-files-dialog__content">
+          <Box className="document-files-dialog__primary-actions">
             {visibleDocumentArtifacts
               .filter((artifact) => artifact.kind === 'zip' || artifact.kind === 'merged-pdf')
               .sort((left, right) => (left.kind === 'zip' ? -1 : right.kind === 'zip' ? 1 : 0))
@@ -3420,8 +3419,8 @@ function ExportsWorkspace({
                   {documentArtifactLabel(artifact, direction)}
                 </Button>
               ))}
-          </Stack>
-          <Typography variant="subtitle2" className="app-l3514c11">
+          </Box>
+          <Typography variant="subtitle2" className="document-files-dialog__section-title">
             {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.individualFiles', {
               count: individualDocumentArtifacts.length,
             })}
@@ -3435,17 +3434,21 @@ function ExportsWorkspace({
               setDocumentFilePage(0);
             }}
             placeholder={tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.searchDocumentFiles')}
-            className="app-l3519c11"
+            className="document-files-dialog__search"
           />
-          <TableContainer component={Paper} variant="outlined" className="app-l3530c11">
+          <TableContainer
+            component={Paper}
+            variant="outlined"
+            className="document-files-dialog__table"
+          >
             <Table size="small">
               <TableBody>
                 {pagedDocumentArtifacts.map((artifact) => (
                   <TableRow key={artifact.id}>
-                    <TableCell dir="ltr" className="app-l3535c21">
+                    <TableCell dir="ltr" className="document-files-dialog__filename">
                       {artifact.filename}
                     </TableCell>
-                    <TableCell className="app-l3538c21">
+                    <TableCell className="document-files-dialog__download">
                       <Button
                         size="small"
                         component="a"
@@ -3462,12 +3465,12 @@ function ExportsWorkspace({
             </Table>
           </TableContainer>
           {pagedDocumentArtifacts.length === 0 && (
-            <Typography className="app-l3555c13">
+            <Typography className="document-files-dialog__empty">
               {tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.noMatchingDocumentFiles')}
             </Typography>
           )}
           {documentFilePageCount > 1 && (
-            <Stack className="app-l3560c13">
+            <Stack className="document-files-dialog__pagination">
               <Button
                 size="small"
                 disabled={documentFilePage === 0}
@@ -3490,7 +3493,7 @@ function ExportsWorkspace({
             </Stack>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions className="document-files-dialog__actions">
           <Button onClick={() => setDocumentFilesBatchId(null)}>{t.close}</Button>
         </DialogActions>
       </Dialog>
@@ -4195,6 +4198,15 @@ export function App({
     }
   };
 
+  const openCustomerOrder = async (orderId: string) => {
+    const response = await fetch(`/api/v1/orders/${encodeURIComponent(orderId)}`, {
+      credentials: 'include',
+    });
+    if (!response.ok) throw new Error('ORDER_DETAIL_UNAVAILABLE');
+    const body = (await response.json()) as OrderResponse;
+    setSelected(body.order);
+  };
+
   useEffect(() => {
     if (authStatus !== 'authenticated' || view !== 'orders') return;
     void loadOrders();
@@ -4395,6 +4407,8 @@ export function App({
             locale={locale}
             onLocaleChange={onLocaleChange}
             onSessionExpired={expireSession}
+            onOpenOrder={openCustomerOrder}
+            orderPreviewOpen={selected !== null}
           />
         ) : view === 'exports' ? (
           <ExportsWorkspace

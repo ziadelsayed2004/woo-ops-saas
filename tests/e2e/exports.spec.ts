@@ -168,6 +168,8 @@ test('organizes printable outputs and exposes useful downloads without the manif
   await page.getByRole('tab', { name: 'Invoices & print' }).click();
   await expect(page.getByText('80mm thermal shipping label')).toBeVisible();
   await page.getByRole('button', { name: 'Show files' }).click();
+  await expect(page.locator('.document-files-dialog__paper')).toHaveCSS('border-radius', '12px');
+  await expect(page.locator('.document-files-dialog__primary-actions')).toHaveCSS('gap', '12px');
   await expect(page.getByRole('link', { name: 'Download printable PDF' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Download individual files ZIP' })).toBeVisible();
   await expect(page.getByText('manifest.json')).toHaveCount(0);
@@ -175,6 +177,12 @@ test('organizes printable outputs and exposes useful downloads without the manif
   await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.getByText('shipping-label-80mm-order-1021-2026-09-21.pdf')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Download', exact: true })).toHaveCount(5);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(
+      async () => (await page.locator('.document-files-dialog__paper').boundingBox())?.width ?? 0,
+    )
+    .toBeLessThanOrEqual(390);
 });
 
 test('preserves the selected export history tab across refreshes @exports', async ({ page }) => {

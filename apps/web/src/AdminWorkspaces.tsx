@@ -1,8 +1,9 @@
 import { getAdminCopy, translate as tr } from './i18n';
 import './AdminWorkspaces.css';
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Card,
@@ -148,6 +149,7 @@ type CustomerProfile = CustomerDirectoryItem & {
   shipping: Record<string, unknown>;
   recentOrders: Array<Record<string, unknown>>;
 };
+type CustomerProductOption = { externalId: string; name: string; sku: string | null };
 type CustomerAnalyticsItem = {
   key: string;
   label?: string;
@@ -1456,47 +1458,89 @@ function CompleteCustomersWorkspace({
   locale,
   copy,
   onSessionExpired,
+  onOpenOrder,
+  orderPreviewOpen,
 }: {
   locale: AdminLocale;
   copy: Copy;
   onSessionExpired: () => void;
+  onOpenOrder: (orderId: string) => Promise<void>;
+  orderPreviewOpen: boolean;
 }) {
   const [items, setItems] = useState<CustomerDirectoryItem[]>([]);
   const [search, setSearch] = useState('');
+  const [productSearch, setProductSearch] = useState('');
+  const [product, setProduct] = useState<CustomerProductOption | null>(null);
+  const [productOptions, setProductOptions] = useState<CustomerProductOption[]>([]);
+  const [productLoading, setProductLoading] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selected, setSelected] = useState<CustomerProfile | null>(null);
+  const [openingOrderId, setOpeningOrderId] = useState<string | null>(null);
+  const [orderOpenFailed, setOrderOpenFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  const loadSequence = useRef(0);
   const money = (minor: string, currency: string) => {
     const value = BigInt(/^-?\d+$/u.test(minor) ? minor : '0');
     return `${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value) / 100)} ${currency}`;
   };
   const load = async (cursor: string | null = null) => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
     setFailed(false);
     try {
       const query = new URLSearchParams({ limit: '100' });
       if (search.trim()) query.set('search', search.trim());
+      if (product) query.set('productId', product.externalId);
       if (cursor) query.set('cursor', cursor);
       const result = await apiRequest<{
         items: CustomerDirectoryItem[];
         nextCursor: string | null;
       }>(`/api/v1/customers?${query.toString()}`, onSessionExpired);
+      if (sequence !== loadSequence.current) return;
       setItems((current) =>
         cursor ? [...current, ...(result.items ?? [])] : (result.items ?? []),
       );
       setNextCursor(result.nextCursor ?? null);
     } catch {
+      if (sequence !== loadSequence.current) return;
       setFailed(true);
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
   };
   useEffect(() => {
+    loadSequence.current += 1;
+    setLoading(true);
+    setItems([]);
+    setNextCursor(null);
     const timeout = window.setTimeout(() => void load(), 250);
     return () => window.clearTimeout(timeout);
-  }, [search]);
+  }, [search, product?.externalId]);
+  useEffect(() => {
+    let active = true;
+    const timeout = window.setTimeout(async () => {
+      setProductLoading(true);
+      try {
+        const query = new URLSearchParams({ kind: 'product', limit: '30' });
+        if (productSearch.trim()) query.set('search', productSearch.trim());
+        const result = await apiRequest<{ items: CustomerProductOption[] }>(
+          `/api/v1/catalog?${query.toString()}`,
+          onSessionExpired,
+        );
+        if (active) setProductOptions(result.items ?? []);
+      } catch {
+        if (active) setProductOptions([]);
+      } finally {
+        if (active) setProductLoading(false);
+      }
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+    };
+  }, [productSearch]);
   const openCustomer = async (item: CustomerDirectoryItem) => {
     setDetailsLoading(true);
     try {
@@ -1509,6 +1553,17 @@ function CompleteCustomersWorkspace({
       setFailed(true);
     } finally {
       setDetailsLoading(false);
+    }
+  };
+  const openCustomerOrder = async (orderId: string) => {
+    setOpeningOrderId(orderId);
+    setOrderOpenFailed(false);
+    try {
+      await onOpenOrder(orderId);
+    } catch {
+      setOrderOpenFailed(true);
+    } finally {
+      setOpeningOrderId(null);
     }
   };
   const visible = items;
@@ -1542,12 +1597,30 @@ function CompleteCustomersWorkspace({
         </Typography>
       </Box>
       {failed && <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />}
-      <TextField
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        label={tr(locale, 'inline.admin.searchNameEmailOrPhone')}
-        className="admin-workspaces-l1600c7"
-      />
+      <Box className="customer-directory__filters">
+        <TextField
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          label={tr(locale, 'inline.admin.searchNameEmailOrPhone')}
+          className="customer-directory__search"
+        />
+        <Autocomplete<CustomerProductOption>
+          value={product}
+          options={productOptions}
+          loading={productLoading}
+          filterOptions={(options) => options}
+          isOptionEqualToValue={(option, value) => option.externalId === value.externalId}
+          getOptionLabel={(option) => (option.sku ? `${option.name} · ${option.sku}` : option.name)}
+          onInputChange={(_event, value, reason) => {
+            if (reason === 'input' || reason === 'clear') setProductSearch(value);
+          }}
+          onChange={(_event, value) => setProduct(value)}
+          renderInput={(params) => (
+            <TextField {...params} label={tr(locale, 'inline.admin.filterCustomersByProduct')} />
+          )}
+          className="customer-directory__product-filter"
+        />
+      </Box>
       {detailsLoading && <LinearProgress aria-label={copy.loading} />}
       <Paper variant="outlined">
         <TableContainer>
@@ -1615,27 +1688,34 @@ function CompleteCustomersWorkspace({
         </Button>
       )}
       <Dialog
-        open={selected !== null}
+        open={selected !== null && !orderPreviewOpen}
         onClose={() => setSelected(null)}
         fullWidth
-        className="admin-workspaces-l1674c7"
+        PaperProps={{
+          className: 'customer-detail-dialog__paper',
+          dir: locale === 'ar' ? 'rtl' : 'ltr',
+        }}
       >
-        <DialogTitle>{selected?.name ?? tr(locale, 'inline.admin.customerDetails')}</DialogTitle>
+        <DialogTitle className="customer-detail-dialog__title">
+          {selected?.name ?? tr(locale, 'inline.admin.customerDetails')}
+        </DialogTitle>
         {selected && (
-          <DialogContent dividers>
-            <Stack className="admin-workspaces-l1678c13">
-              <Stack className="admin-workspaces-l1679c15">
-                <Chip label={`${tr(locale, 'inline.admin.orders')}: ${selected.orderCount}`} />
-                {selected.externalCustomerId && (
-                  <Chip label={`Woo ID: ${selected.externalCustomerId}`} />
-                )}
-                <Typography dir="ltr">{selected.email ?? '—'}</Typography>
-                <Typography dir="ltr">{selected.phone ?? '—'}</Typography>
-              </Stack>
-              <Box>
-                <Typography className="admin-workspaces-l1688c17">
-                  {tr(locale, 'inline.admin.spend')}
-                </Typography>
+          <DialogContent dividers className="customer-detail-dialog__content">
+            <Stack className="customer-detail-dialog__sections">
+              <Box className="customer-detail-dialog__identity">
+                <Box className="customer-detail-dialog__chips">
+                  <Chip label={`${tr(locale, 'inline.admin.orders')}: ${selected.orderCount}`} />
+                  {selected.externalCustomerId && (
+                    <Chip label={`Woo ID: ${selected.externalCustomerId}`} />
+                  )}
+                </Box>
+                <Box className="customer-detail-dialog__contact">
+                  <Typography dir="ltr">{selected.email ?? '—'}</Typography>
+                  <Typography dir="ltr">{selected.phone ?? '—'}</Typography>
+                </Box>
+              </Box>
+              <Box className="customer-detail-dialog__section">
+                <Typography>{tr(locale, 'inline.admin.spend')}</Typography>
                 {selected.currencies.map((entry) => (
                   <Typography dir="ltr" key={entry.currency}>
                     {money(entry.totalSpendMinor, entry.currency)} · {entry.orderCount}{' '}
@@ -1643,24 +1723,21 @@ function CompleteCustomersWorkspace({
                   </Typography>
                 ))}
               </Box>
-              <Box>
-                <Typography className="admin-workspaces-l1697c17">
-                  {tr(locale, 'inline.admin.billingAddress')}
-                </Typography>
+              <Box className="customer-detail-dialog__section">
+                <Typography>{tr(locale, 'inline.admin.billingAddress')}</Typography>
                 <Typography>{addressText(selected.billing) || '—'}</Typography>
               </Box>
-              <Box>
-                <Typography className="admin-workspaces-l1703c17">
-                  {tr(locale, 'inline.admin.shippingAddress')}
-                </Typography>
+              <Box className="customer-detail-dialog__section">
+                <Typography>{tr(locale, 'inline.admin.shippingAddress')}</Typography>
                 <Typography>{addressText(selected.shipping) || '—'}</Typography>
               </Box>
-              <Box>
-                <Typography className="admin-workspaces-l1709c17">
-                  {tr(locale, 'inline.admin.recentOrders')}
-                </Typography>
-                <TableContainer>
-                  <Table size="small">
+              <Box className="customer-detail-dialog__section">
+                <Typography>{tr(locale, 'inline.admin.recentOrders')}</Typography>
+                {orderOpenFailed && (
+                  <Alert severity="error">{tr(locale, 'inline.admin.orderOpenFailed')}</Alert>
+                )}
+                <TableContainer className="customer-detail-dialog__orders">
+                  <Table size="small" aria-label={tr(locale, 'inline.admin.recentOrders')}>
                     <TableHead>
                       <TableRow>
                         <TableCell>{tr(locale, 'inline.admin.order')}</TableCell>
@@ -1672,7 +1749,16 @@ function CompleteCustomersWorkspace({
                     <TableBody>
                       {selected.recentOrders.map((order) => (
                         <TableRow key={String(order.id)}>
-                          <TableCell dir="ltr">{String(order.orderNumber ?? '—')}</TableCell>
+                          <TableCell>
+                            <Button
+                              size="small"
+                              onClick={() => void openCustomerOrder(String(order.id))}
+                              disabled={openingOrderId !== null}
+                              aria-label={`${tr(locale, 'inline.admin.openOrderDetails')} ${String(order.orderNumber ?? '')}`}
+                            >
+                              <span dir="ltr">{String(order.orderNumber ?? '—')}</span>
+                            </Button>
+                          </TableCell>
                           <TableCell>{String(order.remoteStatus ?? '—')}</TableCell>
                           <TableCell dir="ltr">
                             {money(
@@ -1694,7 +1780,7 @@ function CompleteCustomersWorkspace({
             </Stack>
           </DialogContent>
         )}
-        <DialogActions>
+        <DialogActions className="customer-detail-dialog__actions">
           <Button onClick={() => setSelected(null)}>{tr(locale, 'inline.admin.close')}</Button>
         </DialogActions>
       </Dialog>
@@ -2076,11 +2162,15 @@ export function AdminWorkspace({
   locale,
   onSessionExpired,
   onLocaleChange,
+  onOpenOrder,
+  orderPreviewOpen,
 }: {
   section: AdminSection;
   locale: AdminLocale;
   onSessionExpired: () => void;
   onLocaleChange: (locale: AdminLocale) => void;
+  onOpenOrder: (orderId: string) => Promise<void>;
+  orderPreviewOpen: boolean;
 }) {
   const copy = translations[locale];
   if (section === 'overview')
@@ -2099,7 +2189,13 @@ export function AdminWorkspace({
     );
   if (section === 'members')
     return (
-      <CompleteCustomersWorkspace locale={locale} copy={copy} onSessionExpired={onSessionExpired} />
+      <CompleteCustomersWorkspace
+        locale={locale}
+        copy={copy}
+        onSessionExpired={onSessionExpired}
+        onOpenOrder={onOpenOrder}
+        orderPreviewOpen={orderPreviewOpen}
+      />
     );
   return <OperationsWorkspace copy={copy} onSessionExpired={onSessionExpired} />;
 }

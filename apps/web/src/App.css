@@ -1101,76 +1101,89 @@
   padding-bottom: 16px;
 }
 
-#root .app-l3483c7 {
-  max-width: md;
-}
-
-#root .app-l3497c11 {
-  flex-direction: column;
-}
-
-@media (min-width: 600px) {
-  #root .app-l3497c11 {
-    flex-direction: row;
-  }
-}
-
-#root .app-l3497c11 {
-  gap: 8px;
-}
-
-#root .app-l3497c11 {
-  margin-bottom: 16px;
-}
-
-#root .app-l3514c11 {
-  font-weight: 800;
-}
-
-#root .app-l3514c11 {
-  margin-bottom: 8px;
-}
-
-#root .app-l3519c11 {
-  margin-bottom: 12px;
-}
-
-#root .app-l3530c11 {
+.document-files-dialog__paper.MuiDialog-paper {
+  width: min(680px, calc(100vw - 32px));
+  max-width: none;
+  max-height: min(86dvh, 820px);
+  margin: 16px;
   border-radius: 12px;
 }
 
-#root .app-l3535c21 {
-  word-break: break-word;
+.document-files-dialog__title.MuiDialogTitle-root {
+  padding: 20px 24px 16px;
+  font-weight: 800;
 }
 
-#root .app-l3538c21 {
-  width: 120px;
+.document-files-dialog__content.MuiDialogContent-root {
+  padding: 12px 24px 20px;
 }
 
-#root .app-l3555c13 {
-  color: #64748b;
+.document-files-dialog__primary-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
 }
 
-#root .app-l3555c13 {
-  padding-top: 24px;
-  padding-bottom: 24px;
+.document-files-dialog__primary-actions .MuiButton-root {
+  min-height: 44px;
   text-align: center;
 }
 
-#root .app-l3560c13 {
+.document-files-dialog__section-title.MuiTypography-root {
+  margin-bottom: 12px;
+  font-weight: 800;
+}
+
+.document-files-dialog__search.MuiTextField-root {
+  margin-bottom: 16px;
+}
+
+.document-files-dialog__table.MuiTableContainer-root {
+  border-radius: 12px;
+  max-height: min(44dvh, 380px);
+}
+
+.document-files-dialog__filename.MuiTableCell-root {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.document-files-dialog__download.MuiTableCell-root {
+  width: 100px;
+  white-space: nowrap;
+}
+
+.document-files-dialog__empty.MuiTypography-root {
+  color: #64748b;
+  padding: 24px 0;
+  text-align: center;
+}
+
+.document-files-dialog__pagination.MuiStack-root {
   flex-direction: row;
-}
-
-#root .app-l3560c13 {
   justify-content: space-between;
-}
-
-#root .app-l3560c13 {
   align-items: center;
+  gap: 12px;
+  margin-top: 16px;
 }
 
-#root .app-l3560c13 {
-  margin-top: 16px;
+.document-files-dialog__actions.MuiDialogActions-root {
+  padding: 8px 24px 16px;
+}
+
+@media (max-width: 599px) {
+  .document-files-dialog__title.MuiDialogTitle-root {
+    padding: 16px;
+  }
+
+  .document-files-dialog__content.MuiDialogContent-root {
+    padding: 12px 16px 16px;
+  }
+
+  .document-files-dialog__actions.MuiDialogActions-root {
+    padding: 8px 16px 12px;
+  }
 }
 
 #root .app-l4387c7 {

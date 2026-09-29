@@ -60,6 +60,15 @@ WooCommerce and inspect Operations for errors. Otherwise run incremental sync/re
 periodically. WordPress login is used only to approve the connection; Woo Ops members log in with
 their own local accounts.
 
+## Customer directory API
+
+The authenticated customer directory endpoint `GET /api/v1/customers` accepts `search`,
+`productId` (the WooCommerce product's external ID), `cursor`, and `limit` (1–100). Product
+filtering returns customers who bought that product in a synchronized Woo order; each returned
+customer's order count and currency-separated spend remain lifetime totals. The cursor is scoped to
+the same account and filter selection. `GET /api/v1/customers/:customerKey` returns the profile and
+recent orders; opening an order uses the existing account-scoped `GET /api/v1/orders/:id` endpoint.
+
 ## Hostinger deployment
 
 Create a Node.js 22.x application with repository root `./`, build command

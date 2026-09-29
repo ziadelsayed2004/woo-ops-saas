@@ -574,7 +574,16 @@
   color: #64748b;
 }
 
-#root .admin-workspaces-l1600c7 {
+.customer-directory__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+#root .customer-directory__search,
+#root .customer-directory__product-filter {
+  flex: 1 1 280px;
   max-width: 520px;
 }
 
@@ -598,50 +607,81 @@
   padding: 24px;
 }
 
-#root .admin-workspaces-l1674c7 {
-  max-width: md;
+.customer-detail-dialog__paper.MuiDialog-paper {
+  width: min(720px, calc(100vw - 32px));
+  max-width: none;
+  max-height: min(88dvh, 860px);
+  margin: 16px;
+  border-radius: 12px;
 }
 
-#root .admin-workspaces-l1678c13 {
-  gap: 24px;
+.customer-detail-dialog__title.MuiDialogTitle-root {
+  padding: 20px 24px 16px;
+  font-weight: 800;
 }
 
-#root .admin-workspaces-l1679c15 {
-  flex-direction: column;
+.customer-detail-dialog__content.MuiDialogContent-root {
+  padding: 20px 24px;
 }
 
-@media (min-width: 600px) {
-  #root .admin-workspaces-l1679c15 {
-    flex-direction: row;
-  }
+.customer-detail-dialog__sections.MuiStack-root {
+  gap: 20px;
 }
 
-#root .admin-workspaces-l1679c15 {
-  gap: 16px;
-}
-
-#root .admin-workspaces-l1679c15 {
+.customer-detail-dialog__identity {
+  display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 24px;
 }
 
-#root .admin-workspaces-l1688c17 {
+.customer-detail-dialog__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.customer-detail-dialog__contact {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.customer-detail-dialog__section {
+  display: grid;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.customer-detail-dialog__section > .MuiTypography-root:first-child {
   font-weight: 800;
 }
 
-#root .admin-workspaces-l1697c17 {
-  font-weight: 800;
+.customer-detail-dialog__orders {
+  overflow-x: auto;
 }
 
-#root .admin-workspaces-l1703c17 {
-  font-weight: 800;
+.customer-detail-dialog__orders .MuiTableCell-root {
+  white-space: nowrap;
 }
 
-#root .admin-workspaces-l1709c17 {
-  font-weight: 800;
+.customer-detail-dialog__actions.MuiDialogActions-root {
+  padding: 12px 24px 16px;
 }
 
-#root .admin-workspaces-l1709c17 {
-  margin-bottom: 8px;
+@media (max-width: 599px) {
+  .customer-detail-dialog__title.MuiDialogTitle-root {
+    padding: 16px;
+  }
+
+  .customer-detail-dialog__content.MuiDialogContent-root {
+    padding: 16px;
+  }
+
+  .customer-detail-dialog__actions.MuiDialogActions-root {
+    padding: 8px 16px 12px;
+  }
 }
 
 #root .admin-workspaces-l1825c5 {
