@@ -117,6 +117,28 @@ type ApiHealth = {
   };
   runner: { running: boolean; active: number; registeredTypes: string[] };
 };
+type OverviewTotals = {
+  collectedRevenueMinor: string;
+  refundsMinor: string;
+  contributionProfitMinor: string;
+};
+type OverviewSummary = {
+  currencies: Array<{
+    currency: string;
+    orderCount: number;
+    lineCount: number;
+    totals: OverviewTotals;
+  }>;
+  freshness?: { lastRebuiltAt: string | null; status?: string };
+  costCoverage?: { coveredLines: number; totalLines: number; percentage: number | null };
+};
+type OverviewTimeseriesItem = { date: string; currency: string; orderCount: number };
+type OverviewProductItem = {
+  key: string;
+  label?: string;
+  currency: string;
+  totals: { netMerchandiseMinor: string };
+};
 type ApiUsage = {
   total: number;
   queued: number;
@@ -376,112 +398,235 @@ export function LoginScreen({
 }
 
 function OverviewWorkspace({
+  locale,
   copy,
   onSessionExpired,
 }: {
+  locale: AdminLocale;
   copy: Copy;
   onSessionExpired: () => void;
 }) {
-  const [account, setAccount] = useState<Account | null>(null);
-  const [health, setHealth] = useState<ApiHealth | null>(null);
-  const [connections, setConnections] = useState<Connection[]>([]);
+  const [summary, setSummary] = useState<OverviewSummary | null>(null);
+  const [timeseries, setTimeseries] = useState<OverviewTimeseriesItem[] | null>(null);
+  const [products, setProducts] = useState<OverviewProductItem[] | null>(null);
+  const [period, setPeriod] = useState({ from: '', to: '' });
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
-
+  const numberFormat = new Intl.NumberFormat(locale === 'ar' ? 'ar-EG' : 'en-US');
+  const dateFormat = new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+  const formatDay = (value: string) => dateFormat.format(new Date(`${value}T00:00:00Z`));
+  const formatMinor = (minor: string, currency: string) => {
+    const amount = BigInt(minor);
+    const absolute = amount < 0n ? -amount : amount;
+    return `${amount < 0n ? '-' : ''}${numberFormat.format(absolute / 100n)}.${String(absolute % 100n).padStart(2, '0')} ${currency}`;
+  };
   const load = async () => {
     setLoading(true);
     setFailed(false);
+    const today = new Date();
+    const to = today.toISOString().slice(0, 10);
+    today.setUTCDate(today.getUTCDate() - 29);
+    const from = today.toISOString().slice(0, 10);
+    setPeriod({ from, to });
     const results = await Promise.allSettled([
-      apiRequest<{ account: Account }>('/api/v1/account', onSessionExpired),
-      apiRequest<ApiHealth>('/api/v1/operations/health', onSessionExpired),
-      apiRequest<{ items: Connection[] }>('/api/v1/connections', onSessionExpired),
+      apiRequest<{ summary: OverviewSummary }>(
+        '/api/v1/analytics/summary',
+        onSessionExpired,
+        writeOptions({ from, to }),
+      ),
+      apiRequest<{ timeseries: { items: OverviewTimeseriesItem[] } }>(
+        '/api/v1/analytics/timeseries',
+        onSessionExpired,
+        writeOptions({ from, to }),
+      ),
+      apiRequest<{ breakdown: { items: OverviewProductItem[] } }>(
+        '/api/v1/analytics/breakdown',
+        onSessionExpired,
+        writeOptions({ from, to, dimension: 'product' }),
+      ),
     ]);
-    const accountResult = results[0];
-    const healthResult = results[1];
-    const connectionsResult = results[2];
-    if (accountResult.status === 'fulfilled') setAccount(accountResult.value.account);
-    if (healthResult.status === 'fulfilled') setHealth(healthResult.value);
-    if (connectionsResult.status === 'fulfilled')
-      setConnections(connectionsResult.value.items ?? []);
+    setSummary(results[0].status === 'fulfilled' ? results[0].value.summary : null);
+    setTimeseries(results[1].status === 'fulfilled' ? results[1].value.timeseries.items : null);
+    setProducts(results[2].status === 'fulfilled' ? results[2].value.breakdown.items : null);
     setFailed(results.some((result) => result.status === 'rejected'));
     setLoading(false);
   };
-
   useEffect(() => {
     void load();
   }, []);
-
   if (loading) return <StateBlock copy={copy} loading error={false} onRetry={() => void load()} />;
-  if (!account && failed)
-    return <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />;
+  if (!summary) return <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />;
   return (
-    <Stack data-testid="admin-overview" className="admin-workspaces-l457c5">
-      <Box>
-        <Typography variant="h4" component="h1" className="admin-workspaces-l459c9">
-          {copy.overview}
-        </Typography>
-        <Typography className="admin-workspaces-l462c9">{copy.readOnly}</Typography>
-      </Box>
-      {failed && <Alert severity="warning">{copy.partial}</Alert>}
-      <Stack className="admin-workspaces-l465c7">
-        <Card variant="outlined" className="admin-workspaces-l466c9">
-          <CardContent>
-            <Typography variant="overline">{copy.account}</Typography>
-            <Typography variant="h5" component="p" className="admin-workspaces-l469c13">
-              {account?.name ?? copy.empty}
-            </Typography>
-            <Typography className="admin-workspaces-l472c13">
-              {account?.timezone} · {account?.baseCurrency}
-            </Typography>
-          </CardContent>
-        </Card>
-        <Card variant="outlined" className="admin-workspaces-l477c9">
-          <CardContent>
-            <Typography variant="overline">{copy.queue}</Typography>
-            <Typography variant="h5" component="p" className="admin-workspaces-l480c13">
-              {health?.health.queue.queued ?? '—'}
-            </Typography>
-            <Typography className="admin-workspaces-l483c13">
-              {copy.runner}: {health?.runner.running ? copy.connected : 'stopped'}
-            </Typography>
-          </CardContent>
-        </Card>
-        <Card variant="outlined" className="admin-workspaces-l488c9">
-          <CardContent>
-            <Typography variant="overline">{copy.database}</Typography>
-            <Typography variant="h5" component="p" className="admin-workspaces-l491c13">
-              {health?.health.database ?? '—'}
-            </Typography>
-            <Typography className="admin-workspaces-l494c13">
-              Schema {health?.health.schemaVersion ?? '—'}
-            </Typography>
-          </CardContent>
-        </Card>
+    <Stack data-testid="admin-overview" className="admin-overview">
+      <Stack className="admin-overview__header">
+        <Box>
+          <Typography variant="h4" component="h1" className="admin-overview__title">
+            {copy.overview}
+          </Typography>
+          <Typography color="text.secondary">{copy.overviewSubtitle}</Typography>
+        </Box>
+        <Button variant="outlined" onClick={() => void load()}>
+          {copy.refreshOverview}
+        </Button>
       </Stack>
-      <Paper variant="outlined" className="admin-workspaces-l500c7">
-        <Typography variant="h6" component="h2" className="admin-workspaces-l501c9">
-          {copy.connections}
+      <Typography color="text.secondary" data-testid="overview-period">
+        {copy.overviewPeriod}: {period.from && formatDay(period.from)} –{' '}
+        {period.to && formatDay(period.to)} · {copy.overviewPeriodNote}
+      </Typography>
+      {failed && <Alert severity="warning">{copy.partial}</Alert>}
+      {summary.freshness?.lastRebuiltAt ? (
+        <Typography variant="body2" color="text.secondary" data-testid="overview-freshness">
+          {copy.overviewFreshness}:{' '}
+          {new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          }).format(new Date(summary.freshness.lastRebuiltAt))}
         </Typography>
-        {connections.length === 0 ? (
-          <Alert severity="info">{copy.noConnections}</Alert>
-        ) : (
-          <Stack className="admin-workspaces-l507c11">
-            {connections.map((connection) => (
-              <Stack key={connection.id} className="admin-workspaces-l509c15">
-                <Box className="admin-workspaces-l515c17">
-                  <Typography className="admin-workspaces-l516c19">
-                    {connection.displayName ?? connection.storeUrl}
-                  </Typography>
-                  <Typography variant="body2" className="admin-workspaces-l519c19">
-                    {connection.platform} · {connection.syncStatus}
-                  </Typography>
-                </Box>
-                <Chip size="small" label={`${connection.healthStatus} / ${connection.status}`} />
-              </Stack>
-            ))}
+      ) : (
+        <Alert severity="info">{copy.overviewNoFreshness}</Alert>
+      )}
+      {summary.currencies.length === 0 && (
+        <Alert severity="info" data-testid="overview-empty">
+          {copy.overviewEmpty}
+        </Alert>
+      )}
+      {summary.currencies.map((currency) => {
+        const dayTotals = new Map<string, number>();
+        for (const item of timeseries ?? [])
+          if (item.currency === currency.currency)
+            dayTotals.set(item.date, (dayTotals.get(item.date) ?? 0) + item.orderCount);
+        const recentDays = Array.from({ length: 7 }, (_, index) => {
+          const day = new Date(`${period.to}T00:00:00Z`);
+          day.setUTCDate(day.getUTCDate() - 6 + index);
+          const key = day.toISOString().slice(0, 10);
+          return [key, dayTotals.get(key) ?? 0] as const;
+        });
+        const hasRecentOrders = recentDays.some(([, count]) => count > 0);
+        const maxOrders = Math.max(1, ...recentDays.map(([, count]) => count));
+        const topProducts = (products ?? [])
+          .filter((item) => item.currency === currency.currency)
+          .sort((a, b) => {
+            const left = BigInt(a.totals.netMerchandiseMinor);
+            const right = BigInt(b.totals.netMerchandiseMinor);
+            return left === right ? a.key.localeCompare(b.key) : left > right ? -1 : 1;
+          })
+          .slice(0, 5);
+        return (
+          <Stack
+            key={currency.currency}
+            className="admin-overview__currency"
+            data-testid={`overview-currency-${currency.currency}`}
+          >
+            <Typography variant="h6" component="h2">
+              {copy.overviewCurrency}: {currency.currency}
+            </Typography>
+            <Box className="admin-overview__metrics">
+              {(
+                [
+                  [copy.overviewOrders, numberFormat.format(currency.orderCount)],
+                  [
+                    copy.overviewRevenue,
+                    formatMinor(currency.totals.collectedRevenueMinor, currency.currency),
+                  ],
+                  [
+                    copy.overviewRefunds,
+                    formatMinor(currency.totals.refundsMinor, currency.currency),
+                  ],
+                  [copy.overviewLines, numberFormat.format(currency.lineCount)],
+                  ...(summary.costCoverage &&
+                  summary.costCoverage.totalLines > 0 &&
+                  summary.costCoverage.coveredLines === summary.costCoverage.totalLines
+                    ? [
+                        [
+                          copy.overviewProfit,
+                          formatMinor(currency.totals.contributionProfitMinor, currency.currency),
+                        ] as const,
+                      ]
+                    : []),
+                ] as const
+              ).map(([label, value]) => (
+                <Card key={label} variant="outlined" className="admin-overview__metric">
+                  <CardContent>
+                    <Typography color="text.secondary" variant="body2">
+                      {label}
+                    </Typography>
+                    <Typography
+                      variant="h5"
+                      component="p"
+                      className="admin-overview__value"
+                      dir="auto"
+                    >
+                      {value}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              ))}
+            </Box>
+            <Box className="admin-overview__details">
+              <Paper variant="outlined" className="admin-overview__panel">
+                <Typography variant="h6" component="h3">
+                  {copy.overviewTrend}
+                </Typography>
+                {timeseries === null ? (
+                  <Typography color="text.secondary">{copy.overviewUnavailable}</Typography>
+                ) : !hasRecentOrders ? (
+                  <Typography color="text.secondary">{copy.overviewNoTrend}</Typography>
+                ) : (
+                  <Stack className="admin-overview__rows">
+                    {recentDays.map(([day, count]) => (
+                      <Box key={day} className="admin-overview__trend-row">
+                        <Typography variant="body2">{formatDay(day)}</Typography>
+                        <LinearProgress
+                          variant="determinate"
+                          value={(count / maxOrders) * 100}
+                          aria-label={`${formatDay(day)}: ${numberFormat.format(count)} ${copy.overviewOrders}`}
+                        />
+                        <Typography variant="body2">{numberFormat.format(count)}</Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                )}
+              </Paper>
+              <Paper variant="outlined" className="admin-overview__panel">
+                <Typography variant="h6" component="h3">
+                  {copy.overviewTopProducts}
+                </Typography>
+                {products === null ? (
+                  <Typography color="text.secondary">{copy.overviewUnavailable}</Typography>
+                ) : topProducts.length === 0 ? (
+                  <Typography color="text.secondary">{copy.overviewNoProducts}</Typography>
+                ) : (
+                  <Stack className="admin-overview__rows">
+                    {topProducts.map((product) => (
+                      <Box key={product.key} className="admin-overview__product-row">
+                        <Typography className="admin-overview__product-name">
+                          {product.label ?? product.key}
+                        </Typography>
+                        <Typography variant="body2" dir="ltr">
+                          {formatMinor(product.totals.netMerchandiseMinor, currency.currency)}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                )}
+              </Paper>
+            </Box>
           </Stack>
+        );
+      })}
+      {summary.currencies.length > 0 &&
+        (!summary.costCoverage ||
+          summary.costCoverage.totalLines === 0 ||
+          summary.costCoverage.coveredLines < summary.costCoverage.totalLines) && (
+          <Typography variant="body2" color="text.secondary">
+            {copy.overviewProfitOmitted}
+          </Typography>
         )}
-      </Paper>
     </Stack>
   );
 }
@@ -976,10 +1121,12 @@ function FieldMappingsWorkspace({
 }
 
 function SettingsWorkspace({
+  interfaceLocale,
   copy,
   onSessionExpired,
   onLocaleChange,
 }: {
+  interfaceLocale: AdminLocale;
   copy: Copy;
   onSessionExpired: () => void;
   onLocaleChange: (locale: AdminLocale) => void;
@@ -998,6 +1145,9 @@ function SettingsWorkspace({
   const [role, setRole] = useState<AuthenticatedUser['role'] | null>(null);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [resetOpen, setResetOpen] = useState(false);
+  const [health, setHealth] = useState<ApiHealth | null>(null);
+  const [healthFailed, setHealthFailed] = useState(false);
+  const [connectionsFailed, setConnectionsFailed] = useState(false);
   const [resetConfirmation, setResetConfirmation] = useState('');
   const [resetPassword, setResetPassword] = useState('');
   const [resetting, setResetting] = useState(false);
@@ -1015,16 +1165,33 @@ function SettingsWorkspace({
     setDisconnectConfirmation('');
     setDisconnectPassword('');
   };
+  const refreshDiagnostics = async () => {
+    const results = await Promise.allSettled([
+      apiRequest<{ items: Connection[] }>('/api/v1/connections', onSessionExpired),
+      apiRequest<ApiHealth>('/api/v1/operations/health', onSessionExpired),
+    ]);
+    if (results[0].status === 'fulfilled') setConnections(results[0].value.items ?? []);
+    if (results[1].status === 'fulfilled') setHealth(results[1].value);
+    setHealthFailed(results.some((result) => result.status === 'rejected'));
+    setConnectionsFailed(results[0].status === 'rejected');
+  };
   const load = async () => {
     setLoading(true);
     setFailed(false);
     try {
-      const [body, connectionBody] = await Promise.all([
+      const [body, connectionResult, healthResult] = await Promise.all([
         apiRequest<{ account: Account; user: AuthenticatedUser }>(
           '/api/v1/account',
           onSessionExpired,
         ),
-        apiRequest<{ items: Connection[] }>('/api/v1/connections', onSessionExpired),
+        apiRequest<{ items: Connection[] }>('/api/v1/connections', onSessionExpired).then(
+          (value) => ({ value, failed: false }),
+          () => ({ value: null, failed: true }),
+        ),
+        apiRequest<ApiHealth>('/api/v1/operations/health', onSessionExpired).then(
+          (value) => ({ value, failed: false }),
+          () => ({ value: null, failed: true }),
+        ),
       ]);
       setAccount(body.account);
       setRole(body.user.role);
@@ -1032,7 +1199,10 @@ function SettingsWorkspace({
       setLocale(body.account.locale);
       setTimezone(body.account.timezone);
       setBaseCurrency(body.account.baseCurrency);
-      setConnections(connectionBody.items ?? []);
+      setConnections(connectionResult.value?.items ?? []);
+      setHealth(healthResult.value);
+      setHealthFailed(connectionResult.failed || healthResult.failed);
+      setConnectionsFailed(connectionResult.failed);
     } catch (error) {
       setFailed(true);
       if (error instanceof AdminApiError && error.status === 403) setMessage('FORBIDDEN');
@@ -1211,6 +1381,77 @@ function SettingsWorkspace({
             {copy.save}
           </Button>
         </Stack>
+      </Paper>
+      <Paper variant="outlined" className="admin-data-health" data-testid="settings-data-health">
+        <Stack className="admin-data-health__heading">
+          <Box>
+            <Typography variant="h6" component="h2">
+              {copy.dataHealthTitle}
+            </Typography>
+            <Typography color="text.secondary" variant="body2">
+              {copy.dataHealthHelp}
+            </Typography>
+          </Box>
+          <Button onClick={() => void refreshDiagnostics()}>{copy.refreshOverview}</Button>
+        </Stack>
+        {healthFailed && <Alert severity="warning">{copy.dataHealthUnavailable}</Alert>}
+        <Box className="admin-data-health__grid">
+          <Box>
+            <Typography variant="subtitle2">{copy.account}</Typography>
+            <Typography>{account?.name ?? '—'}</Typography>
+            <Typography color="text.secondary" variant="body2">
+              {account?.timezone} · {account?.baseCurrency}
+            </Typography>
+          </Box>
+          <Box>
+            <Typography variant="subtitle2">{copy.database}</Typography>
+            <Typography>{health?.health.database ?? '—'}</Typography>
+            <Typography color="text.secondary" variant="body2">
+              {copy.schemaVersion}: {health?.health.schemaVersion ?? '—'}
+            </Typography>
+          </Box>
+          <Box>
+            <Typography variant="subtitle2">{copy.queue}</Typography>
+            <Typography>
+              {copy.queuedJobs}: {health?.health.queue.queued ?? '—'} · {copy.runningJobs}:{' '}
+              {health?.health.queue.running ?? '—'}
+            </Typography>
+            <Typography color="text.secondary" variant="body2">
+              {copy.runner}:{' '}
+              {health ? (health.runner.running ? copy.runnerActive : copy.runnerStopped) : '—'} ·{' '}
+              {copy.deadLetterJobs}: {health?.health.queue.deadLettered ?? '—'}
+            </Typography>
+          </Box>
+          <Box>
+            <Typography variant="subtitle2">{copy.connections}</Typography>
+            {connectionsFailed ? (
+              <Typography color="text.secondary">{copy.dataHealthUnavailable}</Typography>
+            ) : connections.length === 0 ? (
+              <Typography color="text.secondary">{copy.noConnections}</Typography>
+            ) : (
+              connections.map((connection) => (
+                <Box key={connection.id} className="admin-data-health__connection">
+                  <Typography>{connection.displayName ?? connection.storeUrl}</Typography>
+                  <Typography color="text.secondary" variant="body2">
+                    {copy.connectionStatus}: {connection.status} · {copy.syncStatus}:{' '}
+                    {connection.syncStatus}
+                  </Typography>
+                  <Typography color="text.secondary" variant="body2">
+                    {copy.lastSync}:{' '}
+                    {connection.syncLastSuccessAt
+                      ? new Intl.DateTimeFormat(interfaceLocale === 'ar' ? 'ar-EG' : 'en-US', {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        }).format(new Date(connection.syncLastSuccessAt))
+                      : '—'}{' '}
+                    · {copy.syncedOrders}: {connection.syncOrdersCount} · {copy.syncedProducts}:{' '}
+                    {connection.syncCatalogCount}
+                  </Typography>
+                </Box>
+              ))
+            )}
+          </Box>
+        </Box>
       </Paper>
       {role === 'owner' && (
         <Paper
@@ -2174,7 +2415,7 @@ export function AdminWorkspace({
 }) {
   const copy = translations[locale];
   if (section === 'overview')
-    return <OverviewWorkspace copy={copy} onSessionExpired={onSessionExpired} />;
+    return <OverviewWorkspace locale={locale} copy={copy} onSessionExpired={onSessionExpired} />;
   if (section === 'connections')
     return <ConnectionsWorkspace copy={copy} onSessionExpired={onSessionExpired} />;
   if (section === 'field-mappings')
@@ -2182,6 +2423,7 @@ export function AdminWorkspace({
   if (section === 'settings')
     return (
       <SettingsWorkspace
+        interfaceLocale={locale}
         copy={copy}
         onSessionExpired={onSessionExpired}
         onLocaleChange={onLocaleChange}
