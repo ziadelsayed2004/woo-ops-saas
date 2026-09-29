@@ -678,6 +678,9 @@ app.get('/api/v1/customers', (request, response) => {
     response.json(
       store.listWooCustomers(operationContext(user, response), {
         ...(request.query.search === undefined ? {} : { search: String(request.query.search) }),
+        ...(request.query.productId === undefined
+          ? {}
+          : { productId: String(request.query.productId) }),
         ...(request.query.cursor === undefined ? {} : { cursor: String(request.query.cursor) }),
         ...(limit === undefined ? {} : { limit }),
       }),

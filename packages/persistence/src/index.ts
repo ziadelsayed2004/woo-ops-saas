@@ -8927,7 +8927,7 @@ export class SqliteStore {
 
   listWooCustomers(
     context: AccountContext,
-    input: { search?: string; cursor?: string | null; limit?: number } = {},
+    input: { search?: string; productId?: string; cursor?: string | null; limit?: number } = {},
   ): { items: readonly Record<string, unknown>[]; nextCursor: string | null; hasMore: boolean } {
     this.assertMember(context);
     const limit = input.limit ?? 50;
@@ -8938,6 +8938,11 @@ export class SqliteStore {
       (typeof input.search !== 'string' || input.search.length > 200)
     )
       throw new Error('CUSTOMER_SEARCH_INVALID');
+    if (
+      input.productId !== undefined &&
+      (typeof input.productId !== 'string' || input.productId.length > 100)
+    )
+      throw new Error('CUSTOMER_PRODUCT_INVALID');
     const clauses = ['o.account_id = ?', "o.origin = 'woo'"];
     const params: (string | number)[] = [context.accountId];
     if (input.search?.trim()) {
@@ -8946,6 +8951,14 @@ export class SqliteStore {
         `(LOWER(COALESCE(o.customer_name, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(o.customer_email, '')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(o.customer_phone, '')) LIKE ? ESCAPE '\\')`,
       );
       params.push(search, search, search);
+    }
+    if (input.productId?.trim()) {
+      clauses.push(`${wooCustomerKeyExpression} IN (
+        SELECT DISTINCT ${wooCustomerKeyExpression}
+        FROM orders o JOIN json_each(o.product_ids_json) AS purchased_product
+        WHERE o.account_id = ? AND o.origin = 'woo' AND purchased_product.value = ?
+      )`);
+      params.push(context.accountId, input.productId.trim());
     }
     if (input.cursor) {
       clauses.push(`${wooCustomerKeyExpression} > ?`);

@@ -266,6 +266,126 @@ test('admin navigation exposes authenticated operational workspaces and route st
   await expect(page.getByText('System maintenance was queued.')).toBeVisible();
 });
 
+test('filters the customer directory by purchased product and opens an order without losing customer context @admin', async ({
+  page,
+}) => {
+  await mockAdminApi(page);
+  await page.route('**/api/v1/catalog?*', async (route: Route) => {
+    await route.fulfill({
+      json: { items: [{ externalId: '101', name: 'Notebook', sku: 'NOTE-1' }] },
+    });
+  });
+  await page.route('**/api/v1/customers?*', async (route: Route) => {
+    const productId = new URL(route.request().url()).searchParams.get('productId');
+    const customers = [
+      {
+        key: 'woo:1',
+        externalCustomerId: '1',
+        name: 'Customer One',
+        email: 'one@example.test',
+        phone: null,
+        orderCount: 3,
+        firstOrderAt: null,
+        lastOrderAt: null,
+        currencies: [],
+      },
+      {
+        key: 'woo:2',
+        externalCustomerId: '2',
+        name: 'Customer Two',
+        email: 'two@example.test',
+        phone: null,
+        orderCount: 1,
+        firstOrderAt: null,
+        lastOrderAt: null,
+        currencies: [],
+      },
+    ];
+    await route.fulfill({
+      json: { items: productId === '101' ? customers.slice(0, 1) : customers, nextCursor: null },
+    });
+  });
+  await page.route('**/api/v1/orders/order-1', async (route: Route) => {
+    await route.fulfill({
+      json: {
+        order: {
+          id: 'order-1',
+          orderNumber: '1001',
+          origin: 'woo',
+          remoteStatus: 'processing',
+          exportState: 'never-exported',
+          currency: 'EGP',
+          grandTotalMinor: '12500',
+          lines: [],
+          billing: {},
+          shipping: {},
+        },
+      },
+    });
+  });
+
+  await page.goto('/members');
+  await page.getByRole('button', { name: 'English' }).click();
+  await expect(page.getByText('Customer Two')).toBeVisible();
+  await page.getByRole('combobox', { name: 'Filter customers by product' }).fill('Notebook');
+  await page.getByRole('option', { name: 'Notebook · NOTE-1' }).click();
+  await expect(page.getByText('Customer Two')).toHaveCount(0);
+  await page.getByText('Customer One').click();
+  const customerDialog = page.locator('.customer-detail-dialog__paper');
+  await expect(customerDialog).toBeVisible();
+  await expect(customerDialog.getByText('Billing address')).toBeVisible();
+  await expect(customerDialog).toHaveCSS('border-radius', '12px');
+  await customerDialog.getByRole('button', { name: 'Open order details 1001' }).click();
+  await expect(page.getByRole('document', { name: /Order details #1001/u })).toBeVisible();
+  await expect(customerDialog).toBeHidden();
+  await page
+    .getByRole('document', { name: /Order details #1001/u })
+    .getByRole('button', { name: 'Close' })
+    .click();
+  await expect(customerDialog).toBeVisible();
+  await expect(customerDialog.getByText('Billing address')).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(async () => (await customerDialog.boundingBox())?.width ?? 0)
+    .toBeLessThanOrEqual(390);
+});
+
+test('customer dialog and order detail retain Arabic direction and fit a narrow viewport @admin', async ({
+  page,
+}) => {
+  await mockAdminApi(page);
+  await page.route('**/api/v1/orders/order-1', async (route: Route) => {
+    await route.fulfill({
+      json: {
+        order: {
+          id: 'order-1',
+          orderNumber: '1001',
+          origin: 'woo',
+          remoteStatus: 'processing',
+          exportState: 'never-exported',
+          currency: 'EGP',
+          grandTotalMinor: '12500',
+          lines: [],
+          billing: {},
+          shipping: {},
+        },
+      },
+    });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/members');
+  await page.getByText('Customer One').click();
+  const customerDialog = page.locator('.customer-detail-dialog__paper');
+  await expect(customerDialog).toHaveAttribute('dir', 'rtl');
+  await expect
+    .poll(async () => (await customerDialog.boundingBox())?.width ?? 0)
+    .toBeLessThanOrEqual(390);
+  await customerDialog.getByRole('button', { name: /عرض تفاصيل الطلب 1001/u }).click();
+  const drawer = page.locator('.order-detail-drawer__paper');
+  await expect(drawer).toHaveAttribute('dir', 'rtl');
+  await expect.poll(async () => (await drawer.boundingBox())?.x ?? -1).toBe(0);
+});
+
 test('expired sessions return to login and can authenticate again @admin', async ({ page }) => {
   await mockAdminApi(page, 'expired');
   await page.goto('/');
