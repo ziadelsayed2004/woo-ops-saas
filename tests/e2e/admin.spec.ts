@@ -371,6 +371,24 @@ test('admin navigation exposes authenticated operational workspaces and route st
   await expect(page.getByText('System maintenance was queued.')).toBeVisible();
 });
 
+test('Arabic operator screens keep displayed numbers and dates in Latin digits @admin', async ({
+  page,
+}) => {
+  await mockAdminApi(page);
+  await page.goto('/overview');
+  await expect(page.getByTestId('overview-currency-EGP')).toContainText('125.00 EGP');
+  await expect(page.getByTestId('overview-currency-EGP')).toContainText('5.00 EGP');
+  await expect(page.getByTestId('overview-freshness')).toContainText('2026');
+  const overviewText = await page.getByTestId('admin-overview').innerText();
+  expect(overviewText).toMatch(/[0-9]/u);
+  expect(overviewText).not.toMatch(/[\u0660-\u0669\u06F0-\u06F9]/u);
+
+  await page.goto('/settings');
+  await expect(page.getByTestId('settings-data-health')).toContainText('2026');
+  const settingsText = await page.getByTestId('settings-data-health').innerText();
+  expect(settingsText).not.toMatch(/[\u0660-\u0669\u06F0-\u06F9]/u);
+});
+
 test('overview keeps account currencies separate and shows partial analytics without hiding summary @admin', async ({
   page,
 }) => {
