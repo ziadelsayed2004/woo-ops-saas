@@ -3511,5 +3511,12 @@
       "acceptance": ["Overview displays real bounded-period analytics without mixing currencies or presenting incomplete cost data as final profit", "Settings contains the removed operational account, database, queue and connected-store details with graceful diagnostics failure", "Dashboard and Settings remain responsive and accessible in RTL, LTR and narrow layouts", "Affected E2E, format, styles, lint, typecheck and build gates pass"],
       "validation": ["npm run agent:validate", "npm run format:check", "npm run styles:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "npm run test:e2e -- --grep admin", "npm run build", "git diff --check"]
     }
+    ,{
+      "id": "T0954", "epic": "E09", "title": "Keep Latin digits in Arabic operator screens", "type": "fix", "phase": 9, "priority": "P1", "estimate": "S", "parallelGroup": "web-localization", "dependencies": ["T0953"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/TESTING.md", "apps/web/src/AdminWorkspaces.tsx", "apps/web/src/App.tsx", "tests/e2e/admin.spec.ts"],
+      "scope": ["Use Latin 0-9 digits for formatted numbers, money and dates on the Arabic Overview and Settings data-health screens", "Audit existing operator UI formatters and preserve Arabic text, direction and canonical stored values", "Add browser regression coverage for Arabic numerals in the affected screens"],
+      "acceptance": ["Arabic Overview counts, money, trend dates and freshness timestamps render with Latin digits only", "Arabic Settings synchronization timestamps render with Latin digits only", "English rendering is unchanged and affected localization, accessibility, E2E, typecheck and build checks pass"],
+      "validation": ["npm run agent:validate", "npm run format:check", "npm run styles:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:e2e -- --grep admin", "npm run build", "git diff --check"]
+    }
   ]
 }
