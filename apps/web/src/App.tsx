@@ -1539,10 +1539,11 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
   const [items, setItems] = useState<CatalogItemView[]>([]);
   const [categories, setCategories] = useState<CatalogItemView[]>([]);
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('');
+  const [categoryIds, setCategoryIds] = useState<string[]>([]);
   const [stockStatus, setStockStatus] = useState('');
   const [backorders, setBackorders] = useState('');
   const [visibility, setVisibility] = useState('');
+  const [hasAppliedFilters, setHasAppliedFilters] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const fetchCatalogPages = async (initial: URLSearchParams): Promise<CatalogItemView[]> => {
@@ -1570,7 +1571,7 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
     try {
       const query = new URLSearchParams({ limit: '100', kind: 'product' });
       if (search.trim()) query.set('search', search.trim());
-      if (category.trim()) query.set('category', category.trim());
+      for (const id of categoryIds) query.append('categoryId', id);
       if (stockStatus) query.set('stockStatus', stockStatus);
       if (backorders) query.set('backorders', backorders);
       if (visibility) query.set('visibility', visibility);
@@ -1586,6 +1587,9 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
         ...variations.filter((item) => item.kind === 'variation'),
       ]);
       setCategories(categoryItems);
+      setHasAppliedFilters(
+        Boolean(categoryIds.length || search.trim() || stockStatus || backorders || visibility),
+      );
     } catch {
       setError(true);
     } finally {
@@ -1623,13 +1627,21 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
             onChange={(event) => setSearch(event.target.value)}
           />
           <Autocomplete
+            multiple
             fullWidth
             size="small"
-            options={categories.map((item) => item.name)}
-            value={category || null}
-            onChange={(_event, value) => setCategory(value ?? '')}
+            options={categories}
+            getOptionLabel={(option) => option.name}
+            isOptionEqualToValue={(option, value) => option.id === value.id}
+            value={categories.filter((item) => categoryIds.includes(item.externalId))}
+            onChange={(_event, value) => setCategoryIds(value.map((item) => item.externalId))}
+            className="catalog-category-filter"
             renderInput={(params) => (
-              <TextField {...params} label={tr(locale, 'inline.app.category')} />
+              <TextField
+                {...params}
+                label={tr(locale, 'inline.app.categoriesMatchAll')}
+                helperText={tr(locale, 'inline.app.categoriesMatchAllHint')}
+              />
             )}
           />
           <TextField
@@ -1730,7 +1742,12 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
           </Table>
         </TableContainer>
         {loading && <LinearProgress />}
-        {!loading && items.length === 0 && (
+        {!loading && items.length === 0 && hasAppliedFilters && (
+          <Typography className="catalog-empty-filtered">
+            {tr(locale, 'inline.app.noProductsMatchFilters')}
+          </Typography>
+        )}
+        {!loading && items.length === 0 && !hasAppliedFilters && (
           <Stack className="app-l1767c11">
             <Typography className="app-l1768c13">
               {tr(locale, 'inline.app.noWoocommerceProductsHaveBeenSynchronizedYet')}

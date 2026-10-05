@@ -69,6 +69,14 @@ customer's order count and currency-separated spend remain lifetime totals. The 
 the same account and filter selection. `GET /api/v1/customers/:customerKey` returns the profile and
 recent orders; opening an order uses the existing account-scoped `GET /api/v1/orders/:id` endpoint.
 
+## Catalog category filtering
+
+The authenticated `GET /api/v1/catalog` endpoint accepts repeated `categoryId` query parameters,
+for example `?kind=product&categoryId=4&categoryId=5&limit=50`. Results must belong to **every**
+selected WooCommerce category ID. Up to 20 positive numeric IDs are accepted; `search`, stock,
+backorder and visibility filters still combine with the category selection. Variations inherit
+their parent product's categories. Pagination and counts remain scoped to the signed-in account.
+
 ## Hostinger deployment
 
 Create a Node.js 22.x application with repository root `./`, build command

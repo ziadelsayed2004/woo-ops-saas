@@ -60,6 +60,7 @@ import {
   orderLocalWorkflowSchema,
   orderTagSchema,
   orderNoteSchema,
+  catalogCategoryIdsSchema,
 } from '@woo-ops/contracts';
 import { SqliteStore, ORDER_FILTER_CATALOG } from '@woo-ops/persistence';
 import type {
@@ -870,9 +871,15 @@ app.post('/api/v1/manual-orders', (request, response) => {
 app.get('/api/v1/catalog', (request, response) => {
   const user = authenticatedUser(request, response);
   if (!user) return;
+  const categoryIds = catalogCategoryIdsSchema.safeParse(request.query.categoryId);
+  if (!categoryIds.success) {
+    sendApiError(response, 400, 'CATALOG_CATEGORY_IDS_INVALID', 'Category selection is invalid');
+    return;
+  }
   try {
     response.json(
       store.listCatalog(operationContext(user, response), {
+        categoryIds: categoryIds.data,
         ...(request.query.search === undefined ? {} : { search: String(request.query.search) }),
         ...(request.query.kind === undefined
           ? {}

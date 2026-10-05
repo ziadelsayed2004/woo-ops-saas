@@ -259,6 +259,11 @@ export const documentIdentityPolicyUpdateSchema = z
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'At least one policy field is required');
 
+export const catalogCategoryIdsSchema = z.preprocess(
+  (value) => (value === undefined ? [] : Array.isArray(value) ? value : [value]),
+  z.array(z.string().regex(/^[1-9]\d{0,17}$/u)).max(20),
+);
+
 const minorAmountSchema = z.string().regex(/^-?\d{1,18}$/);
 const analyticsDateKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const analyticsSourceSchema = z.enum(['woo', 'manual', 'combined']);
