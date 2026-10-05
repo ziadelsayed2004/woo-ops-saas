@@ -9977,6 +9977,7 @@ export class SqliteStore {
       search?: string;
       kind?: CatalogItem['kind'];
       category?: string;
+      categoryIds?: readonly string[];
       stockStatus?: 'instock' | 'outofstock' | 'onbackorder';
       backorders?: 'no' | 'notify' | 'yes';
       visibility?: 'visible' | 'catalog' | 'search' | 'hidden';
@@ -10013,6 +10014,26 @@ export class SqliteStore {
       if (input.category.length > 120) throw new Error('CATALOG_CATEGORY_INVALID');
       clauses.push("LOWER(source_json) LIKE ? ESCAPE '\\'");
       params.push(`%${escapeLike(input.category.toLowerCase())}%`);
+    }
+    const categoryIds = input.categoryIds ?? [];
+    if (categoryIds.length > 20 || categoryIds.some((id) => !/^[1-9]\d{0,17}$/u.test(id)))
+      throw new Error('CATALOG_CATEGORY_IDS_INVALID');
+    const effectiveCategories = `CASE WHEN catalog_items.kind = 'variation' THEN COALESCE(
+      (SELECT CASE WHEN json_valid(parent.source_json)
+         THEN json_extract(parent.source_json, '$.categories') END FROM catalog_items AS parent
+       WHERE parent.account_id = catalog_items.account_id
+         AND parent.connection_id = catalog_items.connection_id
+         AND parent.kind = 'product' AND parent.external_id = catalog_items.parent_external_id
+         AND parent.remote_deleted_at IS NULL LIMIT 1), '[]')
+       ELSE COALESCE(CASE WHEN json_valid(catalog_items.source_json)
+         THEN json_extract(catalog_items.source_json, '$.categories') END, '[]') END`;
+    const selectedCategoryIds = [...new Set(categoryIds)];
+    if (selectedCategoryIds.length > 0) {
+      clauses.push(`(SELECT COUNT(DISTINCT CAST(json_extract(selected_category.value, '$.id') AS TEXT))
+        FROM json_each(${effectiveCategories}) AS selected_category
+        WHERE CAST(json_extract(selected_category.value, '$.id') AS TEXT)
+          IN (${selectedCategoryIds.map(() => '?').join(', ')})) = ?`);
+      params.push(...selectedCategoryIds, selectedCategoryIds.length);
     }
     if (input.stockStatus) {
       if (!['instock', 'outofstock', 'onbackorder'].includes(input.stockStatus))
@@ -10061,7 +10082,8 @@ export class SqliteStore {
     const where = clauses.join(' AND ');
     const rows = this.db
       .prepare(
-        `SELECT id, connection_id, kind, external_id, parent_external_id, name, sku, source_json
+        `SELECT id, connection_id, kind, external_id, parent_external_id, name, sku, source_json,
+                ${effectiveCategories} AS effective_categories_json
          FROM catalog_items WHERE ${where} ORDER BY kind, name COLLATE NOCASE, id LIMIT ?`,
       )
       .all(...params, limit + 1) as Array<Record<string, unknown>>;
@@ -10084,16 +10106,14 @@ export class SqliteStore {
       items: pageRows.map((row) => {
         const normalized = parseJsonRecord(row.source_json);
         const source = isRecord(normalized.source) ? normalized.source : normalized;
-        const categories = Array.isArray(normalized.categories)
-          ? normalized.categories.flatMap((value) => {
-              const category = isRecord(value) ? value : {};
-              const id = category.id;
-              const name = category.name;
-              return (typeof id === 'number' || typeof id === 'string') && typeof name === 'string'
-                ? [{ id: String(id), name }]
-                : [];
-            })
-          : [];
+        const categories = parseJsonArray(row.effective_categories_json).flatMap((value) => {
+          const category = isRecord(value) ? value : {};
+          const id = category.id;
+          const name = category.name;
+          return (typeof id === 'number' || typeof id === 'string') && typeof name === 'string'
+            ? [{ id: String(id), name }]
+            : [];
+        });
         const optionalText = (value: unknown): string | null =>
           typeof value === 'string' && value.trim() ? value.trim() : null;
         return {

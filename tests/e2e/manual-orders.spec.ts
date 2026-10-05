@@ -1,5 +1,102 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
+test('catalog shows only products shared by every selected category and clears back to all', async ({
+  page,
+}, testInfo) => {
+  await page.route('**/api/v1/auth/session', (route) =>
+    route.fulfill({
+      json: {
+        user: { id: 'user-1', accountId: 'account-1', email: 'admin@example.test', role: 'admin' },
+      },
+    }),
+  );
+  const requestedCategories: string[][] = [];
+  const product = (id: string, name: string, categoryIds: string[]) => ({
+    id,
+    kind: 'product',
+    externalId: id,
+    parentExternalId: null,
+    name,
+    price: '100.00',
+    stockStatus: 'instock',
+    stockQuantity: 5,
+    backorders: 'no',
+    catalogVisibility: 'visible',
+    categories: categoryIds.map((categoryId) => ({
+      id: categoryId,
+      name: `Category ${categoryId}`,
+    })),
+  });
+  const products = [
+    product('10', 'Shared product', ['4', '5']),
+    product('11', 'First only', ['4']),
+    product('12', 'Second only', ['5']),
+  ];
+  await page.route('**/api/v1/catalog?**', (route) => {
+    const query = new URL(route.request().url()).searchParams;
+    const selected = query.getAll('categoryId');
+    if (query.get('kind') === 'category') {
+      return route.fulfill({
+        json: {
+          items: ['4', '5'].map((id) => product(id, `Category ${id}`, [])),
+          hasMore: false,
+          nextCursor: null,
+        },
+      });
+    }
+    if (query.get('kind') === 'variation')
+      return route.fulfill({ json: { items: [], hasMore: false, nextCursor: null } });
+    requestedCategories.push(selected);
+    return route.fulfill({
+      json: {
+        items: products.filter(
+          (item) =>
+            item.name.toLowerCase().includes((query.get('search') ?? '').toLowerCase()) &&
+            selected.every((id) => item.categories.some((c) => c.id === id)),
+        ),
+        hasMore: false,
+        nextCursor: null,
+      },
+    });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'English' }).click();
+  await page.getByRole('button', { name: 'Products & stock' }).click();
+  const categories = page.getByRole('combobox', { name: 'Categories (match all)' });
+  await categories.click();
+  await page.getByRole('option', { name: 'Category 4' }).click();
+  await categories.click();
+  await page.getByRole('option', { name: 'Category 5' }).click();
+  await page.getByRole('button', { name: 'Apply' }).click();
+  await expect(page.getByRole('cell', { name: 'Shared product' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'First only' })).toHaveCount(0);
+  await expect(page.getByRole('cell', { name: 'Second only' })).toHaveCount(0);
+  expect(requestedCategories.at(-1)).toEqual(['4', '5']);
+  await page.screenshot({
+    path: testInfo.outputPath('catalog-category-intersection-en.png'),
+    fullPage: true,
+  });
+  await page.getByRole('textbox', { name: 'Search product name' }).fill('First');
+  await page.getByRole('button', { name: 'Apply' }).click();
+  await expect(page.getByText('No products match the selected filters.')).toBeVisible();
+  await page.getByRole('textbox', { name: 'Search product name' }).clear();
+  await categories.click();
+  await categories.press('Backspace');
+  await categories.press('Backspace');
+  await page.getByRole('button', { name: 'Apply' }).click();
+  await expect(page.getByRole('cell', { name: 'First only' })).toBeVisible();
+  expect(requestedCategories.at(-1)).toEqual([]);
+  await page.getByRole('button', { name: 'العربية' }).click();
+  await expect(page.getByRole('combobox', { name: 'التصنيفات (مشتركة بينها)' })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.locator('main')).toHaveCSS('margin-left', '0px');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1280);
+  await page.screenshot({
+    path: testInfo.outputPath('catalog-category-filter-ar.png'),
+    fullPage: true,
+  });
+});
+
 const openManualForm = async (page: Page, rates: unknown[]) => {
   await page.route('**/api/v1/auth/session', async (route: Route) => {
     await route.fulfill({
