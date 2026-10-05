@@ -3518,5 +3518,12 @@
       "acceptance": ["Arabic Overview counts, money, trend dates and freshness timestamps render with Latin digits only", "Arabic Settings synchronization timestamps render with Latin digits only", "English rendering is unchanged and affected localization, accessibility, E2E, typecheck and build checks pass"],
       "validation": ["npm run agent:validate", "npm run format:check", "npm run styles:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:e2e -- --grep admin", "npm run build", "git diff --check"]
     }
+    ,{
+      "id": "T0955", "epic": "E09", "title": "Filter catalog products by shared categories", "type": "feat", "phase": 9, "priority": "P1", "estimate": "M", "parallelGroup": "catalog-operations", "dependencies": ["T0954"],
+      "references": ["AGENTS.md", ".agentpack/product/PRD.md", ".agentpack/product/UI_SPEC.md", ".agentpack/architecture/ARCHITECTURE.md", ".agentpack/architecture/TESTING.md", "apps/web/src/App.tsx", "apps/web/src/App.css", "apps/web/src/locales/ar.json", "apps/web/src/locales/en.json", "apps/api/src/index.ts", "packages/persistence/src/index.ts", "packages/persistence/tests/catalog.test.js", "tests/e2e/manual-orders.spec.ts"],
+      "scope": ["Allow operators to select multiple synchronized Woo categories in the catalog workspace", "Filter account-scoped product and variation catalog records by membership in every selected category, using stable category IDs and bounded server-side pagination", "Keep existing search and stock filters composable, and add Arabic and English guidance plus repository and browser regression coverage"],
+      "acceptance": ["Selecting two or more categories shows only products belonging to all selected categories, not their union or substring matches", "Variations inherit their parent product category membership for filtering and display", "Clearing category selection restores unfiltered catalog results while search and stock filters still work", "Category IDs are bounded and validated at the API/repository boundary, with account isolation and cursor counts preserved", "RTL/LTR, format, styles, typecheck, unit, integration, E2E and build checks pass"],
+      "validation": ["npm run agent:validate", "npm run format:check", "npm run styles:check", "npm run lint", "npm run typecheck", "npm run test:unit", "npm run test:integration", "node node_modules/@playwright/test/cli.js test tests/e2e/manual-orders.spec.ts --workers=2", "npm run build", "git diff --check"]
+    }
   ]
 }
