@@ -1,5 +1,5 @@
 import './App.css';
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -283,6 +283,7 @@ const columns = [
   'orderNumber',
   'source',
   'remoteStatus',
+  'localStatus',
   'total',
   'exportState',
   'remoteExportStatus',
@@ -310,6 +311,16 @@ const defaultOrderColumns: readonly (typeof columns)[number][] = [
   'orderNumber',
   'remoteStatus',
   'remoteExportStatus',
+  'exportState',
+  'customerName',
+  'total',
+  'paymentMethod',
+  'shippingMethod',
+  'createdAt',
+];
+const defaultManualOrderColumns: readonly (typeof columns)[number][] = [
+  'orderNumber',
+  'localStatus',
   'exportState',
   'customerName',
   'total',
@@ -346,15 +357,36 @@ const emptyOrderFilters = (): OrderFilters => ({
   to: '',
 });
 
-const wooSourceFilter: JsonRecord = { field: 'source', operator: 'equals', value: 'woo' };
-
-const scopeQueryToWooOrders = (query: JsonRecord): JsonRecord => {
+const scopeQueryToOrderSource = (query: JsonRecord, source: 'woo' | 'manual'): JsonRecord => {
+  const sourceFilter: JsonRecord = { field: 'source', operator: 'equals', value: source };
   const filter = query.filter;
   return {
     ...query,
-    filter:
-      filter === undefined ? wooSourceFilter : { op: 'and', children: [wooSourceFilter, filter] },
+    filter: filter === undefined ? sourceFilter : { op: 'and', children: [sourceFilter, filter] },
   };
+};
+
+const manualStatusLabel = (value: unknown, locale: Locale): string => {
+  switch (value) {
+    case 'new':
+      return tr(locale, 'inline.app.manualStatusNew');
+    case 'awaiting-payment-proof':
+      return tr(locale, 'inline.app.manualStatusAwaitingProof');
+    case 'confirmed':
+      return tr(locale, 'inline.app.manualStatusConfirmed');
+    default:
+      return valueText(value);
+  }
+};
+
+const queryMatchesOrderSource = (query: JsonRecord, source: 'woo' | 'manual'): boolean => {
+  const matches = (value: unknown): boolean => {
+    const filter = asRecord(value);
+    if ((filter.field === 'source' || filter.field === 'origin') && filter.operator === 'equals')
+      return filter.value === source;
+    return !Array.isArray(filter.children) || filter.children.every(matches);
+  };
+  return matches(query.filter);
 };
 
 type SavedOrderView = {
@@ -1293,7 +1325,14 @@ function OrderDetail({
       </Stack>
       <Stack className="order-detail__badges">
         <Chip label={order.origin === 'manual' ? t.originManual : t.originWoo} />
-        <Chip label={valueText(order.remoteStatus)} variant="outlined" />
+        <Chip
+          label={
+            order.origin === 'manual'
+              ? manualStatusLabel(order.localStatus, locale)
+              : valueText(order.remoteStatus)
+          }
+          variant="outlined"
+        />
         <Chip
           label={
             valueText(order.exportState) === 'never-exported'
@@ -1328,11 +1367,22 @@ function OrderDetail({
       >
         {tab === 0 && (
           <Stack className="order-detail__panel-sections">
-            <Section title={t.remote}>
+            <Section title={order.origin === 'manual' ? t.originManual : t.remote}>
               <Fact label={t.orderNumber} value={valueText(order.orderNumber)} />
-              <Fact label={t.sourceId} value={valueText(order.externalOrderId)} />
-              <Fact label={t.store} value={valueText(order.connectionId)} />
-              <Fact label={t.remoteStatus} value={valueText(order.remoteStatus)} />
+              {order.origin !== 'manual' && (
+                <>
+                  <Fact label={t.sourceId} value={valueText(order.externalOrderId)} />
+                  <Fact label={t.store} value={valueText(order.connectionId)} />
+                </>
+              )}
+              <Fact
+                label={order.origin === 'manual' ? t.localStatus : t.remoteStatus}
+                value={
+                  order.origin === 'manual'
+                    ? manualStatusLabel(order.localStatus, locale)
+                    : valueText(order.remoteStatus)
+                }
+              />
               <Fact label={t.total} value={formatMinor(order.grandTotalMinor, currency, locale)} />
               <Fact label={t.channel} value={valueText(order.channel ?? order.createdVia)} />
               <Fact label={t.pos} value={valueText(order.posLocation ?? order.pos)} />
@@ -1345,7 +1395,9 @@ function OrderDetail({
                 value={dateText(order.modifiedAt ?? order.updatedAt, locale)}
               />
             </Section>
-            <Alert severity="info">{t.platformOnly}</Alert>
+            <Alert severity="info">
+              {order.origin === 'manual' ? t.localOnly : t.platformOnly}
+            </Alert>
             <Section title={t.items}>
               {asList(order.lines).length === 0 ? (
                 <EmptyValue label={t.noData} />
@@ -1409,6 +1461,15 @@ function OrderDetail({
         {tab === 3 && (
           <Stack className="order-detail__panel-sections">
             <Section title={t.payment}>
+              {order.origin === 'manual' && order.localStatus === 'confirmed' && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  href={`/api/v1/manual-orders/${encodeURIComponent(order.id)}/payment-proof`}
+                >
+                  {tr(locale, 'inline.app.transferProof')}
+                </Button>
+              )}
               <Fact
                 label={t.method}
                 value={valueText(
@@ -1760,99 +1821,6 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
             </Button>
           </Stack>
         )}
-      </Paper>
-    </Stack>
-  );
-}
-
-function ManualOrdersWorkspace({ locale, onCreate }: { locale: Locale; onCreate: () => void }) {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const load = async () => {
-    setLoading(true);
-    setError(false);
-    try {
-      const response = await fetch('/api/v1/orders/query', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          filter: { field: 'origin', operator: 'equals', value: 'manual' },
-          limit: 50,
-          sort: { field: 'createdAt', direction: 'desc' },
-        }),
-      });
-      if (!response.ok) throw new Error('MANUAL_QUEUE_FAILED');
-      const body = (await response.json()) as QueryResponse;
-      setOrders(body.items);
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-  useEffect(() => {
-    void load();
-  }, []);
-  return (
-    <Stack data-testid="manual-orders-workspace" className="app-l1815c5">
-      <Stack className="app-l1816c7">
-        <Box>
-          <Typography variant="h4" component="h1" className="app-l1818c11">
-            {tr(locale, 'inline.app.manualOrderOperations')}
-          </Typography>
-          <Typography className="app-l1821c11">
-            {tr(locale, 'inline.app.aSeparateLocalQueueThatNeverWritesToWoocommerceOrInventory')}
-          </Typography>
-        </Box>
-        <Button variant="contained" onClick={onCreate}>
-          {tr(locale, 'inline.app.newManualOrder')}
-        </Button>
-      </Stack>
-      {error && (
-        <Alert severity="error">{tr(locale, 'inline.app.manualOrdersCouldNotBeLoaded')}</Alert>
-      )}
-      <Paper variant="outlined">
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>{tr(locale, 'inline.app.order')}</TableCell>
-                <TableCell>{tr(locale, 'inline.app.customer')}</TableCell>
-                <TableCell>{tr(locale, 'inline.app.total')}</TableCell>
-                <TableCell>{tr(locale, 'inline.app.export')}</TableCell>
-                <TableCell>{tr(locale, 'inline.app.transferProof')}</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {orders.map((order) => (
-                <TableRow key={order.id}>
-                  <TableCell>{order.orderNumber}</TableCell>
-                  <TableCell>{valueText(order.customerName ?? orderCustomerName(order))}</TableCell>
-                  <TableCell>
-                    {formatMinor(order.grandTotalMinor, order.currency ?? 'EGP', locale)}
-                  </TableCell>
-                  <TableCell>{order.exportState}</TableCell>
-                  <TableCell>
-                    {order.localStatus === 'confirmed' ? (
-                      <Button
-                        size="small"
-                        href={`/api/v1/manual-orders/${encodeURIComponent(order.id)}/payment-proof`}
-                      >
-                        {tr(locale, 'inline.app.download')}
-                      </Button>
-                    ) : (
-                      '—'
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-        {loading && <LinearProgress />}
-        {!loading && orders.length === 0 && <Box className="app-l1872c11">—</Box>}
       </Paper>
     </Stack>
   );
@@ -3560,7 +3528,9 @@ export function App({
   const [authUser, setAuthUser] = useState<AuthenticatedUser | null>(null);
   const [sessionMessage, setSessionMessage] = useState('');
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('processing');
+  const [status, setStatus] = useState(() =>
+    viewFromPath(window.location.pathname) === 'manual' ? '' : 'processing',
+  );
   const [filters, setFilters] = useState<OrderFilters>(emptyOrderFilters);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [savedFiltersOpen, setSavedFiltersOpen] = useState(false);
@@ -3581,11 +3551,19 @@ export function App({
   const [savedViews, setSavedViews] = useState<SavedOrderView[]>([]);
   const [selectedSavedViewId, setSelectedSavedViewId] = useState('');
   const [activeSavedQuery, setActiveSavedQuery] = useState<JsonRecord | null>(null);
-  const [visibleColumns, setVisibleColumns] = useState<string[]>([...defaultOrderColumns]);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(() =>
+    viewFromPath(window.location.pathname) === 'manual'
+      ? [...defaultManualOrderColumns]
+      : [...defaultOrderColumns],
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
   const [view, setViewState] = useState<AppView>(() => viewFromPath(window.location.pathname));
+  const [orderSource, setOrderSource] = useState<'woo' | 'manual'>(() =>
+    viewFromPath(window.location.pathname) === 'manual' ? 'manual' : 'woo',
+  );
+  const orderRequestSequence = useRef(0);
   const [connectionNotice, setConnectionNotice] = useState(() => {
     if (!window.location.pathname.startsWith('/connections/woocommerce/callback')) return '';
     return new URLSearchParams(window.location.search).get('success') === '1'
@@ -3597,14 +3575,48 @@ export function App({
       window.history.replaceState({}, '', '/connections');
   }, []);
 
+  const resetOrderWorkspace = (source: 'woo' | 'manual') => {
+    orderRequestSequence.current += 1;
+    setOrderSource(source);
+    setStatus(source === 'woo' ? 'processing' : '');
+    setSearch('');
+    setFilters(emptyOrderFilters());
+    setActiveSavedQuery(null);
+    setSelectedSavedViewId('');
+    setVisibleColumns(
+      source === 'manual' ? [...defaultManualOrderColumns] : [...defaultOrderColumns],
+    );
+    setSelectedIds(new Set());
+    setSelectAllMatching(false);
+    setSelectionMessage('');
+    setSelectionError(false);
+    setOutputDialogOpen(false);
+    setSelected(null);
+    setOrders([]);
+    setOrderFacets([]);
+    setTotalCount(0);
+    setCursor(null);
+    setHasMore(false);
+  };
+
   const setView = (next: AppView) => {
+    if (
+      (next === 'orders' || next === 'manual') &&
+      (next === 'manual' ? 'manual' : 'woo') !== orderSource
+    )
+      resetOrderWorkspace(next === 'manual' ? 'manual' : 'woo');
     setViewState(next);
     const nextPath = pathForView(next);
     if (window.location.pathname !== nextPath) window.history.pushState({}, '', nextPath);
   };
 
   useEffect(() => {
-    const onPopState = () => setViewState(viewFromPath(window.location.pathname));
+    const onPopState = () => {
+      const next = viewFromPath(window.location.pathname);
+      if (next === 'orders' || next === 'manual')
+        resetOrderWorkspace(next === 'manual' ? 'manual' : 'woo');
+      setViewState(next);
+    };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
@@ -3671,7 +3683,12 @@ export function App({
 
   const orderFilter = useMemo(() => {
     const leaves: JsonRecord[] = [];
-    if (status) leaves.push({ field: 'remoteStatus', operator: 'equals', value: status });
+    if (status)
+      leaves.push({
+        field: orderSource === 'manual' ? 'localStatus' : 'remoteStatus',
+        operator: 'equals',
+        value: status,
+      });
     if (filters.source) leaves.push({ field: 'source', operator: 'equals', value: filters.source });
     if (filters.exportState)
       leaves.push({ field: 'exportState', operator: 'equals', value: filters.exportState });
@@ -3692,26 +3709,37 @@ export function App({
     if (filters.from || filters.to) {
       const from = filters.from ? `${filters.from}T00:00:00.000Z` : '1970-01-01T00:00:00.000Z';
       const to = filters.to ? `${filters.to}T23:59:59.999Z` : '9999-12-31T23:59:59.999Z';
-      leaves.push({ field: 'remoteCreatedAt', operator: 'between', value: [from, to] });
+      leaves.push({
+        field: orderSource === 'manual' ? 'createdAt' : 'remoteCreatedAt',
+        operator: 'between',
+        value: [from, to],
+      });
     }
     if (leaves.length === 0) return undefined;
     return leaves.length === 1 ? leaves[0] : { op: 'and', children: leaves };
-  }, [filters, status]);
+  }, [filters, status, orderSource]);
   const currentOrderQuery = useMemo<JsonRecord>(
     () =>
-      scopeQueryToWooOrders(
+      scopeQueryToOrderSource(
         activeSavedQuery ?? {
           search: search || undefined,
           filter: orderFilter,
-          sort: { field: 'remoteCreatedAt', direction: 'desc' },
+          sort: {
+            field: orderSource === 'manual' ? 'createdAt' : 'remoteCreatedAt',
+            direction: 'desc',
+          },
         },
+        orderSource,
       ),
-    [activeSavedQuery, orderFilter, search],
+    [activeSavedQuery, orderFilter, search, orderSource],
   );
 
   const loadOrders = async (append = false, queryOverride?: JsonRecord) => {
-    const query = scopeQueryToWooOrders(
+    const requestSequence = ++orderRequestSequence.current;
+    const source = orderSource;
+    const query = scopeQueryToOrderSource(
       queryOverride ?? activeSavedQuery ?? { search: search || undefined, filter: orderFilter },
+      source,
     );
     setLoading(true);
     setError(false);
@@ -3727,7 +3755,7 @@ export function App({
           includeFacets: true,
           cursor: append ? cursor : null,
           limit: 50,
-          sort: { field: 'remoteCreatedAt', direction: 'desc' },
+          sort: { field: source === 'manual' ? 'createdAt' : 'remoteCreatedAt', direction: 'desc' },
         }),
       });
       if (!response.ok) {
@@ -3735,6 +3763,7 @@ export function App({
         throw new Error('ORDER_QUERY_FAILED');
       }
       const body = (await response.json()) as QueryResponse;
+      if (requestSequence !== orderRequestSequence.current) return;
       setOrders((previous) => (append ? [...previous, ...body.items] : body.items));
       setCursor(body.nextCursor);
       setHasMore(body.hasMore);
@@ -3746,10 +3775,11 @@ export function App({
         setSelectionMessage('');
       }
     } catch {
+      if (requestSequence !== orderRequestSequence.current) return;
       setError(true);
       if (!append) setOrders([]);
     } finally {
-      setLoading(false);
+      if (requestSequence === orderRequestSequence.current) setLoading(false);
     }
   };
 
@@ -3787,8 +3817,14 @@ export function App({
         headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
         body: JSON.stringify({
           name: viewName.trim(),
-          query: scopeQueryToWooOrders({ search: search || undefined, filter: orderFilter }),
-          sort: { field: 'remoteCreatedAt', direction: 'desc' },
+          query: scopeQueryToOrderSource(
+            { search: search || undefined, filter: orderFilter },
+            orderSource,
+          ),
+          sort: {
+            field: orderSource === 'manual' ? 'createdAt' : 'remoteCreatedAt',
+            direction: 'desc',
+          },
           columns: visibleColumns,
           pageSize: 50,
           visibility: 'private',
@@ -3916,8 +3952,19 @@ export function App({
       ((await profilesResponse.json()) as { items?: ExportProfileSummary[] }).items ?? [];
     const profileName =
       preset === 'shipping'
-        ? tr(locale, 'labels.exportProfile.shippingOrders')
-        : tr(locale, 'labels.exportProfile.wooOrders', { format: format.toUpperCase() });
+        ? tr(
+            locale,
+            orderSource === 'manual'
+              ? 'labels.exportProfile.manualShippingOrders'
+              : 'labels.exportProfile.shippingOrders',
+          )
+        : tr(
+            locale,
+            orderSource === 'manual'
+              ? 'labels.exportProfile.manualOrders'
+              : 'labels.exportProfile.wooOrders',
+            { format: format.toUpperCase() },
+          );
     const exportColumns = preset === 'shipping' ? wooShippingExportColumns : wooOrderExportColumns;
     let profile = profiles.find((item) => item.name === profileName);
     if (!profile) {
@@ -3967,7 +4014,13 @@ export function App({
           rowMode: 'line',
           columns: exportColumns,
           filenameTemplate:
-            preset === 'shipping' ? 'shipping-orders-{date}-{format}' : 'orders-{date}-{format}',
+            orderSource === 'manual'
+              ? preset === 'shipping'
+                ? 'manual-shipping-orders-{date}-{format}'
+                : 'manual-orders-{date}-{format}'
+              : preset === 'shipping'
+                ? 'shipping-orders-{date}-{format}'
+                : 'orders-{date}-{format}',
           config: { required: ['woo.orderNumber'] },
         }),
       },
@@ -4225,19 +4278,37 @@ export function App({
   };
 
   useEffect(() => {
-    if (authStatus !== 'authenticated' || view !== 'orders') return;
+    if (authStatus !== 'authenticated' || (view !== 'orders' && view !== 'manual')) return;
     void loadOrders();
-  }, [status, authStatus, view]);
+    return () => {
+      orderRequestSequence.current += 1;
+    };
+  }, [status, authStatus, view, orderSource]);
 
   useEffect(() => {
     if (authStatus !== 'authenticated') return;
     void loadSavedViews();
   }, [authStatus]);
 
-  const renderedColumns = useMemo(
-    () => columns.filter((column) => visibleColumns.includes(column)),
-    [visibleColumns],
+  const availableColumns = useMemo(
+    () =>
+      columns.filter((column) =>
+        orderSource === 'woo'
+          ? column !== 'localStatus'
+          : column !== 'remoteStatus' && column !== 'remoteExportStatus',
+      ),
+    [orderSource],
   );
+  const renderedColumns = useMemo(
+    () => availableColumns.filter((column) => visibleColumns.includes(column)),
+    [availableColumns, visibleColumns],
+  );
+  const sourceSavedViews = savedViews.filter((saved) =>
+    queryMatchesOrderSource(saved.query, orderSource),
+  );
+  const localStatusOptions = [
+    ...new Set(['new', 'awaiting-payment-proof', 'confirmed', ...facetValues('localStatus')]),
+  ];
   const remoteStatusOptions = useMemo(
     () => [
       ...new Set([
@@ -4254,6 +4325,7 @@ export function App({
       orderNumber: t.orderNumber,
       source: t.source,
       remoteStatus: t.remoteStatus,
+      localStatus: t.localStatus,
       total: t.total,
       exportState: t.exportState,
       remoteExportStatus: tr(locale, 'inline.app.wooExportStatus'),
@@ -4268,53 +4340,55 @@ export function App({
       updatedAt: t.updated,
     })[column] ?? column;
   const display = (order: Order, column: string): string =>
-    column === 'source'
-      ? order.origin === 'manual'
-        ? t.originManual
-        : t.originWoo
-      : column === 'total'
-        ? formatMinor(order.grandTotalMinor, valueText(order.currency, ''), locale)
-        : column === 'remoteExportStatus'
-          ? order.remoteExportStatus == null
-            ? tr(locale, 'inline.app.wooStatusUnavailable')
-            : order.remoteExportStatus === 'exported'
-              ? tr(locale, 'inline.app.exportedInWoocommerce')
-              : order.remoteExportStatus === 'not_exported'
-                ? tr(locale, 'inline.app.notExportedInWoocommerce')
-                : tr(locale, 'inline.app.wooStatusUnavailable')
-          : column === 'customerName'
-            ? valueText(order.customerName ?? orderCustomerName(order))
-            : column === 'customerEmail'
-              ? valueText(order.customerEmail ?? asRecord(order.billing).email)
-              : column === 'customerPhone'
-                ? valueText(order.customerPhone ?? asRecord(order.billing).phone)
-                : column === 'paymentMethod'
-                  ? paymentMethodLabel(
-                      order.paymentMethodTitle ?? asRecord(order.payment).title,
-                      locale,
-                    )
-                  : column === 'shippingMethod'
-                    ? shippingMethodLabel(
-                        order.shippingMethodTitle ?? asRecord(order.shippingMethod).title,
+    column === 'localStatus'
+      ? manualStatusLabel(order.localStatus, locale)
+      : column === 'source'
+        ? order.origin === 'manual'
+          ? t.originManual
+          : t.originWoo
+        : column === 'total'
+          ? formatMinor(order.grandTotalMinor, valueText(order.currency, ''), locale)
+          : column === 'remoteExportStatus'
+            ? order.remoteExportStatus == null
+              ? tr(locale, 'inline.app.wooStatusUnavailable')
+              : order.remoteExportStatus === 'exported'
+                ? tr(locale, 'inline.app.exportedInWoocommerce')
+                : order.remoteExportStatus === 'not_exported'
+                  ? tr(locale, 'inline.app.notExportedInWoocommerce')
+                  : tr(locale, 'inline.app.wooStatusUnavailable')
+            : column === 'customerName'
+              ? valueText(order.customerName ?? orderCustomerName(order))
+              : column === 'customerEmail'
+                ? valueText(order.customerEmail ?? asRecord(order.billing).email)
+                : column === 'customerPhone'
+                  ? valueText(order.customerPhone ?? asRecord(order.billing).phone)
+                  : column === 'paymentMethod'
+                    ? paymentMethodLabel(
+                        order.paymentMethodTitle ?? asRecord(order.payment).title,
                         locale,
                       )
-                    : column === 'posLocation'
-                      ? valueText(order.posLocation ?? order.pos)
-                      : column === 'quantityTotal'
-                        ? valueText(order.quantityTotal)
-                        : column === 'createdAt'
-                          ? dateText(order.createdAt ?? order.remoteCreatedAt, locale)
-                          : column === 'updatedAt'
-                            ? dateText(order.updatedAt, locale)
-                            : column === 'exportState'
-                              ? order.exportState === 'never-exported'
-                                ? t.never
-                                : order.exportState === 'exported'
-                                  ? t.exported
-                                  : order.exportState === 'changed-after-export'
-                                    ? t.changedAfterExport
-                                    : valueText(order.exportState)
-                              : valueText(order[column]);
+                    : column === 'shippingMethod'
+                      ? shippingMethodLabel(
+                          order.shippingMethodTitle ?? asRecord(order.shippingMethod).title,
+                          locale,
+                        )
+                      : column === 'posLocation'
+                        ? valueText(order.posLocation ?? order.pos)
+                        : column === 'quantityTotal'
+                          ? valueText(order.quantityTotal)
+                          : column === 'createdAt'
+                            ? dateText(order.createdAt ?? order.remoteCreatedAt, locale)
+                            : column === 'updatedAt'
+                              ? dateText(order.updatedAt, locale)
+                              : column === 'exportState'
+                                ? order.exportState === 'never-exported'
+                                  ? t.never
+                                  : order.exportState === 'exported'
+                                    ? t.exported
+                                    : order.exportState === 'changed-after-export'
+                                      ? t.changedAfterExport
+                                      : valueText(order.exportState)
+                                : valueText(order[column]);
 
   if (authStatus === 'checking')
     return (
@@ -4439,8 +4513,6 @@ export function App({
           <AnalyticsWorkspace locale={locale} t={t} />
         ) : view === 'catalog' ? (
           <CatalogWorkspace locale={locale} onSync={() => setView('connections')} />
-        ) : view === 'manual' ? (
-          <ManualOrdersWorkspace locale={locale} onCreate={() => setView('manual-create')} />
         ) : view === 'manual-create' ? (
           <ManualOrderForm
             locale={locale}
@@ -4452,18 +4524,27 @@ export function App({
             }}
           />
         ) : (
-          <>
+          <Box data-testid={view === 'manual' ? 'manual-orders-workspace' : 'woo-orders-workspace'}>
             <Stack className="app-l4520c13">
               <Box>
                 <Typography variant="h4" component="h1" className="app-l4528c17">
-                  {t.orders}
+                  {view === 'manual' ? tr(locale, 'inline.app.manualOrderOperations') : t.orders}
                 </Typography>
-                <Typography className="app-l4531c17">{t.subtitle}</Typography>
+                <Typography className="app-l4531c17">
+                  {view === 'manual'
+                    ? tr(locale, 'inline.app.manualOrdersWorkspaceHint')
+                    : t.subtitle}
+                </Typography>
                 <Typography variant="body2" className="app-l4532c17">
                   {t.totalResults}: {totalCount}
                 </Typography>
               </Box>
               <Stack className="app-l4536c15">
+                {view === 'manual' && (
+                  <Button variant="contained" onClick={() => setView('manual-create')}>
+                    {tr(locale, 'inline.app.newManualOrder')}
+                  </Button>
+                )}
                 <Button variant="outlined" onClick={() => void loadOrders()} disabled={loading}>
                   {loading ? <CircularProgress size={18} aria-label={t.loading} /> : t.refresh}
                 </Button>
@@ -4475,9 +4556,9 @@ export function App({
                     labelId="orders-columns-label"
                     label={t.columns}
                     onChange={(event) => setVisibleColumns(event.target.value as string[])}
-                    renderValue={(value) => `${(value as string[]).length}/${columns.length}`}
+                    renderValue={() => `${renderedColumns.length}/${availableColumns.length}`}
                   >
-                    {columns.map((column) => (
+                    {availableColumns.map((column) => (
                       <MenuItem key={column} value={column}>
                         {labelFor(column)}
                       </MenuItem>
@@ -4519,20 +4600,22 @@ export function App({
                     }}
                   >
                     <MenuItem value="">{t.all}</MenuItem>
-                    {remoteStatusOptions.map((value) => (
+                    {(view === 'manual' ? localStatusOptions : remoteStatusOptions).map((value) => (
                       <MenuItem key={value} value={value}>
-                        {(
-                          {
-                            pending: t.pending,
-                            processing: t.processing,
-                            'on-hold': t.onHold,
-                            completed: t.completed,
-                            cancelled: t.cancelled,
-                            refunded: t.refunded,
-                            failed: t.failed,
-                            'checkout-draft': t.checkoutDraft,
-                          } as Record<string, string>
-                        )[value] ?? value}
+                        {view === 'manual'
+                          ? manualStatusLabel(value, locale)
+                          : ((
+                              {
+                                pending: t.pending,
+                                processing: t.processing,
+                                'on-hold': t.onHold,
+                                completed: t.completed,
+                                cancelled: t.cancelled,
+                                refunded: t.refunded,
+                                failed: t.failed,
+                                'checkout-draft': t.checkoutDraft,
+                              } as Record<string, string>
+                            )[value] ?? value)}
                       </MenuItem>
                     ))}
                   </Select>
@@ -4597,7 +4680,7 @@ export function App({
                   aria-controls="saved-order-filters"
                 >
                   {t.savedViews}
-                  {savedViews.length > 0 ? ` (${savedViews.length})` : ''}
+                  {sourceSavedViews.length > 0 ? ` (${sourceSavedViews.length})` : ''}
                 </Button>
               </Stack>
               {savedFiltersOpen && (
@@ -4616,7 +4699,7 @@ export function App({
                         label={t.savedViews}
                         onChange={(event) => applySavedView(event.target.value)}
                       >
-                        {savedViews.map((saved) => (
+                        {sourceSavedViews.map((saved) => (
                           <MenuItem key={saved.id} value={saved.id}>
                             {saved.name}
                           </MenuItem>
@@ -4836,13 +4919,14 @@ export function App({
                         </TableCell>
                         {renderedColumns.map((column) => (
                           <TableCell key={column}>
-                            {column === 'remoteStatus' ? (
+                            {column === 'remoteStatus' || column === 'localStatus' ? (
                               <Chip
                                 size="small"
                                 label={display(order, column)}
                                 variant="outlined"
                                 className={
-                                  order.remoteStatus === 'completed'
+                                  order.remoteStatus === 'completed' ||
+                                  (order.origin === 'manual' && order.localStatus === 'confirmed')
                                     ? 'app-status-badge app-status-badge--completed'
                                     : 'app-status-badge app-status-badge--pending'
                                 }
@@ -4916,7 +5000,7 @@ export function App({
                 </Box>
               )}
             </Paper>
-          </>
+          </Box>
         )}
       </WorkspaceShell>
       <Drawer

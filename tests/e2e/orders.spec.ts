@@ -76,6 +76,7 @@ const manualOrder = {
   origin: 'manual',
   connectionId: undefined,
   remoteStatus: undefined,
+  localStatus: 'confirmed',
   syncPolicy: 'never',
   inventoryPolicy: 'ignore',
 };
@@ -117,6 +118,9 @@ async function mockOrderApi(page: Page) {
       body: JSON.stringify({ order }),
     });
   });
+  await page.route('**/api/v1/orders/manual-order-1', (route) =>
+    route.fulfill({ json: { order: manualOrder } }),
+  );
   await page.route('**/api/v1/export-batches', async (route: Route) => {
     await route.fulfill({ json: { items: [] } });
   });
@@ -145,10 +149,14 @@ test('defaults Woo orders to processing and separates manual orders into a tab @
   await page.getByTestId('orders-tab-manual').click();
   await expect(page).toHaveURL(/\/manual$/u);
   await expect(page.getByTestId('manual-orders-workspace')).toBeVisible();
-  await expect(page.getByRole('cell', { name: 'MAN-000001' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'MAN-000001', exact: true })).toBeVisible();
   await expect
     .poll(() => JSON.stringify(queryBodies.at(-1)?.filter ?? null))
-    .toContain('"field":"origin","operator":"equals","value":"manual"');
+    .toContain('"field":"source","operator":"equals","value":"manual"');
+  expect(JSON.stringify(queryBodies.at(-1)?.filter)).not.toContain('remoteStatus');
+  expect(queryBodies.at(-1)?.sort).toEqual({ field: 'createdAt', direction: 'desc' });
+  await expect(page.getByTestId('orders-table')).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'حالة تصدير Woo' })).toHaveCount(0);
 
   await page.getByTestId('orders-tab-woo').click();
   await expect(page).toHaveURL(/\/$/u);
@@ -161,6 +169,288 @@ test('keeps the legacy manual orders URL on the manual tab @orders', async ({ pa
   await page.goto('/manual');
   await expect(page.getByTestId('orders-tab-manual')).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTestId('manual-orders-workspace')).toBeVisible();
+});
+
+test('switching to manual orders ignores a delayed Woo response and clears its selection @orders', async ({
+  page,
+}) => {
+  await mockOrderApi(page);
+  let releaseWoo: () => void = () => undefined;
+  const heldWoo = new Promise<void>((resolve) => {
+    releaseWoo = resolve;
+  });
+  await page.route('**/api/v1/orders/query', async (route) => {
+    const manual = JSON.stringify(route.request().postDataJSON()).includes('"value":"manual"');
+    if (!manual) await heldWoo;
+    await route.fulfill({
+      json: {
+        items: [manual ? manualOrder : order],
+        totalCount: 1,
+        hasMore: false,
+        nextCursor: null,
+      },
+    });
+  });
+  await page.goto('/');
+  await page.getByTestId('orders-tab-manual').click();
+  await expect(page.getByTestId('order-row-manual-order-1')).toBeVisible();
+  const lateResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/v1/orders/query') &&
+      !JSON.stringify(response.request().postDataJSON()).includes('"value":"manual"'),
+  );
+  releaseWoo();
+  await lateResponse;
+  await expect(page.getByTestId('order-row-order-1')).toHaveCount(0);
+  await page.getByTestId('order-row-manual-order-1').getByRole('checkbox').check();
+  await page.getByTestId('orders-tab-woo').click();
+  await expect(page.getByTestId('order-row-order-1')).toBeVisible();
+  await expect(page.getByTestId('order-row-order-1').getByRole('checkbox')).not.toBeChecked();
+  await expect(page.getByTestId('order-row-manual-order-1')).toHaveCount(0);
+});
+
+test('manual grid filters local status, paginates and opens the shared detail drawer @orders', async ({
+  page,
+}, testInfo) => {
+  await mockOrderApi(page);
+  const queries: Record<string, unknown>[] = [];
+  await page.route('**/api/v1/orders/query', (route) => {
+    const query = route.request().postDataJSON() as Record<string, unknown>;
+    queries.push(query);
+    return route.fulfill({
+      json: {
+        items: [
+          query.cursor
+            ? { ...manualOrder, id: 'manual-order-2', orderNumber: 'MAN-000002' }
+            : manualOrder,
+        ],
+        hasMore: !query.cursor,
+        nextCursor: query.cursor ? null : 'manual-page-2',
+        totalCount: 2,
+        facets: [{ field: 'localStatus', values: [{ value: 'confirmed', count: 2 }] }],
+      },
+    });
+  });
+  await page.goto('/manual');
+  await page.getByRole('button', { name: 'English' }).click();
+  const table = page.getByTestId('orders-table');
+  await expect(
+    table.getByRole('columnheader', { name: 'Local status', exact: true }),
+  ).toBeVisible();
+  await expect(table.getByRole('columnheader', { name: /Woo export|Platform status/ })).toHaveCount(
+    0,
+  );
+  await expect(table.getByText('Confirmed')).toBeVisible();
+  await page.getByRole('combobox', { name: 'Status', exact: true }).click();
+  await page.getByRole('option', { name: 'Confirmed', exact: true }).click();
+  await expect
+    .poll(() => JSON.stringify(queries.at(-1)?.filter))
+    .toContain('"field":"localStatus","operator":"equals","value":"confirmed"');
+  await page
+    .getByRole('textbox', { name: 'Search order number, customer or phone' })
+    .fill('Manual');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect.poll(() => queries.at(-1)?.search).toBe('Manual');
+  await page.getByRole('button', { name: 'Load more' }).click();
+  await expect(page.getByTestId('order-row-manual-order-2')).toBeVisible();
+  expect(queries.at(-1)?.cursor).toBe('manual-page-2');
+  expect(JSON.stringify(queries.at(-1)?.filter)).toContain('"value":"manual"');
+  await page.getByTestId('order-row-manual-order-1').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: 'Order details #MAN-000001' })).toBeVisible();
+  await expect(
+    page.getByText('Local only: this order never calls WooCommerce or changes inventory'),
+  ).toBeVisible();
+  await page.getByRole('tab', { name: 'Payment, shipping & tax' }).click();
+  await expect(page.getByRole('link', { name: 'Transfer proof' })).toHaveAttribute(
+    'href',
+    '/api/v1/manual-orders/manual-order-1/payment-proof',
+  );
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.locator('.order-detail-drawer__paper')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('manual-grid-en.png'), fullPage: true });
+  await page.getByRole('button', { name: 'العربية' }).click();
+  await expect(table.getByText('مؤكد')).toHaveCount(2);
+  await expect(page.locator('main')).toHaveCSS('margin-left', '0px');
+  await page.screenshot({ path: testInfo.outputPath('manual-grid-ar.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('heading', { name: 'إدارة الطلبات اليدوية' })).toBeVisible();
+  await expect(page.locator('main')).toHaveCSS('margin-right', '0px');
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+    .toBeLessThanOrEqual(390);
+  await page.screenshot({ path: testInfo.outputPath('manual-grid-mobile-ar.png'), fullPage: true });
+});
+
+test('manual selections download Woo-layout Excel, shipping sheets and all PDF types without clearing selection @orders @exports', async ({
+  page,
+}) => {
+  await mockOrderApi(page);
+  const selections: Record<string, unknown>[] = [];
+  const versions: Record<string, unknown>[] = [];
+  const documentActions: string[] = [];
+  const profiles: string[] = [];
+  let batchId = 0;
+  await page.route('**/api/v1/selections', (route) => {
+    selections.push(route.request().postDataJSON() as Record<string, unknown>);
+    return route.fulfill({ json: { selection: { id: 'selection-manual', estimatedCount: 1 } } });
+  });
+  await page.route('**/api/v1/export-profiles', (route) => {
+    if (route.request().method() === 'POST') {
+      profiles.push((route.request().postDataJSON() as { name: string }).name);
+      return route.fulfill({ json: { profile: { id: 'manual-profile' } } });
+    }
+    return route.fulfill({ json: { items: [] } });
+  });
+  await page.route('**/api/v1/export-profiles/manual-profile/versions', (route) => {
+    if (route.request().method() === 'POST') {
+      versions.push(route.request().postDataJSON() as Record<string, unknown>);
+      return route.fulfill({ json: { version: { id: 'manual-version' } } });
+    }
+    return route.fulfill({ json: { items: [] } });
+  });
+  await page.route('**/api/v1/export-batches', (route) => {
+    if (route.request().method() === 'POST') {
+      batchId += 1;
+      return route.fulfill({ json: { batch: { id: `manual-batch-${batchId}` } } });
+    }
+    return route.fulfill({
+      json: {
+        items: [
+          { id: `manual-batch-${batchId}`, status: 'completed', filename: 'manual-orders.xlsx' },
+        ],
+      },
+    });
+  });
+  await page.route('**/api/v1/export-batches/*/download', (route) =>
+    route.fulfill({
+      body: 'workbook fixture',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      headers: { 'content-disposition': 'attachment; filename="manual-orders.xlsx"' },
+    }),
+  );
+  await page.route('**/api/v1/document-templates', (route) =>
+    route.fulfill({
+      json: {
+        items: ['a4', 'thermal-80mm', 'label-100x150mm'].map((format) => ({
+          id: `template-${format}`,
+          active: true,
+          format,
+        })),
+      },
+    }),
+  );
+  await page.route('**/api/v1/document-jobs', (route) => {
+    const body = route.request().postDataJSON() as { action: string; selectionId: string };
+    expect(body.selectionId).toBe('selection-manual');
+    documentActions.push(body.action);
+    return route.fulfill({ json: { batch: { id: 'manual-documents' } } });
+  });
+  await page.route('**/api/v1/document-jobs/manual-documents', (route) =>
+    route.fulfill({
+      json: {
+        batch: { id: 'manual-documents', status: 'completed' },
+        artifacts: [{ id: 'manual-pdf', kind: 'merged-pdf', filename: 'manual-invoices.pdf' }],
+      },
+    }),
+  );
+  await page.route('**/api/v1/document-artifacts/manual-pdf?download=1', (route) =>
+    route.fulfill({
+      body: '%PDF-1.4 fixture',
+      contentType: 'application/pdf',
+      headers: { 'content-disposition': 'attachment; filename="manual-invoices.pdf"' },
+    }),
+  );
+  await page.goto('/manual');
+  await page.getByRole('button', { name: 'English' }).click();
+  const selected = page.getByTestId('order-row-manual-order-1').getByRole('checkbox');
+  await selected.check();
+  for (const name of [
+    'Export Excel',
+    'Shipping sheet',
+    'Download A4 invoice',
+    'Download thermal receipt',
+    'Download shipping label',
+  ]) {
+    await page.getByRole('button', { name: 'Export & print', exact: true }).click();
+    const download = page.waitForEvent('download');
+    await page.getByRole('button', { name, exact: true }).click();
+    expect((await download).suggestedFilename()).toMatch(/manual-(orders.xlsx|invoices.pdf)/);
+    await expect(selected).toBeChecked();
+  }
+  expect(profiles).toEqual(['Manual orders XLSX v1', 'Manual shipping orders XLSX v1']);
+  expect(versions.map((version) => version.filenameTemplate)).toEqual([
+    'manual-orders-{date}-{format}',
+    'manual-shipping-orders-{date}-{format}',
+  ]);
+  expect((versions[0]?.columns as { key: string; label: string }[]).slice(0, 3)).toEqual([
+    { key: 'woo.orderNumber', label: 'رقم الطلب', type: 'text' },
+    { key: 'woo.orderStatus', label: 'حالة الطلب', type: 'text' },
+    { key: 'woo.orderDate', label: 'تاريخ الطلب', type: 'text' },
+  ]);
+  expect(documentActions).toEqual(['generate-invoice', 'generate-thermal', 'generate-label']);
+  expect(selections).toEqual(
+    Array.from({ length: 5 }, () => ({ mode: 'explicit', orderIds: ['manual-order-1'] })),
+  );
+});
+
+test('manual select-all output keeps the manual query and thermal printing opens its PDF @orders @exports', async ({
+  page,
+  context,
+}) => {
+  await mockOrderApi(page);
+  await page.route('**/api/v1/orders/query', (route) =>
+    route.fulfill({
+      json: { items: [manualOrder], totalCount: 51, hasMore: true, nextCursor: 'more-manual' },
+    }),
+  );
+  let selection: Record<string, unknown> | null = null;
+  await page.route('**/api/v1/selections', (route) => {
+    selection = route.request().postDataJSON() as Record<string, unknown>;
+    return route.fulfill({ json: { selection: { id: 'all-manual', estimatedCount: 51 } } });
+  });
+  await page.route('**/api/v1/document-templates', (route) =>
+    route.fulfill({ json: { items: [{ id: 'thermal', format: 'thermal-80mm', active: true }] } }),
+  );
+  await page.route('**/api/v1/document-jobs', (route) => {
+    expect(route.request().postDataJSON()).toMatchObject({
+      selectionId: 'all-manual',
+      templateId: 'thermal',
+      action: 'generate-thermal',
+    });
+    return route.fulfill({ json: { batch: { id: 'all-manual-docs' } } });
+  });
+  await page.route('**/api/v1/document-jobs/all-manual-docs', (route) =>
+    route.fulfill({
+      json: {
+        batch: { status: 'completed' },
+        artifacts: [{ id: 'all-manual-pdf', kind: 'merged-pdf', filename: 'receipts.pdf' }],
+      },
+    }),
+  );
+  await page.goto('/manual');
+  await page.getByRole('button', { name: 'English' }).click();
+  const pdfBytes = await page.pdf({ format: 'A4' });
+  await page.route('**/api/v1/document-artifacts/all-manual-pdf', (route) =>
+    route.fulfill({ body: pdfBytes, contentType: 'application/pdf' }),
+  );
+  await page.getByTestId('order-row-manual-order-1').getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Select all matching results (51)' }).click();
+  await page.getByRole('button', { name: 'Export & print', exact: true }).click();
+  await page.getByRole('tab', { name: 'Print', exact: true }).click();
+  const popupPromise = context.waitForEvent('page');
+  await page.getByRole('button', { name: 'Print thermal receipt', exact: true }).click();
+  const popup = await popupPromise;
+  await expect(popup.locator('iframe')).toBeVisible();
+  expect(selection).toMatchObject({
+    mode: 'query',
+    query: {
+      filter: { field: 'source', operator: 'equals', value: 'manual' },
+      sort: { field: 'createdAt', direction: 'desc' },
+    },
+  });
+  await expect(page.getByTestId('order-row-manual-order-1').getByRole('checkbox')).toBeChecked();
+  await popup.close();
 });
 
 test('creates the Woo-layout XLSX and offers repeat download in orders @orders @exports', async ({
@@ -505,7 +795,7 @@ test('keeps export choices and order details aligned across viewport and languag
   await expect(drawer.locator('.order-detail__badges')).toHaveCSS('flex-direction', 'row');
   await expect(drawer.locator('.order-detail__fact').first()).toHaveCSS('display', 'grid');
   const mobileDrawer = await drawer.boundingBox();
-  expect(mobileDrawer?.width).toBe(390);
+  expect(mobileDrawer?.width).toBeCloseTo(390, 3);
   await drawer.getByRole('button', { name: /إغلاق/u }).click();
 
   await page.getByRole('button', { name: 'English' }).click();
