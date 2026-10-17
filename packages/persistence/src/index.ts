@@ -1,4 +1,11 @@
 import { SqliteDatabase } from './sqlite.js';
+import {
+  calculateStoreTaxes,
+  taxAddress,
+  validateStoreTaxPolicy,
+  type StoreTaxPolicy,
+  type TaxProductLine,
+} from '@woo-ops/domain';
 export { SqliteDatabase } from './sqlite.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { validateSafeTemplate } from '@woo-ops/documents';
@@ -71,6 +78,7 @@ export type ConnectionWorkerRecord = ConnectionSummary &
     encryptedWebhookSecret: string | null;
   }>;
 export type WooShippingRateRecord = Readonly<{
+  taxStatus?: 'taxable' | 'none';
   connectionId: string;
   zoneId: string;
   methodId: string;
@@ -217,6 +225,8 @@ export type ManualOrderLineInput = {
   notes?: string;
 };
 export type ManualOrderInput = {
+  taxMode?: 'manual' | 'store';
+  taxPolicyHash?: string;
   currency: string;
   customer?: Record<string, unknown>;
   billing?: Record<string, unknown>;
@@ -775,6 +785,9 @@ const manualJsonObject = (value: unknown, code: string): Record<string, unknown>
   return value;
 };
 type NormalizedManualOrder = {
+  taxMode?: 'manual' | 'store';
+  taxSnapshot?: Record<string, unknown>;
+  taxLines?: readonly Record<string, unknown>[];
   currency: string;
   customer: Record<string, unknown>;
   billing: Record<string, unknown>;
@@ -1825,7 +1838,7 @@ const compileFilter = (
   };
 };
 
-export const schemaVersion = 22;
+export const schemaVersion = 23;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -2459,6 +2472,16 @@ const migrations: readonly Migration[] = [
       CREATE INDEX woo_shipping_rates_account_state
         ON woo_shipping_rates(account_id, state_code, connection_id);
     `,
+  },
+  {
+    version: 23,
+    name: 'synchronized-woo-tax-policy',
+    sql: `ALTER TABLE woo_shipping_rates ADD COLUMN tax_status TEXT;
+    CREATE TABLE woo_tax_policies (
+      account_id TEXT NOT NULL REFERENCES accounts(id), connection_id TEXT NOT NULL REFERENCES connections(id),
+      policy_json TEXT, policy_hash TEXT, synced_at TEXT NOT NULL, last_error TEXT,
+      PRIMARY KEY(account_id, connection_id)
+    );`,
   },
 ];
 
@@ -3637,6 +3660,7 @@ export class SqliteStore {
         'order_sync_runs',
         'connection_sync_runs',
         'woo_shipping_rates',
+        'woo_tax_policies',
         'catalog_items',
         'orders',
         'jobs',
@@ -10146,6 +10170,235 @@ export class SqliteStore {
     };
   }
 
+  replaceWooTaxPolicy(context: AccountContext, connectionId: string, value: unknown): void {
+    this.assertContext(context);
+    this.assertConnection(context, connectionId);
+    const policy = validateStoreTaxPolicy(value);
+    const json = serializeBoundedJson(policy, 1024 * 1024, 'STORE_TAX_POLICY_TOO_LARGE');
+    const previous = this.db
+      .prepare(
+        'SELECT policy_hash, last_error FROM woo_tax_policies WHERE account_id = ? AND connection_id = ?',
+      )
+      .get(context.accountId, connectionId) as
+      { policy_hash: string | null; last_error: string | null } | undefined;
+    this.db
+      .prepare(
+        `INSERT INTO woo_tax_policies (account_id, connection_id, policy_json, policy_hash, synced_at, last_error)
+      VALUES (?, ?, ?, ?, ?, NULL) ON CONFLICT(account_id, connection_id) DO UPDATE SET
+      policy_json = excluded.policy_json, policy_hash = excluded.policy_hash, synced_at = excluded.synced_at, last_error = NULL`,
+      )
+      .run(context.accountId, connectionId, json, requireHash(json), new Date().toISOString());
+    if (previous?.policy_hash !== requireHash(json) || previous.last_error)
+      this.audit(context, 'connection.tax-policy-synchronized', 'connection', connectionId, {
+        policyHash: requireHash(json),
+        enabled: policy.enabled,
+        rateCount: policy.rates.length,
+      });
+  }
+
+  recordWooTaxPolicyFailure(context: AccountContext, connectionId: string, code: string): void {
+    this.assertContext(context);
+    this.assertConnection(context, connectionId);
+    const safeCode = /^(?:WOO|STORE_TAX)_[A-Z0-9_:]+$/.test(code)
+      ? code.slice(0, 100)
+      : 'WOO_TAX_SYNC_FAILED';
+    const previous = this.db
+      .prepare('SELECT last_error FROM woo_tax_policies WHERE account_id = ? AND connection_id = ?')
+      .get(context.accountId, connectionId) as { last_error: string | null } | undefined;
+    this.db
+      .prepare(
+        `INSERT INTO woo_tax_policies (account_id, connection_id, synced_at, last_error)
+      VALUES (?, ?, ?, ?) ON CONFLICT(account_id, connection_id) DO UPDATE SET last_error = excluded.last_error`,
+      )
+      .run(context.accountId, connectionId, new Date().toISOString(), safeCode);
+    if (previous?.last_error !== safeCode)
+      this.audit(context, 'connection.tax-policy-sync-failed', 'connection', connectionId, {
+        errorCode: safeCode,
+      });
+  }
+
+  getWooTaxPolicy(context: AccountContext): {
+    policy: StoreTaxPolicy | null;
+    connectionId: string | null;
+    hash: string | null;
+    syncedAt: string | null;
+    error: string | null;
+  } {
+    this.assertContext(context);
+    const row = this.db
+      .prepare(
+        `SELECT c.id AS connection_id, p.policy_json, p.policy_hash, p.synced_at, p.last_error
+      FROM connections c LEFT JOIN woo_tax_policies p ON p.account_id = c.account_id AND p.connection_id = c.id
+      WHERE c.account_id = ? AND c.status <> 'disabled' AND c.platform = 'woocommerce' ORDER BY c.created_at DESC, c.id LIMIT 1`,
+      )
+      .get(context.accountId) as
+      | {
+          connection_id: string;
+          policy_json: string | null;
+          policy_hash: string | null;
+          synced_at: string | null;
+          last_error: string | null;
+        }
+      | undefined;
+    if (!row)
+      return {
+        policy: null,
+        connectionId: null,
+        hash: null,
+        syncedAt: null,
+        error: 'STORE_TAX_NOT_SYNCED',
+      };
+    return {
+      policy: row.policy_json
+        ? validateStoreTaxPolicy(JSON.parse(row.policy_json) as unknown)
+        : null,
+      connectionId: row.connection_id,
+      hash: row.policy_hash,
+      syncedAt: row.synced_at,
+      error: row.last_error,
+    };
+  }
+
+  previewManualOrderTaxes(context: AccountContext, input: ManualOrderInput): NormalizedManualOrder {
+    this.assertMember(context);
+    return this.normalizeManualOrderForStore(context, { ...input, taxMode: 'store' });
+  }
+
+  private normalizeManualOrderForStore(
+    context: AccountContext,
+    input: ManualOrderInput,
+  ): NormalizedManualOrder {
+    if (input.taxMode !== 'store') return normalizeManualOrder(input);
+    const snapshot = this.getWooTaxPolicy(context);
+    if (!snapshot.policy || snapshot.error || !snapshot.syncedAt)
+      throw new Error('STORE_TAX_NOT_SYNCED');
+    if (input.taxPolicyHash && input.taxPolicyHash !== snapshot.hash)
+      throw new Error('STORE_TAX_SETTINGS_CHANGED');
+    if (Date.now() - Date.parse(snapshot.syncedAt) > 24 * 60 * 60 * 1000)
+      throw new Error('STORE_TAX_SETTINGS_STALE');
+    if (input.currency.toUpperCase() !== snapshot.policy.currency)
+      throw new Error('STORE_TAX_CURRENCY_MISMATCH');
+    this.assertManualCatalogLines(context, input);
+    const normalized = normalizeManualOrder({
+      ...input,
+      taxMinor: '0',
+      lines: input.lines.map((line) => ({ ...line, taxMinor: '0' })),
+    });
+    const products: TaxProductLine[] = input.lines.map((line) => {
+      const row = this.db
+        .prepare(
+          `SELECT source_json, parent_external_id FROM catalog_items WHERE account_id = ? AND connection_id = ?
+        AND external_id = ? AND kind = ? AND remote_deleted_at IS NULL`,
+        )
+        .get(
+          context.accountId,
+          snapshot.connectionId,
+          line.variationId ?? line.productId ?? '',
+          line.variationId ? 'variation' : 'product',
+        ) as { source_json: string; parent_external_id: string | null } | undefined;
+      if (!row || (line.variationId && row.parent_external_id !== line.productId))
+        throw new Error('STORE_TAX_PRODUCT_UNAVAILABLE');
+      const readSource = (json: string): Record<string, unknown> => {
+        const value = parseJsonRecord(json);
+        return isRecord(value.source) ? value.source : value;
+      };
+      const source = readSource(row.source_json);
+      let taxClass = source.tax_class;
+      let taxStatus = source.tax_status;
+      if (
+        line.variationId &&
+        (taxClass === 'parent' || taxClass === undefined || taxStatus === undefined)
+      ) {
+        const parent = this.db
+          .prepare(
+            `SELECT source_json FROM catalog_items WHERE account_id = ? AND connection_id = ? AND external_id = ? AND kind = 'product' AND remote_deleted_at IS NULL`,
+          )
+          .get(context.accountId, snapshot.connectionId, line.productId ?? '') as
+          { source_json: string } | undefined;
+        if (!parent) throw new Error('STORE_TAX_PRODUCT_UNAVAILABLE');
+        const parentSource = readSource(parent.source_json);
+        if (taxClass === 'parent' || taxClass === undefined) taxClass = parentSource.tax_class;
+        if (taxStatus === undefined) taxStatus = parentSource.tax_status;
+      }
+      if (!snapshot.policy!.enabled) {
+        taxStatus = 'none';
+        taxClass = '';
+      }
+      if (
+        !['taxable', 'shipping', 'none'].includes(String(taxStatus)) ||
+        typeof taxClass !== 'string'
+      )
+        throw new Error('STORE_TAX_PRODUCT_UNAVAILABLE');
+      return {
+        quantity: line.quantity,
+        unitPriceMinor: line.unitPriceMinor,
+        ...(line.discountMinor ? { discountMinor: line.discountMinor } : {}),
+        taxStatus: taxStatus as TaxProductLine['taxStatus'],
+        taxClass,
+      };
+    });
+    const shipping = taxAddress(input.shipping ?? {});
+    const billing = taxAddress(input.billing ?? {});
+    if (
+      snapshot.policy.basedOn !== 'base' &&
+      !(snapshot.policy.basedOn === 'billing' ? billing : shipping).country
+    )
+      throw new Error('STORE_TAX_ADDRESS_REQUIRED');
+    const method = String(input.shippingMethod?.methodId ?? '');
+    const rate = this.db
+      .prepare(
+        `SELECT tax_status, amount_minor FROM woo_shipping_rates WHERE account_id = ? AND connection_id = ? AND state_code = ? AND method_id = ? LIMIT 1`,
+      )
+      .get(
+        context.accountId,
+        snapshot.connectionId,
+        shipping.state.startsWith('EG') ? shipping.state : `EG${shipping.state}`,
+        method,
+      ) as { tax_status: string | null; amount_minor: string } | undefined;
+    if (
+      snapshot.policy.enabled &&
+      BigInt(input.shippingCollectedMinor ?? '0') > 0n &&
+      (!rate ||
+        !['taxable', 'none'].includes(rate.tax_status ?? '') ||
+        rate.amount_minor !== input.shippingCollectedMinor)
+    )
+      throw new Error('STORE_TAX_SHIPPING_UNAVAILABLE');
+    const calculation = calculateStoreTaxes(snapshot.policy, {
+      lines: products,
+      shipping,
+      billing,
+      shippingMinor: input.shippingCollectedMinor ?? '0',
+      shippingTaxable: rate?.tax_status === 'taxable',
+      discountMinor: input.discountMinor ?? '0',
+      feesMinor: input.feesMinor ?? '0',
+    });
+    return {
+      ...normalized,
+      taxMode: 'store',
+      lines: normalized.lines.map((line, index) => ({
+        ...line,
+        ...calculation.lines[index],
+        taxClass: products[index]!.taxClass,
+        taxStatus: products[index]!.taxStatus,
+      })),
+      amounts: calculation.amounts,
+      taxLines: calculation.taxLines,
+      taxSnapshot: {
+        version: 1,
+        policy: snapshot.policy,
+        policyHash: snapshot.hash,
+        syncedAt: snapshot.syncedAt,
+        location: calculation.location,
+        pricingInput: {
+          lines: input.lines,
+          discountMinor: input.discountMinor ?? '0',
+          shippingCollectedMinor: input.shippingCollectedMinor ?? '0',
+          feesMinor: input.feesMinor ?? '0',
+        },
+      },
+    };
+  }
+
   replaceWooShippingRates(
     context: AccountContext,
     connectionId: string,
@@ -10161,8 +10414,8 @@ export class SqliteStore {
         .run(context.accountId, connectionId);
       const insert = this.db.prepare(
         `INSERT INTO woo_shipping_rates
-          (id, account_id, connection_id, zone_id, method_id, title, state_code, amount_minor, currency, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, account_id, connection_id, zone_id, method_id, title, state_code, amount_minor, currency, updated_at, tax_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const rate of rates) {
         if (
@@ -10173,7 +10426,8 @@ export class SqliteStore {
           rate.title.length > 120 ||
           !/^EG[A-Z]{1,4}$/u.test(rate.stateCode) ||
           !/^\d{1,18}$/u.test(rate.amountMinor) ||
-          rate.currency !== 'EGP'
+          rate.currency !== 'EGP' ||
+          (rate.taxStatus !== undefined && !['taxable', 'none'].includes(rate.taxStatus))
         )
           throw new Error('SHIPPING_RATES_INVALID');
         const id = createHash('sha256')
@@ -10192,6 +10446,7 @@ export class SqliteStore {
           rate.amountMinor,
           rate.currency,
           now,
+          rate.taxStatus ?? null,
         );
       }
     })();
@@ -10202,7 +10457,7 @@ export class SqliteStore {
     return this.db
       .prepare(
         `SELECT r.connection_id, r.zone_id, r.method_id, r.title, r.state_code,
-          r.amount_minor, r.currency
+          r.amount_minor, r.currency, r.tax_status
          FROM woo_shipping_rates r
          JOIN connections c ON c.id = r.connection_id AND c.account_id = r.account_id
          WHERE r.account_id = ? AND c.status <> 'disabled'
@@ -10218,6 +10473,7 @@ export class SqliteStore {
           state_code: string;
           amount_minor: string;
           currency: string;
+          tax_status: 'taxable' | 'none' | null;
         };
         return {
           connectionId: value.connection_id,
@@ -10227,6 +10483,7 @@ export class SqliteStore {
           stateCode: value.state_code,
           amountMinor: value.amount_minor,
           currency: value.currency,
+          ...(value.tax_status ? { taxStatus: value.tax_status } : {}),
         };
       });
   }
@@ -10393,7 +10650,7 @@ export class SqliteStore {
   createManualOrder(context: AccountContext, input: ManualOrderInput): Record<string, unknown> {
     const actorId = this.requireMutationActor(context);
     this.assertManualCatalogLines(context, input);
-    const normalized = normalizeManualOrder(input);
+    const normalized = this.normalizeManualOrderForStore(context, input);
     this.assertManualAssignee(context, normalized.assigneeId);
     const now = new Date().toISOString();
     const id = randomId();
@@ -10515,7 +10772,12 @@ export class SqliteStore {
     const existing = row.normalized_json
       ? parseStoredJson<Record<string, unknown>>(row.normalized_json, 'MANUAL_ORDER_DATA_INVALID')
       : {};
+    const savedTaxSnapshot = isRecord(existing.taxSnapshot) ? existing.taxSnapshot : {};
+    const pricingInput = isRecord(savedTaxSnapshot.pricingInput)
+      ? savedTaxSnapshot.pricingInput
+      : {};
     const current: ManualOrderInput = {
+      ...(existing.taxMode === 'store' ? { taxMode: 'store' as const } : {}),
       currency: String(existing.currency ?? 'EGP'),
       customer: isRecord(existing.customer) ? existing.customer : {},
       billing: isRecord(existing.billing) ? existing.billing : {},
@@ -10540,12 +10802,42 @@ export class SqliteStore {
         : {}),
       assigneeId: row.assignee_id,
     };
+    if (existing.taxMode === 'store') {
+      if (!Array.isArray(pricingInput.lines)) throw new Error('STORE_TAX_SNAPSHOT_INVALID');
+      current.lines = pricingInput.lines as ManualOrderLineInput[];
+      current.discountMinor = String(pricingInput.discountMinor ?? '0');
+      current.shippingCollectedMinor = String(pricingInput.shippingCollectedMinor ?? '0');
+      current.feesMinor = String(pricingInput.feesMinor ?? '0');
+      current.taxMinor = '0';
+    }
     const merged: ManualOrderInput = {
       ...current,
       ...input,
       lines: input.lines ?? current.lines,
     };
-    const normalized = normalizeManualOrder(merged);
+    const financialChange = [
+      'lines',
+      'currency',
+      'shipping',
+      'billing',
+      'shippingMethod',
+      'shippingCollectedMinor',
+      'discountMinor',
+      'feesMinor',
+      'taxMinor',
+      'taxMode',
+    ].some((key) => Object.hasOwn(input, key));
+    const normalized =
+      existing.taxMode === 'store' && !financialChange
+        ? {
+            ...normalizeManualOrder(merged),
+            taxMode: 'store' as const,
+            lines: existing.lines as Record<string, unknown>[],
+            amounts: existing.amounts as Record<string, string>,
+            taxSnapshot: savedTaxSnapshot,
+            taxLines: existing.taxLines as Record<string, unknown>[],
+          }
+        : this.normalizeManualOrderForStore(context, merged);
     this.assertManualAssignee(context, normalized.assigneeId);
     const now = new Date().toISOString();
     const noteHistory = parseStoredJson<unknown[]>(row.notes_json, 'MANUAL_ORDER_DATA_INVALID');

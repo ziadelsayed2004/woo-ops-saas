@@ -200,7 +200,15 @@ export const htmlDocument = (request: DocumentRequest, assets: RenderAssets): st
     })
     .join('');
   const totals = [
-    [t.subtotal, text(order, 'amounts.merchandiseNetMinor', 'subtotalMinor')],
+    [
+      t.subtotal,
+      text(
+        order,
+        'amounts.merchandiseSubtotalMinor',
+        'amounts.merchandiseNetMinor',
+        'subtotalMinor',
+      ),
+    ],
     [t.discount, text(order, 'amounts.discountMinor')],
     [t.shippingFee, text(order, 'amounts.shippingCollectedMinor')],
     [t.tax, text(order, 'amounts.taxMinor')],

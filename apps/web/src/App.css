@@ -559,6 +559,19 @@
   }
 }
 
+#root .manual-order-tax-address {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-block-start: 16px;
+}
+
+@media (max-width: 599px) {
+  #root .manual-order-tax-address {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 #root .app-l2183c11 {
   display: grid;
   gap: 16px;

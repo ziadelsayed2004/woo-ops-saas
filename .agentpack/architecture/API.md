@@ -99,11 +99,46 @@ DELETE /orders/:orderId/tags/:tagId
 POST   /orders/:orderId/notes
 
 POST   /manual-orders
+GET    /manual-orders/config
+POST   /manual-orders/tax-preview
 PATCH  /manual-orders/:orderId
 POST   /manual-orders/:orderId/archive
 ```
 
 Imported order commerce fields have no PATCH endpoint.
+
+### Automatic tax for local manual orders
+
+`GET /manual-orders/config` includes `taxes: { status, enabled, pricesIncludeTax, syncedAt,
+policyHash, error }`. Settings, rate classes and rates are read through authenticated Woo GETs
+during full synchronization (default 15 minutes); order-only polling bootstraps missing tax
+settings. No checkout/order/stock writes are sent to WooCommerce. Schema migration 23 stores
+the account/connection-scoped policy and shipping-method tax status. Account reset clears both.
+
+`POST /manual-orders/tax-preview` accepts the bounded manual-create pricing fields and returns
+`{ amounts, lines, taxLines, policyHash }` without persisting an order or calling Woo. The browser
+debounces previews and sends `taxMode: "store"` plus the returned `taxPolicyHash` on create.
+Creation recalculates independently; client tax values are ignored in this mode. A changed policy
+hash fails with `STORE_TAX_SETTINGS_CHANGED`. Settings older than 24 hours fail with
+`STORE_TAX_SETTINGS_STALE`; missing/failed snapshots fail with `STORE_TAX_NOT_SYNCED`.
+Product and shipping metadata must be available; otherwise explicit
+`STORE_TAX_PRODUCT_UNAVAILABLE` / `STORE_TAX_SHIPPING_UNAVAILABLE` errors prevent guessed totals.
+The address determines matching country/state/city/postcode rates and product/variation tax class.
+
+The core tax calculator uses integer arithmetic, included/excluded product prices, tax classes,
+compound priorities, line/subtotal rounding and configured shipping-tax inheritance. Catalog
+prices include base-location taxes when configured as inclusive; shipping costs are net Woo
+flat-rate costs. Discounts are net minor-unit reductions allocated over merchandise. Local
+operating fees are not taxed. Supported automatic policy is EGP / two decimal places and core
+stored Woo rates; automated external tax services/custom tax hooks cannot be reproduced locally
+and are not claimed as supported. Known automated-tax configuration is rejected explicitly.
+
+Saved orders retain their policy hash, policy/location snapshot, original pricing input and
+per-rate tax breakdown. Status/proof/notes updates preserve all financial snapshots. Financial
+edits explicitly recalculate; a later sync alone never reprices historical orders. Legacy API
+manual-tax inputs remain backward-compatible when `taxMode` is omitted or `manual`; the web
+intake always uses `store`. Amounts flow unchanged into order details, XLSX and document snapshots.
+This is configuration parity, not a claim of tax/legal compliance.
 
 ### Order query example
 

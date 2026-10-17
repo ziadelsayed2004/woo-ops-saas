@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { SqliteDatabase as Database } from '@woo-ops/persistence';
+import { SqliteDatabase as Database, SqliteStore } from '@woo-ops/persistence';
 
 const directory = mkdtempSync(join(tmpdir(), 'woo-api-manual-e2e-'));
 const databasePath = join(directory, 'e2e.sqlite');
@@ -186,6 +186,127 @@ try {
   assert.equal(queried.response.status, 200);
   assert.equal(queried.body.items.length, 1);
   assert.equal(queried.body.items[0].id, created.body.order.id);
+
+  const seed = new SqliteStore(databasePath);
+  const context = {
+    accountId: register.body.user.accountId,
+    actorId: register.body.user.id,
+    role: 'owner',
+    correlationId: randomUUID(),
+  };
+  const connectionId = randomUUID();
+  const now = new Date().toISOString();
+  seed.db
+    .prepare(
+      "INSERT INTO connections (id, account_id, platform, store_url, status, created_at, updated_at) VALUES (?, ?, 'woocommerce', 'https://tax.example.test', 'active', ?, ?)",
+    )
+    .run(connectionId, context.accountId, now, now);
+  seed.upsertCatalogPage(context, {
+    connectionId,
+    cursor: 'complete',
+    pages: 1,
+    items: [
+      {
+        identity: 'product:10',
+        kind: 'product',
+        externalId: '10',
+        parentExternalId: null,
+        name: 'Tax product',
+        sourceJson: JSON.stringify({
+          source: { id: 10, price: '100.00', tax_status: 'taxable', tax_class: '' },
+        }),
+      },
+    ],
+  });
+  seed.replaceWooTaxPolicy(context, connectionId, {
+    version: 1,
+    enabled: true,
+    currency: 'EGP',
+    pricesIncludeTax: false,
+    roundAtSubtotal: false,
+    basedOn: 'shipping',
+    shippingTaxClass: 'inherit',
+    taxClasses: [],
+    base: { country: 'EG', state: 'C', city: '', postcode: '' },
+    rates: [
+      {
+        id: '1',
+        country: 'EG',
+        state: '',
+        postcodes: [],
+        cities: [],
+        rate: '14',
+        name: 'VAT',
+        priority: 1,
+        order: 0,
+        compound: false,
+        shipping: true,
+        taxClass: '',
+      },
+    ],
+  });
+  seed.db.close();
+  const automatic = {
+    ...input,
+    taxMode: 'store',
+    shipping: { country: 'EG', state: 'EGC' },
+    shippingCollectedMinor: '0',
+    taxMinor: '99999',
+    lines: [
+      {
+        name: 'Tax product',
+        productId: '10',
+        quantity: 1,
+        unitPriceMinor: '10000',
+        taxMinor: '99999',
+      },
+    ],
+  };
+  const preview = await request('/api/v1/manual-orders/tax-preview', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(automatic),
+  });
+  assert.equal(preview.response.status, 200);
+  assert.equal(preview.body.amounts.taxMinor, '1400');
+  assert.equal(preview.body.amounts.grandTotalMinor, '11400');
+  const automaticOrder = await request('/api/v1/manual-orders', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ ...automatic, taxPolicyHash: preview.body.policyHash }),
+  });
+  assert.equal(automaticOrder.response.status, 201);
+  assert.equal(automaticOrder.body.order.amounts.taxMinor, '1400');
+  assert.equal(automaticOrder.body.order.taxMode, 'store');
+  const readyConfig = await request('/api/v1/manual-orders/config', { headers });
+  assert.equal(readyConfig.body.taxes.status, 'ready');
+  const denied = await request('/api/v1/manual-orders/tax-preview', {
+    method: 'POST',
+    body: JSON.stringify(automatic),
+  });
+  assert.equal(denied.response.status, 401);
+  const other = await request('/api/v1/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({
+      email: `other-${randomUUID()}@example.test`,
+      password: 'correct horse battery staple',
+      accountName: 'Other',
+    }),
+  });
+  const otherCookies = cookiesFrom(other.response);
+  const isolated = await request('/api/v1/manual-orders/tax-preview', {
+    method: 'POST',
+    headers: { cookie: otherCookies },
+    body: JSON.stringify(automatic),
+  });
+  assert.equal(isolated.response.status, 400);
+  assert.equal(isolated.body.error.code, 'STORE_TAX_NOT_SYNCED');
+  const invalid = await request('/api/v1/manual-orders/tax-preview', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ ...automatic, accountId: context.accountId }),
+  });
+  assert.equal(invalid.response.status, 400);
 } finally {
   await stopChild();
   rmSync(directory, { recursive: true, force: true });

@@ -44,6 +44,17 @@ test('formula-like values are prefixed without changing safe text', () => {
   assert.equal(sanitizeSpreadsheetValue('طلب ١٢٣۴'), 'طلب 1234');
 });
 
+test('manual store-tax snapshots export net subtotal, saved tax and gross total exactly', async () => {
+  const result = await generateExport({profile:{...profile('xlsx'),rowMode:'order',columns:[
+    {key:'woo.orderSubtotal',label:'Subtotal',type:'text'},
+    {key:'woo.orderTax',label:'Tax',type:'text'},
+    {key:'woo.orderTotal',label:'Total',type:'text'},
+  ]},orders:[{...order,origin:'manual',taxMode:'store',grandTotalMinor:'11400',amounts:{merchandiseSubtotalMinor:'10000',taxMinor:'1400'}}]});
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(result.bytes);
+  assert.deepEqual(workbook.worksheets[0].getRow(2).values.slice(1), ['100.00','14.00','114.00']);
+});
+
 test('Arabic labels and values remain UTF-8 export data', async () => {
   const result = await generateExport({
     profile: {
