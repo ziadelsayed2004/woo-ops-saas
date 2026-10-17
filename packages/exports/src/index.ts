@@ -142,7 +142,7 @@ const wooColumnValue = (row: ExportOrder, key: string): unknown => {
   const coupon = Array.isArray(row.couponLines) ? row.couponLines[0] : undefined;
   const fields: Record<string, () => unknown> = {
     orderNumber: () => row.orderNumber,
-    orderStatus: () => row.remoteStatus,
+    orderStatus: () => (row.origin === 'manual' ? row.localStatus : row.remoteStatus),
     orderDate: () => row.createdAt,
     customerNote: () => row.customerNote,
     billingFirstName: () => pathValue(row, 'billing.first_name'),
@@ -189,7 +189,7 @@ const wooColumnValue = (row: ExportOrder, key: string): unknown => {
     orderTotal: () => majorUnits(row.grandTotalMinor),
     orderTax: () => majorUnits(pathValue(row, 'amounts.taxMinor')),
     sku: () => pathValue(line, 'sku'),
-    itemNumber: () => pathValue(line, 'externalLineId'),
+    itemNumber: () => pathValue(line, 'externalLineId') || pathValue(line, 'lineId'),
     itemName: () => pathValue(line, 'name'),
     quantity: () => pathValue(line, 'quantity'),
     itemCost: () =>

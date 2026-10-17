@@ -65,6 +65,12 @@ Remote facts and local operational data use distinct visual labels and explanato
 
 ## Manual order form
 
+The manual orders tab shares the order grid, search, saved filters, cursor pagination, selection,
+detail drawer and export/print dialog with imported orders. It displays local status instead of
+platform status and omits the Woo export-status column. Excel and shipping sheets use the same
+Arabic column layout as Woo orders; the manual order number and local status come from the saved
+local snapshot. Confirmed manual orders expose their transfer proof in the payment detail tab.
+
 Sections follow the same structure as imported order detail. Selecting a synced product creates a
 snapshot and explicitly states that remote stock will not change. Free-form lines require name,
 quantity, unit price, tax policy, and optionally unit cost/SKU.

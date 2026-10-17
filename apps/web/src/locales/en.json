@@ -440,6 +440,8 @@
       "line": "One row per product"
     },
     "exportProfile": {
+      "manualOrders": "Manual orders {{format}} v1",
+      "manualShippingOrders": "Manual shipping orders XLSX v1",
       "shippingOrders": "Shipping orders XLSX v2",
       "wooOrders": "Woo orders {{format}} v4"
     },
@@ -493,6 +495,10 @@
       "openTheWoocommerceConnectionVerifyItThenRunTheInitialSync": "Open the WooCommerce connection, verify it, then run the initial sync.",
       "openConnectionSync": "Open connection & sync",
       "manualOrderOperations": "Manual order operations",
+      "manualOrdersWorkspaceHint": "Search, select, export and print manual orders. These orders stay local and do not change WooCommerce inventory.",
+      "manualStatusNew": "New",
+      "manualStatusAwaitingProof": "Awaiting transfer proof",
+      "manualStatusConfirmed": "Confirmed",
       "aSeparateLocalQueueThatNeverWritesToWoocommerceOrInventory": "A separate local queue that never writes to WooCommerce or inventory.",
       "newManualOrder": "New manual order",
       "manualOrdersCouldNotBeLoaded": "Manual orders could not be loaded",

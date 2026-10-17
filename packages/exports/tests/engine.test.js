@@ -176,6 +176,72 @@ test('Woo-style order-line sheet keeps state codes and adds readable governorate
   assert.equal(sheet.getCell('H2').value, '1250.50');
 });
 
+test('manual orders use the Woo workbook structure with their local status and line identity', async () => {
+  const result = await generateExport({
+    profile: {
+      ...profile('xlsx'),
+      filenameTemplate: 'manual-orders-{date}-{format}',
+      columns: [
+        { key: 'woo.orderNumber', label: 'رقم الطلب', type: 'text' },
+        { key: 'woo.orderStatus', label: 'حالة الطلب', type: 'text' },
+        { key: 'woo.orderDate', label: 'تاريخ الطلب', type: 'text' },
+        { key: 'woo.billingFirstName', label: 'الاسم الأول', type: 'text' },
+        { key: 'woo.billingPhone', label: 'رقم الهاتف', type: 'text' },
+        { key: 'woo.shippingStateName', label: 'المحافظة', type: 'text' },
+        { key: 'woo.shippingAddress', label: 'عنوان الشحن', type: 'text' },
+        { key: 'woo.paymentTitle', label: 'طريقة الدفع', type: 'text' },
+        { key: 'woo.shippingAmount', label: 'تكلفة الشحن', type: 'text' },
+        { key: 'woo.orderTotal', label: 'إجمالي الطلب', type: 'text' },
+        { key: 'woo.itemNumber', label: 'رقم البند', type: 'text' },
+        { key: 'woo.itemName', label: 'المنتج', type: 'text' },
+        { key: 'woo.quantity', label: 'الكمية', type: 'text' },
+      ],
+      config: { required: ['woo.orderNumber'] },
+    },
+    orders: [
+      {
+        origin: 'manual',
+        orderNumber: 'MAN-000007',
+        localStatus: 'confirmed',
+        remoteStatus: null,
+        createdAt: '2026-10-17T09:00:00.000Z',
+        grandTotalMinor: '26500',
+        billing: { first_name: 'عميل يدوي', phone: '01001234567' },
+        shipping: { state: 'EGC', address_1: '1 Test street' },
+        paymentMethodTitle: 'Bank transfer',
+        amounts: { shippingCollectedMinor: '1500' },
+        lines: [
+          { lineId: 'manual-line-1', name: 'Product A', quantity: 2 },
+          { lineId: 'manual-line-2', name: '=unsafe', quantity: 1 },
+        ],
+      },
+    ],
+  });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(result.bytes);
+  const sheet = workbook.worksheets[0];
+  assert.equal(result.orderCount, 1);
+  assert.equal(result.rowCount, 2);
+  assert.equal(result.filename, 'manual-orders-export-xlsx.xlsx');
+  assert.equal(sheet.views[0].rightToLeft, true);
+  assert.deepEqual(sheet.getRow(2).values.slice(1), [
+    'MAN-000007',
+    'confirmed',
+    '2026-10-17T09:00:00.000Z',
+    'عميل يدوي',
+    '01001234567',
+    'القاهرة',
+    '1 Test street',
+    'Bank transfer',
+    '15.00',
+    '265.00',
+    'manual-line-1',
+    'Product A',
+    '2',
+  ]);
+  assert.equal(sheet.getCell('L3').value, "'=unsafe");
+});
+
 test('row modes and chunking are bounded and resumable', async () => {
   const orderWithPackages = { ...order, packages: [{ tracking: 'A' }, { tracking: 'B' }] };
   assert.equal(materializeRows([order], { ...profile('csv'), rowMode: 'line' }).length, 2);
