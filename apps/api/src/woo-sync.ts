@@ -394,6 +394,23 @@ export const createWooSyncEffect =
           // Keep the last successful snapshot on permission, plugin, or transient failures.
         }
       }
+      // Tax configuration is a read-only local snapshot. Missing settings are bootstrapped
+      // by the order poll; later refreshes use the normal full catalog sync cadence.
+      if (scope === 'full' || !store.getWooTaxPolicy(account).policy) {
+        try {
+          store.replaceWooTaxPolicy(
+            account,
+            connectionId,
+            await syncContext.connector.readTaxPolicy(),
+          );
+        } catch (error) {
+          store.recordWooTaxPolicyFailure(
+            account,
+            connectionId,
+            error instanceof Error ? error.message : 'WOO_TAX_SYNC_FAILED',
+          );
+        }
+      }
       if (cursor.phase !== 'complete') await syncOrders(syncContext, cursor);
     } catch (error) {
       const category = classifyWooError(error) as SyncErrorCategory;

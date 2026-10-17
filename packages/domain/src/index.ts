@@ -1,3 +1,4 @@
+export * from './tax.js';
 export type Origin = 'woo' | 'manual';
 export type SyncPolicy = 'read-only' | 'never';
 export type InventoryPolicy = 'observe' | 'ignore';

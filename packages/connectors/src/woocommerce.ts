@@ -7,7 +7,14 @@ import {
 } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import { EGYPTIAN_GOVERNORATES, egyptianGovernorate } from '@woo-ops/domain';
+import {
+  EGYPTIAN_GOVERNORATES,
+  egyptianGovernorate,
+  taxAddress,
+  validateStoreTaxPolicy,
+  type StoreTaxPolicy,
+  type StoreTaxRate,
+} from '@woo-ops/domain';
 import type {
   ConnectorCapabilities,
   ConnectorDiscovery,
@@ -32,6 +39,7 @@ export type WooCatalogPage = {
   items: readonly unknown[];
 };
 export type WooShippingRate = Readonly<{
+  taxStatus?: 'taxable' | 'none';
   zoneId: string;
   methodId: string;
   title: string;
@@ -1174,6 +1182,124 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
     }
   }
 
+  async readTaxPolicy(): Promise<StoreTaxPolicy> {
+    if (!this.storeUrl) throw new Error('WOO_CONNECTION_NOT_CONFIGURED');
+    const read = async (path: string): Promise<unknown[]> => {
+      const response = await this.requestPage(new URL(path, this.storeUrl));
+      if (!response.ok) throw new Error(`WOO_HTTP_${response.status}`);
+      const value: unknown = await response.json();
+      if (!Array.isArray(value) || value.length > 500) throw new Error('WOO_SCHEMA_INVALID:tax');
+      return value;
+    };
+    const settings = (items: unknown[]): Map<string, unknown> =>
+      new Map(
+        items.map((item) => {
+          const row = asRecord(item);
+          if (!row || typeof row.id !== 'string')
+            throw new Error('WOO_SCHEMA_INVALID:tax_settings');
+          return [row.id, row.value];
+        }),
+      );
+    const general = settings(await read('/wp-json/wc/v3/settings/general'));
+    const enabled = general.get('woocommerce_calc_taxes');
+    if (!['yes', 'no'].includes(String(enabled))) throw new Error('WOO_SCHEMA_INVALID:tax_enabled');
+    const currency = general.get('woocommerce_currency');
+    if (currency !== 'EGP' || String(general.get('woocommerce_price_num_decimals')) !== '2')
+      throw new Error('WOO_TAX_CURRENCY_UNSUPPORTED');
+    const [country = '', state = ''] = String(
+      general.get('woocommerce_default_country') ?? '',
+    ).split(':');
+    const base = taxAddress({
+      country,
+      state,
+      city: general.get('woocommerce_store_city') ?? '',
+      postcode: general.get('woocommerce_store_postcode') ?? '',
+    });
+    if (!base.country) throw new Error('WOO_SCHEMA_INVALID:tax_base');
+    if (enabled === 'no')
+      return {
+        version: 1,
+        enabled: false,
+        currency,
+        pricesIncludeTax: false,
+        roundAtSubtotal: false,
+        basedOn: 'shipping',
+        shippingTaxClass: 'inherit',
+        taxClasses: [],
+        base,
+        rates: [],
+      };
+    const tax = settings(await read('/wp-json/wc/v3/settings/tax'));
+    const yesNo = (key: string): boolean => {
+      const value = tax.get(key);
+      if (value !== 'yes' && value !== 'no') throw new Error('WOO_SCHEMA_INVALID:tax_setting');
+      return value === 'yes';
+    };
+    if (tax.get('woocommerce_automated_taxes') === 'yes')
+      throw new Error('WOO_AUTOMATED_TAX_UNSUPPORTED');
+    const classes = (await read('/wp-json/wc/v3/taxes/classes')).map((value) => {
+      const row = asRecord(value);
+      if (!row || typeof row.slug !== 'string' || row.slug.length > 120)
+        throw new Error('WOO_SCHEMA_INVALID:tax_class');
+      return row.slug;
+    });
+    if (classes.length > 50) throw new Error('WOO_TAX_RATE_LIMIT');
+    const rates: StoreTaxRate[] = [];
+    for (const taxClass of ['', ...classes.filter((item) => item !== 'standard' && item !== '')]) {
+      for (let page = 1; page <= 21; page += 1) {
+        if (page > 20) throw new Error('WOO_TAX_RATE_LIMIT');
+        const items = await read(
+          `/wp-json/wc/v3/taxes?class=${encodeURIComponent(taxClass || 'standard')}&per_page=100&page=${page}`,
+        );
+        for (const value of items) {
+          const row = asRecord(value);
+          if (!row || !Number.isInteger(row.id)) throw new Error('WOO_SCHEMA_INVALID:tax_rate');
+          const locations = (plural: string, singular: string): string[] => {
+            const raw = row[plural] ?? row[singular] ?? '';
+            if (Array.isArray(raw)) {
+              if (raw.some((part) => typeof part !== 'string'))
+                throw new Error('WOO_SCHEMA_INVALID:tax_location');
+              return raw.filter(Boolean);
+            }
+            if (typeof raw !== 'string') throw new Error('WOO_SCHEMA_INVALID:tax_location');
+            return raw
+              .split(';')
+              .map((part) => part.trim())
+              .filter(Boolean);
+          };
+          rates.push({
+            id: String(row.id),
+            country: row.country as string,
+            state: row.state as string,
+            postcodes: locations('postcodes', 'postcode'),
+            cities: locations('cities', 'city'),
+            rate: row.rate as string,
+            name: row.name as string,
+            priority: row.priority as number,
+            order: row.order as number,
+            compound: row.compound as boolean,
+            shipping: row.shipping as boolean,
+            taxClass: row.class === 'standard' ? '' : (row.class as string),
+          });
+          if (rates.length > 2000) throw new Error('WOO_TAX_RATE_LIMIT');
+        }
+        if (items.length < 100) break;
+      }
+    }
+    return validateStoreTaxPolicy({
+      version: 1,
+      enabled: true,
+      currency,
+      pricesIncludeTax: yesNo('woocommerce_prices_include_tax'),
+      roundAtSubtotal: yesNo('woocommerce_tax_round_at_subtotal'),
+      basedOn: tax.get('woocommerce_tax_based_on'),
+      shippingTaxClass: tax.get('woocommerce_shipping_tax_class'),
+      taxClasses: classes.filter((item) => item !== 'standard'),
+      base,
+      rates,
+    });
+  }
+
   async readEgyptShippingRates(): Promise<readonly WooShippingRate[]> {
     if (!this.storeUrl || !this.credentials) throw new Error('WOO_CONNECTION_NOT_CONFIGURED');
     const zonesResponse = await this.requestPage(
@@ -1235,6 +1361,9 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
             stateCode,
             amountMinor: decimalToMinorUnits(cost.value),
             currency: 'EGP',
+            ...(['taxable', 'none'].includes(String(asRecord(settings?.tax_status)?.value))
+              ? { taxStatus: asRecord(settings?.tax_status)?.value as 'taxable' | 'none' }
+              : {}),
           });
       }
     }

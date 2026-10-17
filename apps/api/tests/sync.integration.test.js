@@ -87,6 +87,13 @@ test('Woo sync health, resumable checkpoints, retry classification, and reconcil
     assert.equal(init.method, 'GET');
     if (parsed.pathname.endsWith('/system_status'))
       return response({ version: '9.8.0', environment: { wp_version: '6.7.2' } });
+    if (parsed.pathname.endsWith('/settings/general'))
+      return response([
+        { id: 'woocommerce_calc_taxes', value: 'no' },
+        { id: 'woocommerce_currency', value: 'EGP' },
+        { id: 'woocommerce_price_num_decimals', value: '2' },
+        { id: 'woocommerce_default_country', value: 'EG:C' },
+      ]);
     if (parsed.pathname.endsWith('/products'))
       return response([
         {
@@ -169,6 +176,8 @@ test('Woo sync health, resumable checkpoints, retry classification, and reconcil
   assert.equal(completedRun.items, 6);
   assert.match(completedRun.cursor, /"phase":"complete"/u);
   assert.equal(store.getConnection(context, connectionId).syncStatus, 'succeeded');
+  assert.equal(store.getWooTaxPolicy(context).policy.enabled, false);
+  assert.equal(store.getWooTaxPolicy(context).error, null);
   assert.equal(
     store.db
       .prepare('SELECT COUNT(*) AS count FROM catalog_items WHERE account_id = ?')
@@ -207,6 +216,10 @@ test('Woo sync health, resumable checkpoints, retry classification, and reconcil
         path.endsWith('/shipping_classes') ||
         path.includes('/shipping/zones'),
     ),
+    false,
+  );
+  assert.equal(
+    orderOnlyPaths.some((path) => path.includes('/settings/') || path.includes('/taxes')),
     false,
   );
   assert.equal(

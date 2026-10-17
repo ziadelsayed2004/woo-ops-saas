@@ -185,6 +185,21 @@ test('document page presets use exact physical dimensions', () => {
   assert.throws(() => documentPageSize('thermal-80mm', 20), /DOCUMENT_THERMAL_HEIGHT_INVALID/);
 });
 
+test('manual tax invoices show the before-discount subtotal and saved tax without subtracting discounts twice', () => {
+  const taxed = { ...order, currency: 'EGP', grandTotalMinor: '10260',
+    amounts: {merchandiseSubtotalMinor:'10000',merchandiseNetMinor:'9000',discountMinor:'1000',taxMinor:'1260'},
+    lines:[{name:'Tax product',quantity:1,unitPriceMinor:'10000',totalMinor:'9000',taxMinor:'1260'}],
+  };
+  for (const format of ['a4', 'thermal-80mm']) {
+    const html = htmlDocument({order:taxed,format,template:{...template,direction:'ltr',locale:'en-US'}},{});
+    const totals = html.match(/<div class="total-row">.*?<\/div>/g) ?? [];
+    assert.ok(totals.some((row)=>row.includes('100.00')));
+    assert.ok(totals.some((row)=>row.includes('10.00')));
+    assert.ok(totals.some((row)=>row.includes('12.60')));
+    assert.ok(html.includes('102.60'));
+  }
+});
+
 test('safe templates allowlisted tokens only and never evaluate markup or URLs', () => {
   const input = {
     id: 'order-100',

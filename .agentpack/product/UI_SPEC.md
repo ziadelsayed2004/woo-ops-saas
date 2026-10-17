@@ -77,6 +77,13 @@ quantity, unit price, tax policy, and optionally unit cost/SKU.
 
 Before save, show totals and the permanent “local only” guarantee.
 
+New web manual orders show a read-only, automatically calculated tax field and an authoritative
+debounced local total preview. City/postcode fields support location-specific store rates. The
+policy hint explains included/excluded prices (and untaxed local operating fees), or explicitly
+disabled taxes. Missing, stale or inaccessible store settings prevent save and link to connection
+synchronization. The server recalculates on creation. Existing orders retain their saved tax and
+policy snapshot; confirmation or a later store sync must not change their totals.
+
 ## Export builder
 
 - Start from a saved profile or blank profile.

@@ -97,7 +97,42 @@ test('catalog shows only products shared by every selected category and clears b
   });
 });
 
-const openManualForm = async (page: Page, rates: unknown[]) => {
+const disabledTaxes = {
+  status: 'ready',
+  enabled: false,
+  pricesIncludeTax: false,
+  syncedAt: '2026-10-17T00:00:00.000Z',
+  policyHash: 'a'.repeat(64),
+  error: null,
+};
+const mockTaxPreview = async (page: Page, percent = 0) => {
+  await page.route('**/api/v1/manual-orders/tax-preview', async (route) => {
+    const body = route.request().postDataJSON() as {
+      lines: Array<{ quantity: number; unitPriceMinor: string }>;
+      shippingCollectedMinor: string;
+      discountMinor: string;
+      feesMinor: string;
+    };
+    const net =
+      body.lines.reduce(
+        (total, line) => total + BigInt(line.quantity) * BigInt(line.unitPriceMinor),
+        0n,
+      ) - BigInt(body.discountMinor);
+    const tax = (net * BigInt(percent) + 50n) / 100n;
+    await route.fulfill({
+      json: {
+        amounts: {
+          taxMinor: String(tax),
+          grandTotalMinor: String(
+            net + tax + BigInt(body.shippingCollectedMinor) + BigInt(body.feesMinor),
+          ),
+        },
+        policyHash: disabledTaxes.policyHash,
+      },
+    });
+  });
+};
+const openManualForm = async (page: Page, rates: unknown[], taxes = disabledTaxes) => {
   await page.route('**/api/v1/auth/session', async (route: Route) => {
     await route.fulfill({
       json: {
@@ -130,9 +165,10 @@ const openManualForm = async (page: Page, rates: unknown[]) => {
   });
   await page.route('**/api/v1/manual-orders/config', async (route: Route) => {
     await route.fulfill({
-      json: { currency: 'EGP', rates, proofTypes: ['image/png'], proofMaxBytes: 5242880 },
+      json: { currency: 'EGP', rates, taxes, proofTypes: ['image/png'], proofMaxBytes: 5242880 },
     });
   });
+  await mockTaxPreview(page);
   await page.goto('/');
   await page.getByRole('button', { name: 'إنشاء طلب يدوي' }).click();
 };
@@ -178,12 +214,14 @@ test('creates a manual order through the local-only form', async ({ page }) => {
     await route.fulfill({
       json: {
         currency: 'EGP',
+        taxes: disabledTaxes,
         rates: [{ governorate: 'Cairo', amountMinor: '1500' }],
         proofTypes: ['image/png'],
         proofMaxBytes: 5242880,
       },
     });
   });
+  await mockTaxPreview(page);
   await page.route('**/api/v1/manual-orders/manual-1/payment-proof', async (route) => {
     await route.fulfill({ status: 201, json: { proof: { id: 'proof-1' } } });
   });
@@ -252,6 +290,9 @@ test('creates a manual order through the local-only form', async ({ page }) => {
   await expect(page.getByTestId('orders-tab-manual')).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTestId('manual-orders-workspace')).toBeVisible();
   expect(payload?.currency).toBe('EGP');
+  expect(payload?.taxMode).toBe('store');
+  expect(payload?.taxPolicyHash).toBe(disabledTaxes.policyHash);
+  expect(payload).not.toHaveProperty('taxMinor');
   expect(payload?.lines).toEqual([
     {
       name: 'Woo product',
@@ -270,6 +311,37 @@ test('explains missing shipping rates instead of opening an empty governorate li
   await openManualForm(page, []);
   await expect(page.getByTestId('shipping-rates-empty')).toBeVisible();
   await expect(page.getByLabel('المحافظة')).toBeDisabled();
+  await expect(page.locator('button[type="submit"]')).toBeDisabled();
+});
+
+test('recalculates automatic tax locally when quantity changes and keeps it read-only', async ({
+  page,
+}) => {
+  await openManualForm(page, [{ governorate: 'EGC', amountMinor: '1000' }], {
+    ...disabledTaxes,
+    enabled: true,
+  });
+  await mockTaxPreview(page, 14);
+  await page.getByRole('button', { name: 'English' }).click();
+  await page.getByLabel('Governorate').click();
+  await page.getByRole('option', { name: /Cairo/ }).click();
+  await page.getByLabel('Product name').click();
+  await page.getByRole('option', { name: /Woo product/ }).click();
+  const taxInput = page.getByLabel('Tax in minor units', { exact: true });
+  await expect(taxInput).toHaveValue('1750');
+  await expect(taxInput).toHaveAttribute('readonly', '');
+  await page.getByLabel('Quantity').fill('2');
+  await expect(taxInput).toHaveValue('3500');
+  await expect(page.getByText('Calculated automatically from store tax settings')).toBeVisible();
+});
+
+test('does not silently save zero tax when store settings are unavailable', async ({ page }) => {
+  await openManualForm(page, [{ governorate: 'EGC', amountMinor: '1000' }], {
+    ...disabledTaxes,
+    status: 'unavailable',
+  });
+  await page.getByRole('button', { name: 'English' }).click();
+  await expect(page.getByText('Tax settings are unavailable.', { exact: false })).toBeVisible();
   await expect(page.locator('button[type="submit"]')).toBeDisabled();
 });
 

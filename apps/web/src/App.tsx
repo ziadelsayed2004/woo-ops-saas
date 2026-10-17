@@ -124,6 +124,14 @@ type CatalogItemView = {
   categories: readonly { id: string; name: string }[];
 };
 type ManualOrderConfig = {
+  taxes: {
+    status: 'ready' | 'unavailable';
+    enabled: boolean | null;
+    pricesIncludeTax: boolean | null;
+    syncedAt: string | null;
+    policyHash: string | null;
+    error: string | null;
+  };
   currency: string;
   rates: readonly {
     governorate: string;
@@ -1841,6 +1849,8 @@ function ManualOrderForm({
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [postcode, setPostcode] = useState('');
   const [governorate, setGovernorate] = useState('');
   const [shippingRateKey, setShippingRateKey] = useState('');
   const [currency, setCurrency] = useState('EGP');
@@ -1865,7 +1875,12 @@ function ManualOrderForm({
   const [unitPriceMinor, setUnitPriceMinor] = useState('0');
   const [shippingMinor, setShippingMinor] = useState('0');
   const [discountMinor, setDiscountMinor] = useState('0');
-  const [taxMinor, setTaxMinor] = useState('0');
+  const [taxPreview, setTaxPreview] = useState<{
+    key: string;
+    amounts: Record<string, string>;
+    policyHash: string;
+  } | null>(null);
+  const [taxPreviewError, setTaxPreviewError] = useState('');
   const [feesMinor, setFeesMinor] = useState('0');
   const localStatus = 'awaiting-payment-proof';
   const [tags, setTags] = useState('manual');
@@ -1968,36 +1983,53 @@ function ManualOrderForm({
     selectCatalogProduct('');
     setQuantity('1');
   };
-  const totalMinor = useMemo(() => {
-    try {
-      const savedSubtotal = manualLines.reduce(
-        (sum, line) => sum + BigInt(line.unitPriceMinor) * BigInt(line.quantity),
-        0n,
-      );
-      const currentSubtotal = selectedCatalogId
-        ? BigInt(unitPriceMinor || '0') * BigInt(quantity || '0')
-        : 0n;
-      const subtotal = savedSubtotal + currentSubtotal;
-      const value =
-        subtotal -
-        BigInt(discountMinor || '0') +
-        BigInt(taxMinor || '0') +
-        BigInt(shippingMinor || '0') +
-        BigInt(feesMinor || '0');
-      return value.toString();
-    } catch {
-      return '0';
-    }
-  }, [
-    discountMinor,
-    feesMinor,
-    manualLines,
-    quantity,
-    selectedCatalogId,
-    shippingMinor,
-    taxMinor,
-    unitPriceMinor,
-  ]);
+  const pendingTaxLine = currentManualLine();
+  const taxLines = [...manualLines, ...(pendingTaxLine ? [pendingTaxLine] : [])];
+  const taxPreviewKey = JSON.stringify({
+    currency,
+    taxMode: 'store',
+    billing: { country: 'EG', state: governorate, city, postcode },
+    shipping: { country: 'EG', state: governorate, city, postcode },
+    shippingMethod: { methodId: selectedShippingRate?.methodId ?? 'configured-rate' },
+    lines: taxLines.map(({ catalogId: _catalogId, ...line }) => line),
+    shippingCollectedMinor: shippingMinor || '0',
+    discountMinor: discountMinor || '0',
+    feesMinor: feesMinor || '0',
+  });
+  const taxSettingsReady = config?.taxes?.status === 'ready';
+  useEffect(() => {
+    setTaxPreview(null);
+    setTaxPreviewError('');
+    if (!taxSettingsReady || !taxLines.length || !governorate) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void fetch('/api/v1/manual-orders/tax-preview', {
+        method: 'POST',
+        credentials: 'include',
+        signal: controller.signal,
+        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
+        body: taxPreviewKey,
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error('STORE_TAX_PREVIEW_FAILED');
+          const body = (await response.json()) as {
+            amounts: Record<string, string>;
+            policyHash: string;
+          };
+          if (!controller.signal.aborted) setTaxPreview({ key: taxPreviewKey, ...body });
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setTaxPreviewError('STORE_TAX_PREVIEW_FAILED');
+        });
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [taxPreviewKey, taxSettingsReady]);
+  const taxPreviewReady = taxPreview?.key === taxPreviewKey;
+  const totalMinor = taxPreviewReady ? (taxPreview.amounts.grandTotalMinor ?? '0') : '0';
+  const taxMinor = taxPreviewReady ? (taxPreview.amounts.taxMinor ?? '0') : '';
   const shippingRatesConfigured = (config?.rates.length ?? 0) > 0;
   const selectedCatalogItem =
     catalog.find((candidate) => candidate.id === selectedCatalogId) ?? null;
@@ -2006,7 +2038,14 @@ function ManualOrderForm({
     event.preventDefault();
     const pendingLine = currentManualLine();
     const lines = [...manualLines, ...(pendingLine ? [pendingLine] : [])];
-    if (lines.length === 0 || !governorate || !paymentProof || !config) {
+    if (
+      lines.length === 0 ||
+      !governorate ||
+      !paymentProof ||
+      !config ||
+      !taxSettingsReady ||
+      !taxPreviewReady
+    ) {
       setError(true);
       return;
     }
@@ -2019,9 +2058,27 @@ function ManualOrderForm({
         credentials: 'include',
         body: JSON.stringify({
           currency: currency.trim().toUpperCase(),
+          taxMode: 'store',
+          taxPolicyHash: taxPreview.policyHash,
           customer: { name: customerName, email: customerEmail, phone: customerPhone },
-          billing: { first_name: customerName, email: customerEmail, phone: customerPhone },
-          shipping: { first_name: customerName, address_1: address, state: governorate },
+          billing: {
+            first_name: customerName,
+            email: customerEmail,
+            phone: customerPhone,
+            country: 'EG',
+            state: governorate,
+            city,
+            postcode,
+            address_1: address,
+          },
+          shipping: {
+            first_name: customerName,
+            address_1: address,
+            state: governorate,
+            country: 'EG',
+            city,
+            postcode,
+          },
           payment: { method: 'bank-transfer', title: 'Bank transfer' },
           shippingMethod: {
             methodId: selectedShippingRate?.methodId ?? 'configured-rate',
@@ -2037,7 +2094,6 @@ function ManualOrderForm({
           })),
           shippingCollectedMinor: shippingMinor,
           discountMinor,
-          taxMinor,
           feesMinor,
           localStatus,
           tags: tags
@@ -2163,6 +2219,22 @@ function ManualOrderForm({
               )}
             </Alert>
           )}
+          <Box className="manual-order-tax-address">
+            <TextField
+              fullWidth
+              label={tr(locale, 'inline.app.manualCity')}
+              value={city}
+              onChange={(event) => setCity(event.target.value)}
+              inputProps={{ maxLength: 120 }}
+            />
+            <TextField
+              fullWidth
+              label={tr(locale, 'inline.app.manualPostcode')}
+              value={postcode}
+              onChange={(event) => setPostcode(event.target.value)}
+              inputProps={{ maxLength: 40 }}
+            />
+          </Box>
         </Section>
         <Section title={t.items}>
           {catalog.length === 0 && config && (
@@ -2294,7 +2366,8 @@ function ManualOrderForm({
               type="number"
               inputProps={{ min: 0, step: 1 }}
               value={taxMinor}
-              onChange={(event) => setTaxMinor(event.target.value)}
+              InputProps={{ readOnly: true }}
+              helperText={tr(locale, 'inline.app.taxCalculatedFromStore')}
             />
             <TextField
               label={t.feesMinor}
@@ -2306,13 +2379,44 @@ function ManualOrderForm({
           </Box>
           <Paper variant="outlined" className="app-l2396c11">
             <Typography className="app-l2400c13">{t.total}</Typography>
-            <MoneyValue
-              value={totalMinor}
-              currency={currency.toUpperCase()}
-              locale={locale}
-              fontWeight={700}
-            />
+            {taxPreviewReady ? (
+              <MoneyValue
+                value={totalMinor}
+                currency={currency.toUpperCase()}
+                locale={locale}
+                fontWeight={700}
+              />
+            ) : (
+              <Typography>
+                {taxLines.length && governorate && taxSettingsReady && !taxPreviewError
+                  ? tr(locale, 'inline.app.calculatingStoreTax')
+                  : '—'}
+              </Typography>
+            )}
           </Paper>
+          {config && !taxSettingsReady && (
+            <Alert severity="warning" data-testid="manual-tax-unavailable">
+              {tr(locale, 'inline.app.storeTaxUnavailable')}
+              <Button href="/connections">{tr(locale, 'inline.app.openConnectionSync')}</Button>
+            </Alert>
+          )}
+          {taxSettingsReady && (
+            <Alert severity="info" data-testid="manual-tax-policy">
+              {config.taxes.enabled
+                ? tr(
+                    locale,
+                    config.taxes.pricesIncludeTax
+                      ? 'inline.app.storePricesIncludeTax'
+                      : 'inline.app.storePricesExcludeTax',
+                  )
+                : tr(locale, 'inline.app.storeTaxesDisabled')}
+            </Alert>
+          )}
+          {taxPreviewError && (
+            <Alert severity="error" data-testid="manual-tax-preview-error">
+              {tr(locale, 'inline.app.storeTaxPreviewFailed')}
+            </Alert>
+          )}
           <Button component="label" variant="outlined" className="app-l2408c11">
             {paymentProof ? paymentProof.name : tr(locale, 'inline.app.uploadTransferProof')}
             <input
@@ -2357,7 +2461,13 @@ function ManualOrderForm({
           <Button
             type="submit"
             variant="contained"
-            disabled={saving || !shippingRatesConfigured || catalog.length === 0}
+            disabled={
+              saving ||
+              !shippingRatesConfigured ||
+              catalog.length === 0 ||
+              !taxSettingsReady ||
+              !taxPreviewReady
+            }
           >
             {saving ? <CircularProgress size={18} aria-label={t.loading} /> : t.saveManual}
           </Button>

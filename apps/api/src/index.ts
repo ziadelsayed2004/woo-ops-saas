@@ -18,6 +18,7 @@ import {
   selectionCreateSchema,
   selectionResolveSchema,
   manualOrderCreateSchema,
+  manualOrderTaxPreviewSchema,
   manualOrderUpdateSchema,
   exportProfileCreateSchema,
   exportProfileUpdateSchema,
@@ -913,12 +914,43 @@ app.get('/api/v1/catalog', (request, response) => {
     sendOperationError(response, error);
   }
 });
+app.post('/api/v1/manual-orders/tax-preview', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const parsed = manualOrderTaxPreviewSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'MANUAL_ORDER_INVALID', 'Manual order data is invalid');
+    return;
+  }
+  try {
+    const preview = store.previewManualOrderTaxes(
+      operationContext(user, response),
+      parsed.data as ManualOrderInput,
+    );
+    response.json({
+      amounts: preview.amounts,
+      lines: preview.lines,
+      taxLines: preview.taxLines,
+      policyHash: preview.taxSnapshot?.policyHash,
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
 app.get('/api/v1/manual-orders/config', (request, response) => {
   const user = authenticatedUser(request, response);
   if (!user) return;
   try {
     const context = operationContext(user, response);
     const wooRates = store.listWooShippingRates(context);
+    const taxes = store.getWooTaxPolicy(context);
+    const taxError =
+      taxes.error ??
+      (!taxes.policy || !taxes.syncedAt
+        ? 'STORE_TAX_NOT_SYNCED'
+        : Date.now() - Date.parse(taxes.syncedAt) > 24 * 60 * 60 * 1000
+          ? 'STORE_TAX_SETTINGS_STALE'
+          : null);
     const raw = process.env.WOO_OPS_EGYPT_SHIPPING_RATES_JSON ?? '{}';
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
@@ -950,6 +982,14 @@ app.get('/api/v1/manual-orders/config', (request, response) => {
     response.json({
       currency: 'EGP',
       rates,
+      taxes: {
+        status: taxes.policy && !taxError ? 'ready' : 'unavailable',
+        enabled: taxes.policy?.enabled ?? null,
+        pricesIncludeTax: taxes.policy?.pricesIncludeTax ?? null,
+        syncedAt: taxes.syncedAt,
+        policyHash: taxes.hash,
+        error: taxError,
+      },
       ratesSource:
         wooRates.length > 0 ? 'woocommerce' : fallbackRates.length > 0 ? 'environment' : 'none',
       requiredFields: ['customerName', 'customerPhone', 'address1', 'governorate'],

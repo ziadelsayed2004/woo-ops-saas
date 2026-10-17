@@ -366,6 +366,11 @@ const manualLineSchema = z
   })
   .strict();
 const manualOrderFieldsSchema = {
+  taxMode: z.enum(['manual', 'store']).optional(),
+  taxPolicyHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   currency: z
     .string()
     .regex(/^[A-Za-z]{3}$/)
@@ -395,6 +400,7 @@ export const manualOrderCreateSchema = z
 export const manualOrderUpdateSchema = z
   .object({ ...manualOrderFieldsSchema, version: z.number().int().min(1) })
   .strict();
+export const manualOrderTaxPreviewSchema = manualOrderCreateSchema;
 
 export const selectionCreateSchema = z
   .object({

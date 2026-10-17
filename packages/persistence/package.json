@@ -21,6 +21,7 @@
     "test:contract": "node --test tests/*.test.js"
   },
   "dependencies": {
+    "@woo-ops/domain": "0.1.0",
     "@woo-ops/analytics": "0.1.0",
     "@woo-ops/application": "0.1.0",
     "@woo-ops/documents": "0.1.0"
