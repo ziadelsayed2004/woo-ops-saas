@@ -134,6 +134,15 @@ const addMinor = (...values: unknown[]): string => {
     : '';
 };
 
+const fullName = (row: ExportOrder, address: 'billing' | 'shipping'): string =>
+  ['first_name', 'last_name']
+    .map((part) => pathValue(row, `${address}.${part}`))
+    .filter((part): part is string => typeof part === 'string')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/gu, ' ');
+
 /** Woo's order/line export columns, using immutable normalized order snapshots. */
 const wooColumnValue = (row: ExportOrder, key: string): unknown => {
   const line = pathValue(row, 'line');
@@ -145,6 +154,7 @@ const wooColumnValue = (row: ExportOrder, key: string): unknown => {
     orderStatus: () => (row.origin === 'manual' ? row.localStatus : row.remoteStatus),
     orderDate: () => row.createdAt,
     customerNote: () => row.customerNote,
+    billingFullName: () => fullName(row, 'billing'),
     billingFirstName: () => pathValue(row, 'billing.first_name'),
     billingLastName: () => pathValue(row, 'billing.last_name'),
     billingCompany: () => pathValue(row, 'billing.company'),
@@ -159,6 +169,7 @@ const wooColumnValue = (row: ExportOrder, key: string): unknown => {
     billingCountry: () => pathValue(row, 'billing.country'),
     billingEmail: () => pathValue(row, 'billing.email'),
     billingPhone: () => pathValue(row, 'billing.phone'),
+    shippingFullName: () => fullName(row, 'shipping'),
     shippingFirstName: () => pathValue(row, 'shipping.first_name'),
     shippingLastName: () => pathValue(row, 'shipping.last_name'),
     shippingAddress: () =>
@@ -484,7 +495,7 @@ export const generateXlsx = async (
         value instanceof Date ? 20 : String(value ?? '').replace(/[\r\n]+/gu, ' ').length;
       return Math.max(maximum, length);
     }, 0);
-    const contentCap = /address|note/iu.test(column.key)
+    const contentCap = /address|note|fullName/iu.test(column.key)
       ? 38
       : /(?:item|line).*name/iu.test(column.key)
         ? 34
@@ -493,7 +504,7 @@ export const generateXlsx = async (
     sheet.getColumn(index + 1).alignment = {
       vertical: 'top',
       ...(arabic && column.type === 'text' ? { horizontal: 'right' } : {}),
-      wrapText: /address|(?:item|line)\.?(?:name)?|note/iu.test(column.key),
+      wrapText: /address|(?:item|line)\.?(?:name)?|note|fullName/iu.test(column.key),
     };
   });
   sheet.autoFilter = {

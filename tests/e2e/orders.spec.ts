@@ -1,5 +1,12 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import ExcelJS from 'exceljs';
+import type { ExportProfile, ExportResult } from '@woo-ops/exports';
+import { writeFile } from 'node:fs/promises';
+import {
+  wooOrderExportColumns,
+  wooShippingExportColumns,
+} from '../../apps/web/src/wooExportColumns';
 
 const order = {
   id: 'order-1',
@@ -388,6 +395,13 @@ test('manual selections download Woo-layout Excel, shipping sheets and all PDF t
     { key: 'woo.orderStatus', label: 'حالة الطلب', type: 'text' },
     { key: 'woo.orderDate', label: 'تاريخ الطلب', type: 'text' },
   ]);
+  for (const [index, key] of ['woo.billingFullName', 'woo.shippingFullName'].entries()) {
+    const columns = versions[index]?.columns as { key: string; label: string }[];
+    expect(columns.filter((column) => column.label === 'الاسم بالكامل')).toEqual([
+      { key, label: 'الاسم بالكامل', type: 'text' },
+    ]);
+    expect(columns.some((column) => /FirstName|LastName/u.test(column.key))).toBe(false);
+  }
   expect(documentActions).toEqual(['generate-invoice', 'generate-thermal', 'generate-label']);
   expect(selections).toEqual(
     Array.from({ length: 5 }, () => ({ mode: 'explicit', orderIds: ['manual-order-1'] })),
@@ -531,7 +545,12 @@ test('creates the Woo-layout XLSX and offers repeat download in orders @orders @
   const columns = (createdVersion?.columns ?? []) as Array<{ key: string; label: string }>;
   expect(createdVersion?.filenameTemplate).toBe('orders-{date}-{format}');
   expect(createdVersion?.rowMode).toBe('line');
-  expect(columns).toHaveLength(15);
+  expect(columns).toHaveLength(14);
+  expect(columns).toContainEqual({
+    key: 'woo.billingFullName',
+    label: 'الاسم بالكامل',
+    type: 'text',
+  });
   expect(columns.map((column) => column.label).slice(0, 3)).toEqual([
     'رقم الطلب',
     'حالة الطلب',
@@ -546,6 +565,129 @@ test('creates the Woo-layout XLSX and offers repeat download in orders @orders @
   const historyBox = await page.getByTestId('exports-workspace').boundingBox();
   expect(historyBox).not.toBeNull();
 });
+
+for (const source of ['woo', 'manual'] as const) {
+  for (const preset of ['orders', 'shipping'] as const) {
+    test(`${source} ${preset} upgrades a split-name preset and downloads using the full-name version @exports`, async ({
+      page,
+    }, testInfo) => {
+      await mockOrderApi(page);
+      const columns = preset === 'shipping' ? wooShippingExportColumns : wooOrderExportColumns;
+      const nameKey = preset === 'shipping' ? 'shipping' : 'billing';
+      const profileName =
+        source === 'manual'
+          ? preset === 'shipping'
+            ? 'Manual shipping orders XLSX v1'
+            : 'Manual orders XLSX v1'
+          : preset === 'shipping'
+            ? 'Shipping orders XLSX v2'
+            : 'Woo orders XLSX v4';
+      const oldColumns = columns.flatMap((column) =>
+        column.key === `woo.${nameKey}FullName`
+          ? [
+              { key: `woo.${nameKey}FirstName`, label: 'الاسم الأول', type: 'text' },
+              { key: `woo.${nameKey}LastName`, label: 'اسم العائلة', type: 'text' },
+            ]
+          : [column],
+      );
+      const versions: Record<string, unknown>[] = [
+        { id: 'old-version', format: 'xlsx', rowMode: 'line', columns: oldColumns },
+      ];
+      let versionsCreated = 0;
+      const { generateExport } = await import('@woo-ops/exports');
+      let artifact: ExportResult | undefined;
+      let batchCreated = false;
+      await page.route('**/api/v1/export-profiles', (route) =>
+        route.fulfill({
+          json: { items: [{ id: 'full-name-profile', name: profileName, active: true }] },
+        }),
+      );
+      await page.route('**/api/v1/export-profiles/full-name-profile/versions', async (route) => {
+        if (route.request().method() === 'GET') return route.fulfill({ json: { items: versions } });
+        const version = {
+          ...(route.request().postDataJSON() as ExportProfile),
+          id: 'full-name-version',
+          version: 2,
+          name: profileName,
+        };
+        artifact = await generateExport({
+          profile: version,
+          orders: [
+            {
+              ...(source === 'manual' ? manualOrder : order),
+              billing: { ...order.billing, first_name: ' أحمد  محمد ', last_name: ' علي ' },
+              shipping: { ...order.shipping, first_name: ' مريم ', last_name: 'حسن' },
+            },
+          ],
+        });
+        versionsCreated += 1;
+        versions.unshift(version);
+        return route.fulfill({ json: { version } });
+      });
+      await page.route('**/api/v1/selections', (route) =>
+        route.fulfill({ json: { selection: { id: 'name-selection', estimatedCount: 1 } } }),
+      );
+      await page.route('**/api/v1/export-batches', (route) => {
+        if (route.request().method() === 'POST') {
+          expect(route.request().postDataJSON().profileVersionId).toBe('full-name-version');
+          batchCreated = true;
+          return route.fulfill({ json: { batch: { id: 'name-batch' } } });
+        }
+        return route.fulfill({
+          json: {
+            items: batchCreated
+              ? [{ id: 'name-batch', status: 'completed', filename: artifact?.filename }]
+              : [],
+          },
+        });
+      });
+      await page.context().route('**/api/v1/export-batches/name-batch/download', (route) =>
+        route.fulfill({
+          body: Buffer.from(artifact!.bytes),
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          headers: { 'content-disposition': `attachment; filename="${artifact!.filename}"` },
+        }),
+      );
+      await page.goto(source === 'manual' ? '/manual' : '/');
+      await page.getByRole('button', { name: 'English' }).click();
+      const checkbox = page
+        .getByTestId(`order-row-${source === 'manual' ? 'manual-order-1' : 'order-1'}`)
+        .getByRole('checkbox');
+      await checkbox.check();
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        await page.getByRole('button', { name: 'Export & print', exact: true }).click();
+        const downloadPromise = page.waitForEvent('download');
+        await page
+          .getByRole('button', {
+            name: preset === 'shipping' ? 'Shipping sheet' : 'Export Excel',
+            exact: true,
+          })
+          .click();
+        const download = await downloadPromise;
+        expect(download.url()).toContain('/api/v1/export-batches/name-batch/download');
+        // Validate bytes generated from the actual browser-submitted profile. The real HTTP
+        // download and private job pipeline are covered in exports.e2e.test.js; intercepted
+        // browser attachment bodies are not reliable across local Chromium revisions.
+        await writeFile(testInfo.outputPath('full-name-export.xlsx'), artifact!.bytes);
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(Buffer.from(artifact!.bytes));
+        const sheet = workbook.worksheets[0]!;
+        const headers = sheet.getRow(1).values as string[];
+        expect(headers.filter((header) => header === 'الاسم بالكامل')).toHaveLength(1);
+        expect(headers).not.toContain('الاسم الأول');
+        expect(headers).not.toContain('اسم العائلة');
+        const nameColumn = headers.indexOf('الاسم بالكامل');
+        expect(sheet.getCell(2, nameColumn).value).toBe(
+          preset === 'shipping' ? 'مريم حسن' : 'أحمد محمد علي',
+        );
+        expect(sheet.views[0]?.rightToLeft).toBe(true);
+        await expect(checkbox).toBeChecked();
+      }
+      expect(versionsCreated).toBe(1);
+      expect(versions.at(-1)?.columns).toEqual(oldColumns);
+    });
+  }
+}
 
 test('shows an export job failure with retry instead of claiming a download @orders @exports', async ({
   page,
