@@ -93,6 +93,12 @@ policy snapshot; confirmation or a later store sync must not change their totals
 - Validate required carrier fields before enqueue.
 - Show exported state implications before running.
 
+The standard order and shipping XLSX presets use a single Arabic `الاسم بالكامل` column in place
+of separate first/last name columns. Order sheets join billing name parts and shipping sheets join
+recipient name parts, trimming excess whitespace. Manual orders use the same presets. A missing
+part is omitted without inventing a name. New preset versions do not rewrite historical files or
+custom profiles that intentionally retain the legacy name columns.
+
 ## Documents and printing
 
 - Template editor uses safe tokens and a side-by-side preview.

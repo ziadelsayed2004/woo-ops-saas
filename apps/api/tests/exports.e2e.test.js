@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import ExcelJS from 'exceljs';
 
 const directory = mkdtempSync(join(tmpdir(), 'woo-exports-e2e-'));
 const databasePath = join(directory, 'exports.sqlite');
@@ -104,7 +105,7 @@ try {
     body: JSON.stringify({
       currency: 'EGP',
       customer: { name: 'Export API customer' },
-      billing: { phone: '01001234567' },
+      billing: { first_name: ' أحمد ', last_name: 'محمد علي', phone: '01001234567' },
       lines: [{ name: 'Export API item', quantity: 1, unitPriceMinor: '2500' }],
     }),
   });
@@ -214,6 +215,70 @@ try {
     headers: { cookie: cookiesFrom(otherRegister.response) },
   });
   assert.equal(otherDownload.response.status, 404);
+
+  const fullNameVersion = await request(
+    `/api/v1/export-profiles/${profile.body.profile.id}/versions`,
+    {
+      method: 'POST',
+      headers: writeHeaders,
+      body: JSON.stringify({
+        format: 'xlsx',
+        rowMode: 'order',
+        filenameTemplate: 'full-name-{format}',
+        columns: [
+          { key: 'woo.billingFullName', label: 'الاسم بالكامل', type: 'text' },
+          { key: 'woo.billingPhone', label: 'الهاتف', type: 'text' },
+        ],
+      }),
+    },
+  );
+  assert.equal(fullNameVersion.response.status, 201);
+  const fullNameBatchInput = {
+    selectionId: selection.body.selection.id,
+    profileVersionId: fullNameVersion.body.version.id,
+    idempotencyKey: 'full-name-xlsx',
+  };
+  const fullNameBatch = await request('/api/v1/export-batches', {
+    method: 'POST',
+    headers: writeHeaders,
+    body: JSON.stringify(fullNameBatchInput),
+  });
+  assert.equal(fullNameBatch.response.status, 202);
+  const repeated = await request('/api/v1/export-batches', {
+    method: 'POST',
+    headers: writeHeaders,
+    body: JSON.stringify(fullNameBatchInput),
+  });
+  assert.equal(repeated.body.batch.id, fullNameBatch.body.batch.id);
+  const fullNameDeadline = Date.now() + 10000;
+  let fullNameStatus;
+  while (Date.now() < fullNameDeadline) {
+    const current = await request(`/api/v1/export-batches/${fullNameBatch.body.batch.id}`, {
+      headers: readHeaders,
+    });
+    fullNameStatus = current.body.batch.status;
+    if (fullNameStatus === 'completed' || fullNameStatus === 'failed') break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert.equal(fullNameStatus, 'completed');
+  const fullNameDownload = await request(
+    `/api/v1/export-batches/${fullNameBatch.body.batch.id}/download`,
+    { headers: readHeaders },
+  );
+  assert.equal(fullNameDownload.response.status, 200);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(fullNameDownload.body);
+  const sheet = workbook.worksheets[0];
+  assert.deepEqual(sheet.getRow(1).values.slice(1), ['الاسم بالكامل', 'الهاتف']);
+  assert.deepEqual(sheet.getRow(2).values.slice(1), ['أحمد محمد علي', '01001234567']);
+  const isolated = await request(`/api/v1/export-batches/${fullNameBatch.body.batch.id}/download`, {
+    headers: { cookie: cookiesFrom(otherRegister.response) },
+  });
+  assert.equal(isolated.response.status, 404);
+  const oldDownload = await request(`/api/v1/export-batches/${created.body.batch.id}/download`, {
+    headers: readHeaders,
+  });
+  assert.deepEqual(Buffer.from(oldDownload.body), Buffer.from(download.body));
 } finally {
   await stopChild();
   rmSync(directory, { recursive: true, force: true });

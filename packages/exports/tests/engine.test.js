@@ -44,15 +44,130 @@ test('formula-like values are prefixed without changing safe text', () => {
   assert.equal(sanitizeSpreadsheetValue('طلب ١٢٣۴'), 'طلب 1234');
 });
 
+test('full-name columns join only their address name parts and preserve safe text in real XLSX files', async () => {
+  const cases = [
+    {
+      billing: { first_name: '  أحمد   محمد ', last_name: ' علي  ' },
+      shipping: { first_name: ' سلمى ', last_name: 'حسن' },
+      expected: ['أحمد محمد علي', 'سلمى حسن'],
+    },
+    {
+      billing: { first_name: 'محمد أحمد عبد الله' },
+      shipping: { last_name: 'Last only' },
+      expected: ['محمد أحمد عبد الله', 'Last only'],
+    },
+    {
+      billing: { last_name: 'Last name' },
+      shipping: { first_name: 'First only' },
+      expected: ['Last name', 'First only'],
+    },
+    { billing: { first_name: '  ', last_name: null }, shipping: {}, expected: ['', ''] },
+    {
+      billing: { first_name: ' =HYPERLINK("bad")', last_name: ' Name' },
+      shipping: { first_name: '@unsafe' },
+      expected: ['\'=HYPERLINK("bad") Name', "'@unsafe"],
+    },
+    {
+      billing: { first_name: 'Long customer name repeated '.repeat(5), last_name: 'Family' },
+      shipping: { first_name: 5, last_name: {} },
+      expected: [`${'Long customer name repeated '.repeat(5)}Family`, ''],
+    },
+  ];
+  for (const origin of ['woo', 'manual']) {
+    for (const [key, index] of [
+      ['billingFullName', 0],
+      ['shippingFullName', 1],
+    ]) {
+      const exportProfile = {
+        ...profile('xlsx'),
+        rowMode: 'order',
+        columns: [
+          { key: `woo.${key}`, label: 'الاسم بالكامل', type: 'text' },
+          { key: 'billing.phone', label: 'الهاتف', type: 'text' },
+        ],
+      };
+      const result = await generateExport({
+        profile: exportProfile,
+        orders: cases.map((item) => ({
+          ...order,
+          origin,
+          billing: { phone: '01001234567', ...item.billing },
+          shipping: item.shipping,
+        })),
+      });
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(result.bytes);
+      const sheet = workbook.worksheets[0];
+      assert.equal(sheet.getCell('A1').value, 'الاسم بالكامل');
+      cases.forEach((item, row) =>
+        assert.equal(sheet.getCell(row + 2, 1).value ?? '', item.expected[index]),
+      );
+      assert.equal(sheet.getCell('B2').value, '01001234567');
+      assert.equal(sheet.getCell('A6').type, ExcelJS.ValueType.String);
+      assert.equal(sheet.getColumn(1).alignment.wrapText, true);
+      assert.ok(sheet.getColumn(1).width <= 38);
+      assert.equal(sheet.getCell('A1').fill.fgColor.argb, 'FFF1F3F5');
+      assert.equal(sheet.views[0].rightToLeft, true);
+      assert.deepEqual(
+        previewExport({
+          profile: exportProfile,
+          orders: [{ ...order, billing: cases[0].billing, shipping: cases[0].shipping }],
+        }).rows[0][0],
+        cases[0].expected[index],
+      );
+    }
+  }
+});
+
+test('custom legacy split-name columns remain unchanged for immutable old profiles', async () => {
+  const legacy = {
+    ...profile('xlsx'),
+    rowMode: 'order',
+    columns: [
+      { key: 'woo.billingFirstName', label: 'First', type: 'text' },
+      { key: 'woo.billingLastName', label: 'Last', type: 'text' },
+      { key: 'woo.shippingFirstName', label: 'Recipient first', type: 'text' },
+      { key: 'woo.shippingLastName', label: 'Recipient last', type: 'text' },
+    ],
+  };
+  const preview = previewExport({
+    profile: legacy,
+    orders: [
+      {
+        ...order,
+        billing: { first_name: ' Ahmed ', last_name: 'Ali' },
+        shipping: { first_name: 'Recipient', last_name: 'Family' },
+      },
+    ],
+  });
+  assert.deepEqual(preview.rows[0], [' Ahmed ', 'Ali', 'Recipient', 'Family']);
+  assert.equal(preview.columns.length, 4);
+});
+
 test('manual store-tax snapshots export net subtotal, saved tax and gross total exactly', async () => {
-  const result = await generateExport({profile:{...profile('xlsx'),rowMode:'order',columns:[
-    {key:'woo.orderSubtotal',label:'Subtotal',type:'text'},
-    {key:'woo.orderTax',label:'Tax',type:'text'},
-    {key:'woo.orderTotal',label:'Total',type:'text'},
-  ]},orders:[{...order,origin:'manual',taxMode:'store',grandTotalMinor:'11400',amounts:{merchandiseSubtotalMinor:'10000',taxMinor:'1400'}}]});
+  const result = await generateExport({
+    profile: {
+      ...profile('xlsx'),
+      rowMode: 'order',
+      columns: [
+        { key: 'woo.orderSubtotal', label: 'Subtotal', type: 'text' },
+        { key: 'woo.orderTax', label: 'Tax', type: 'text' },
+        { key: 'woo.orderTotal', label: 'Total', type: 'text' },
+      ],
+    },
+    orders: [
+      {
+        ...order,
+        origin: 'manual',
+        taxMode: 'store',
+        grandTotalMinor: '11400',
+        amounts: { merchandiseSubtotalMinor: '10000', taxMinor: '1400' },
+      },
+    ],
+  });
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(result.bytes);
-  assert.deepEqual(workbook.worksheets[0].getRow(2).values.slice(1), ['100.00','14.00','114.00']);
+  assert.deepEqual(workbook.worksheets[0].getRow(2).values.slice(1), ['100.00', '14.00', '114.00']);
 });
 
 test('Arabic labels and values remain UTF-8 export data', async () => {
