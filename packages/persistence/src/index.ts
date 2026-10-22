@@ -4025,12 +4025,36 @@ export class SqliteStore {
     this.db.transaction(() => {
       const existing = this.db
         .prepare(
-          'SELECT id, status, type, cursor FROM connection_sync_runs WHERE account_id = ? AND id = ?',
+          'SELECT id, connection_id, status, type, cursor FROM connection_sync_runs WHERE account_id = ? AND id = ?',
         )
         .get(context.accountId, input.id) as
-        { id: string; status: SyncRunStatus; type: SyncRunType; cursor: string } | undefined;
-      if (existing && existing.type !== input.type) throw new Error('SYNC_RUN_ID_CONFLICT');
+        | {
+            id: string;
+            connection_id: string;
+            status: SyncRunStatus;
+            type: SyncRunType;
+            cursor: string;
+          }
+        | undefined;
+      if (
+        existing &&
+        (existing.type !== input.type || existing.connection_id !== input.connectionId)
+      )
+        throw new Error('SYNC_RUN_ID_CONFLICT');
       if (!existing) {
+        // A page checkpoint belongs to one durable job only. The connection cursor
+        // also contains partial progress, so never inherit it into a new run.
+        // This indexed lookup recovers legacy failed cursors without a migration.
+        const successful =
+          input.type === 'initial'
+            ? undefined
+            : (this.db
+                .prepare(
+                  `SELECT cursor FROM connection_sync_runs
+             WHERE account_id = ? AND connection_id = ? AND status = 'succeeded'
+             ORDER BY updated_at DESC, id DESC LIMIT 1`,
+                )
+                .get(context.accountId, input.connectionId) as { cursor: string } | undefined);
         this.db
           .prepare(
             `INSERT INTO connection_sync_runs (id, account_id, connection_id, type, status, cursor, started_at, updated_at)
@@ -4041,7 +4065,7 @@ export class SqliteStore {
             context.accountId,
             input.connectionId,
             input.type,
-            input.type === 'initial' ? '{}' : (connection.sync_cursor ?? '{}'),
+            successful?.cursor ?? '{}',
             now,
             now,
           );

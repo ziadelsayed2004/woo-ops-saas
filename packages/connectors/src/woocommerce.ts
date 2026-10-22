@@ -1,6 +1,7 @@
 import {
   createCipheriv,
   createDecipheriv,
+  createHash,
   createHmac,
   randomBytes,
   timingSafeEqual,
@@ -507,23 +508,36 @@ const requiredInteger = (record: Record<string, unknown>, key: string): number =
 const MAX_WOO_TOTAL_PAGES = 100_000;
 
 /**
- * WordPress returns `X-WP-TotalPages: 0` for an empty collection. A missing
- * header can also be caused by a proxy, so only the current response is then
- * considered known instead of guessing another page.
+ * Counts can shrink between requests (especially for modified order filters).
+ * Empty pages are exhausted, not schema failures. For order responses with a
+ * missing/stale count, probe after a full page and stop only on a short page.
+ * Keep malformed hints and the maximum page bound strict.
  */
-const wooTotalPages = (response: Response, page: number, itemCount: number): number => {
+const wooTotalPages = (
+  response: Response,
+  page: number,
+  itemCount: number,
+  perPage?: number,
+): number => {
   const raw = response.headers.get('x-wp-totalpages');
-  if (raw === null) return page;
-  const value = raw.trim();
-  if (!/^\d+$/u.test(value)) throw new Error('WOO_SCHEMA_INVALID:pagination');
-  const totalPages = Number(value);
-  if (!Number.isSafeInteger(totalPages) || totalPages > MAX_WOO_TOTAL_PAGES)
-    throw new Error('WOO_SCHEMA_INVALID:pagination');
-  if (totalPages === 0) {
-    if (page !== 1 || itemCount !== 0) throw new Error('WOO_SCHEMA_INVALID:pagination');
-    return 0;
+  let totalPages: number | undefined;
+  if (raw !== null) {
+    const value = raw.trim();
+    if (!/^\d+$/u.test(value)) throw new Error('WOO_SCHEMA_INVALID:pagination');
+    totalPages = Number(value);
+    if (!Number.isSafeInteger(totalPages) || totalPages > MAX_WOO_TOTAL_PAGES)
+      throw new Error('WOO_SCHEMA_INVALID:pagination');
   }
-  if (totalPages < page) throw new Error('WOO_SCHEMA_INVALID:pagination');
+  if (itemCount === 0) return Math.min(totalPages ?? page, page);
+  if (totalPages === undefined || totalPages < page) {
+    if (perPage !== undefined && itemCount >= perPage) {
+      if (page >= MAX_WOO_TOTAL_PAGES) throw new Error('WOO_SCHEMA_INVALID:pagination_limit');
+      return page + 1;
+    }
+    if (totalPages !== undefined && perPage === undefined)
+      throw new Error('WOO_SCHEMA_INVALID:pagination');
+    return page;
+  }
   return totalPages;
 };
 
@@ -1378,6 +1392,9 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
     if (!this.storeUrl || !this.credentials) throw new Error('WOO_CONNECTION_NOT_CONFIGURED');
     if (!Number.isInteger(perPage) || perPage < 1 || perPage > 100)
       throw new Error('WOO_PAGE_SIZE_INVALID');
+    if (!Number.isInteger(startPage) || startPage < 1 || startPage > MAX_WOO_TOTAL_PAGES)
+      throw new Error('WOO_PAGE_NUMBER_INVALID');
+    let previousPageHash: string | undefined;
     for (let page = startPage; ; page += 1) {
       const url = new URL(`/wp-json/wc/v3/${kind}`, this.storeUrl);
       url.searchParams.set('page', String(page));
@@ -1394,8 +1411,12 @@ export class WooCommerceConnector implements ReadOnlyCommerceConnector {
       if (response.status === 429) throw new Error('WOO_RATE_LIMITED');
       if (!response.ok) throw new Error(`WOO_HTTP_${response.status}`);
       const body: unknown = await response.json();
-      if (!Array.isArray(body)) throw new Error('WOO_SCHEMA_INVALID:page');
-      const totalPages = wooTotalPages(response, page, body.length);
+      if (!Array.isArray(body) || body.length > perPage) throw new Error('WOO_SCHEMA_INVALID:page');
+      const totalPages = wooTotalPages(response, page, body.length, perPage);
+      const pageHash = createHash('sha256').update(JSON.stringify(body)).digest('hex');
+      if (body.length > 0 && pageHash === previousPageHash)
+        throw new Error('WOO_SCHEMA_INVALID:pagination_repeated');
+      previousPageHash = pageHash;
       const items = kind === 'orders' ? await this.readRemoteExportStatuses(body) : body;
       yield { kind, page, totalPages, items };
       if (page >= totalPages || body.length === 0) return;

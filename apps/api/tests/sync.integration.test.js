@@ -305,6 +305,108 @@ test('API runner wires sync jobs to the durable effect and keeps failures observ
   assert.equal(store.getSyncRun(worker, job.id).status, 'succeeded');
 });
 
+test('automatic order polls recover from legacy failed cursors and zero page hints without losing orders', async () => {
+  const failedId = randomUUID();
+  store.beginSyncRun(worker, { id: failedId, connectionId, type: 'incremental' });
+  store.updateSyncRun(worker, failedId, {
+    cursor: JSON.stringify({
+      phase: 'orders',
+      page: 77,
+      modifiedAfter: '2099-01-01T00:00:00.000Z',
+      lastModifiedAt: '2099-02-01T00:00:00.000Z',
+    }),
+    pages: 76,
+  });
+  store.failSyncRun(worker, failedId, {
+    errorCode: 'WOO_SCHEMA_INVALID:pagination',
+    errorCategory: 'schema',
+  });
+  // Remote updates must not replace local operator workflow/export history.
+  store.db
+    .prepare(
+      "UPDATE orders SET local_status = 'confirmed', export_state = 'exported' WHERE account_id = ? AND external_order_id = '1'",
+    )
+    .run(accountId);
+  const calls = [];
+  let empty = true;
+  const items = Array.from({ length: 101 }, (_, index) => ({
+    ...order(index === 0 ? 1 : 3),
+    id: index === 0 ? 1 : 1000 + index,
+    number: `RECOVER-${index}`,
+    date_modified_gmt: '2026-08-31T08:03:00.000Z',
+  }));
+  const effect = createWooSyncEffect(store, {
+    encryptionKey,
+    request: async (url, init) => {
+      assert.equal(init.method, 'GET');
+      const parsed = new URL(String(url));
+      if (parsed.pathname.endsWith('/woo-ops/export-status'))
+        return new Response('{}', { status: 404 });
+      assert.ok(parsed.pathname.endsWith('/orders'));
+      assert.notEqual(parsed.searchParams.get('modified_after'), '2099-01-01T00:00:00.000Z');
+      calls.push(Number(parsed.searchParams.get('page')));
+      const offset = (Number(parsed.searchParams.get('page')) - 1) * 100;
+      return response(empty ? [] : items.slice(offset, offset + 100), 0);
+    },
+    resolveHost: async () => [{ address: '93.184.216.34' }],
+  });
+  const execution = {
+    accountId,
+    correlationId: randomUUID(),
+    signal: new AbortController().signal,
+    isCancellationRequested: () => false,
+    reportProgress: () => undefined,
+  };
+  for (let cycle = 0; cycle < 2; cycle += 1) {
+    const job = store.enqueueJob(worker, {
+      id: randomUUID(),
+      type: 'sync.incremental',
+      idempotencyKey: `recovery-poll-${cycle}`,
+      payload: { connectionId, scope: 'orders' },
+      maxAttempts: 5,
+    });
+    await effect(job, execution);
+    assert.equal(store.getSyncRun(worker, job.id).status, 'succeeded');
+    assert.equal(store.getSyncRun(worker, job.id).items, empty ? 0 : 101);
+    const beforeReplay = calls.length;
+    await effect(job, execution);
+    assert.equal(calls.length, beforeReplay);
+    empty = false;
+  }
+  assert.deepEqual(calls, [1, 1, 2]);
+  assert.equal(store.getSyncRun(worker, failedId).status, 'failed');
+  const local = store.db
+    .prepare(
+      "SELECT local_status, export_state FROM orders WHERE account_id = ? AND external_order_id = '1'",
+    )
+    .get(accountId);
+  assert.equal(local.local_status, 'confirmed');
+  assert.equal(local.export_state, 'exported');
+  assert.equal(store.getConnection(context, connectionId).syncStatus, 'succeeded');
+});
+
+test('invalid retry cursors are recorded as sync failures instead of leaving a running sync run', async () => {
+  const id = randomUUID();
+  store.beginSyncRun(worker, { id, connectionId, type: 'incremental' });
+  store.updateSyncRun(worker, id, { cursor: '{' });
+  const effect = createWooSyncEffect(store, { encryptionKey });
+  await assert.rejects(
+    effect(
+      {
+        id,
+        accountId,
+        type: 'sync.incremental',
+        payload: { connectionId, scope: 'orders' },
+      },
+      { correlationId: randomUUID() },
+    ),
+    /SYNC_CURSOR_INVALID/,
+  );
+  const run = store.getSyncRun(worker, id);
+  assert.equal(run.status, 'failed');
+  assert.equal(run.errorCode, 'SYNC_CURSOR_INVALID');
+});
+
 test.after(() => {
   if (store.db.open) store.db.close();
   rmSync(directory, { recursive: true, force: true });

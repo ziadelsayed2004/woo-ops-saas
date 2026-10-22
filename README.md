@@ -41,6 +41,15 @@ callback, then sends your browser back to Connections. If the store takes a mome
 the refresh control. Run **Health check** and **Initial sync** to import the catalog and orders;
 check **Operations** for progress and errors. Woo Ops never writes orders, stock or products back.
 
+Automatic order polling defaults to every 60 seconds (configurable with
+`WOO_OPS_ORDER_SYNC_INTERVAL_SECONDS`); catalog refresh defaults to 15 minutes.
+Retries of the same sync job resume its page checkpoint. New jobs use the latest successful
+sync watermark instead, so a failed job cannot trap later polls on an obsolete page. Numeric
+Woo page counts may shrink for filtered results: empty pages finish normally, and full pages
+with missing or stale counts are followed until exhausted, within strict pagination bounds.
+Malformed counts and repeated responses still fail visibly in **Operations**. Existing failed
+jobs remain in history; deploying a fix does not delete or mass-replay them.
+
 If the connection reports `WOO_PERMALINKS_BROKEN` or the Woo grant URL displays a 404, WooCommerce
 is installed but WordPress rewrite rules are stale. In WordPress admin open **Settings →
 Permalinks**, select **Post name** (do not use Plain), click **Save Changes** twice, clear the
