@@ -317,6 +317,13 @@ test('sync runs checkpoint counters, classify failures, resume idempotently, and
   assert.equal(failed.errorCategory, 'rate');
   assert.equal(store.getConnection(context, connection.id).syncStatus, 'failed');
 
+  const independent = store.beginSyncRun(context, {
+    id: randomUUID(),
+    connectionId: connection.id,
+    type: 'incremental',
+  });
+  assert.equal(independent.cursor, '{}');
+
   const resumed = store.beginSyncRun(context, {
     id: runId,
     connectionId: connection.id,
@@ -339,6 +346,65 @@ test('sync runs checkpoint counters, classify failures, resume idempotently, and
     () =>
       store.beginSyncRun(otherContext, { id: runId, connectionId: connection.id, type: 'initial' }),
     /CONNECTION_NOT_FOUND/,
+  );
+});
+
+test('new runs use successful watermarks, not another failed run checkpoint', () => {
+  const connection = store.listConnections(context)[0];
+  const successfulId = randomUUID();
+  const cursor = JSON.stringify({ phase: 'complete', lastModifiedAt: now });
+  store.beginSyncRun(context, {
+    id: successfulId,
+    connectionId: connection.id,
+    type: 'incremental',
+  });
+  store.completeSyncRun(context, successfulId, { cursor });
+  const failedId = randomUUID();
+  store.beginSyncRun(context, { id: failedId, connectionId: connection.id, type: 'incremental' });
+  const failedCursor = JSON.stringify({
+    phase: 'orders',
+    page: 55,
+    lastModifiedAt: '2026-09-01T10:00:00.000Z',
+  });
+  store.updateSyncRun(context, failedId, { cursor: failedCursor, pages: 1, items: 100 });
+  store.failSyncRun(context, failedId, {
+    errorCode: 'WOO_SCHEMA_INVALID:pagination',
+    errorCategory: 'schema',
+  });
+  const next = store.beginSyncRun(context, {
+    id: randomUUID(),
+    connectionId: connection.id,
+    type: 'incremental',
+  });
+  assert.equal(next.cursor, cursor);
+  const retry = store.beginSyncRun(context, {
+    id: failedId,
+    connectionId: connection.id,
+    type: 'incremental',
+  });
+  assert.equal(retry.cursor, failedCursor);
+  assert.equal(
+    store.beginSyncRun(context, { id: randomUUID(), connectionId: connection.id, type: 'initial' })
+      .cursor,
+    '{}',
+  );
+  assert.throws(() => store.getSyncRun(otherContext, next.id), /SYNC_RUN_NOT_FOUND/);
+  // Legacy databases can contain a second connection even though new linking is single-store.
+  const legacyConnectionId = randomUUID();
+  store.db
+    .prepare(
+      `INSERT INTO connections (id, account_id, platform, store_url, status, created_at, updated_at)
+     VALUES (?, ?, 'woocommerce', 'https://legacy-shop.example.test', 'active', ?, ?)`,
+    )
+    .run(legacyConnectionId, accountId, now, now);
+  assert.throws(
+    () =>
+      store.beginSyncRun(context, {
+        id: failedId,
+        connectionId: legacyConnectionId,
+        type: 'incremental',
+      }),
+    /SYNC_RUN_ID_CONFLICT/,
   );
 });
 

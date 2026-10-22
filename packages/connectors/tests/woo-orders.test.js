@@ -355,7 +355,7 @@ test('empty Woo order collections accept the official zero-page header', async (
   assert.deepEqual(pages[0].items, []);
 });
 
-test('missing pagination headers stop safely at the current order response', async () => {
+test('missing pagination headers stop at a short order response', async () => {
   let calls = 0;
   const connector = new WooCommerceConnector(
     '',
@@ -375,8 +375,8 @@ test('missing pagination headers stop safely at the current order response', asy
   assert.equal(pages[0].totalPages, 3);
 });
 
-test('malformed and contradictory Woo pagination headers fail visibly', async () => {
-  for (const header of ['not-a-number', '1.5', '-1', '1']) {
+test('malformed Woo pagination headers fail visibly', async () => {
+  for (const header of ['not-a-number', '1.5', '-1', '100001']) {
     const connector = new WooCommerceConnector(
       '',
       new URL('https://shop.example.test'),
@@ -389,4 +389,106 @@ test('malformed and contradictory Woo pagination headers fail visibly', async ()
       for await (const _page of connector.pullOrderPages('orders', 100, 2)) break;
     }, /WOO_SCHEMA_INVALID:pagination/u);
   }
+});
+
+test('shrinking Woo pagination accepts empty resumed pages and valid remaining orders', async () => {
+  for (const [body, header] of [
+    [[], '0'],
+    [[], '1'],
+    [[fixture], '0'],
+    [[fixture], '1'],
+  ]) {
+    const connector = new WooCommerceConnector(
+      '',
+      new URL('https://shop.example.test'),
+      { key: 'ck_read_only', secret: 'cs_read_only' },
+      async (url) =>
+        new URL(String(url)).pathname.endsWith('/woo-ops/export-status')
+          ? new Response('{}', { status: 404 })
+          : new Response(JSON.stringify(body), { headers: { 'x-wp-totalpages': header } }),
+      async () => [{ address: '93.184.216.34' }],
+    );
+    const pages = [];
+    for await (const page of connector.pullOrderPages('orders', 100, 2)) pages.push(page);
+    assert.equal(pages.length, 1);
+    assert.equal(pages[0].items.length, body.length);
+    assert.ok(pages[0].totalPages <= 2);
+  }
+});
+
+test('missing or stale counts probe beyond full pages instead of losing remaining orders', async () => {
+  for (const header of [null, '0']) {
+    const requested = [];
+    const connector = new WooCommerceConnector(
+      '',
+      new URL('https://shop.example.test'),
+      { key: 'ck_read_only', secret: 'cs_read_only' },
+      async (url) => {
+        const parsed = new URL(String(url));
+        if (parsed.pathname.endsWith('/woo-ops/export-status'))
+          return new Response('{}', { status: 404 });
+        const page = Number(parsed.searchParams.get('page'));
+        requested.push(page);
+        return new Response(
+          JSON.stringify(
+            page === 1 ? [fixture, { ...fixture, id: 999 }] : [{ ...fixture, id: 1000 }],
+          ),
+          {
+            headers: header === null ? {} : { 'x-wp-totalpages': header },
+          },
+        );
+      },
+      async () => [{ address: '93.184.216.34' }],
+    );
+    const pages = [];
+    for await (const page of connector.pullOrderPages('orders', 2)) pages.push(page);
+    assert.deepEqual(requested, [1, 2]);
+    assert.equal(pages.flatMap((page) => page.items).length, 3);
+  }
+});
+
+test('invalid start pages and exhausted fallback bounds never issue unbounded requests', async () => {
+  let calls = 0;
+  const connector = new WooCommerceConnector(
+    '',
+    new URL('https://shop.example.test'),
+    { key: 'ck_read_only', secret: 'cs_read_only' },
+    async () => {
+      calls += 1;
+      return new Response(JSON.stringify([fixture]));
+    },
+    async () => [{ address: '93.184.216.34' }],
+  );
+  for (const startPage of [0, -1, 1.5, 100001, NaN]) {
+    await assert.rejects(async () => {
+      for await (const _page of connector.pullOrderPages('orders', 1, startPage)) break;
+    }, /WOO_PAGE_NUMBER_INVALID/u);
+  }
+  assert.equal(calls, 0);
+  await assert.rejects(async () => {
+    for await (const _page of connector.pullOrderPages('orders', 1, 100000)) break;
+  }, /WOO_SCHEMA_INVALID:pagination_limit/u);
+  assert.equal(calls, 1);
+});
+
+test('a proxy repeating a nonempty order page fails safely instead of looping', async () => {
+  let calls = 0;
+  const connector = new WooCommerceConnector(
+    '',
+    new URL('https://shop.example.test'),
+    { key: 'ck_read_only', secret: 'cs_read_only' },
+    async (url) => {
+      if (new URL(String(url)).pathname.endsWith('/woo-ops/export-status'))
+        return new Response('{}', { status: 404 });
+      calls += 1;
+      return new Response(JSON.stringify([fixture]));
+    },
+    async () => [{ address: '93.184.216.34' }],
+  );
+  await assert.rejects(async () => {
+    for await (const _page of connector.pullOrderPages('orders', 1)) {
+      /* consume all pages */
+    }
+  }, /WOO_SCHEMA_INVALID:pagination_repeated/u);
+  assert.equal(calls, 2);
 });

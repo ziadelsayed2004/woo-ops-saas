@@ -348,9 +348,9 @@ export const createWooSyncEffect =
     const account = connectionAccount(job, execution);
     const run = store.beginSyncRun(account, { id: job.id, connectionId, type });
     if (run.status === 'succeeded') return;
-    const initialCursor = parseCursor(run.cursor);
     let syncContext: SyncContext | undefined;
     try {
+      const initialCursor = parseCursor(run.cursor);
       const resolved = connectorFor(store, account, connectionId, options);
       syncContext = {
         store,
