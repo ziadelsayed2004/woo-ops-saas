@@ -1,5 +1,6 @@
 import { getAdminCopy, translate as tr } from './i18n';
 import './AdminWorkspaces.css';
+import { CustomerRecovery } from './CustomerRecovery';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -28,6 +29,8 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  Tabs,
+  Tab,
   TextField,
   Typography,
 } from '@mui/material';
@@ -1699,18 +1702,21 @@ function CustomersWorkspace({
 
 function CompleteCustomersWorkspace({
   locale,
+  canExport,
   copy,
   onSessionExpired,
   onOpenOrder,
   orderPreviewOpen,
 }: {
   locale: AdminLocale;
+  canExport: boolean;
   copy: Copy;
   onSessionExpired: () => void;
   onOpenOrder: (orderId: string) => Promise<void>;
   orderPreviewOpen: boolean;
 }) {
   const [items, setItems] = useState<CustomerDirectoryItem[]>([]);
+  const [customerTab, setCustomerTab] = useState<'all' | 'recovery'>('all');
   const [search, setSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');
   const [product, setProduct] = useState<CustomerProductOption | null>(null);
@@ -1824,7 +1830,7 @@ function CompleteCustomersWorkspace({
     ]
       .filter((part) => typeof part === 'string' && part.trim())
       .join('، ');
-  if (loading && items.length === 0)
+  if (loading && items.length === 0 && customerTab === 'all')
     return <StateBlock copy={copy} loading error={false} onRetry={() => void load()} />;
   return (
     <Stack data-testid="customers-workspace" className="admin-workspaces-l1587c5">
@@ -1839,96 +1845,122 @@ function CompleteCustomersWorkspace({
           )}
         </Typography>
       </Box>
-      {failed && <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />}
-      <Box className="customer-directory__filters">
-        <TextField
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          label={tr(locale, 'inline.admin.searchNameEmailOrPhone')}
-          className="customer-directory__search"
+      <Tabs
+        value={customerTab}
+        onChange={(_event, value: 'all' | 'recovery') => setCustomerTab(value)}
+        variant="fullWidth"
+      >
+        <Tab value="all" label={tr(locale, 'recovery.allCustomers')} />
+        <Tab value="recovery" label={tr(locale, 'recovery.title')} />
+      </Tabs>
+      {customerTab === 'recovery' ? (
+        <CustomerRecovery
+          locale={locale}
+          canExport={canExport}
+          onSessionExpired={onSessionExpired}
+          onOpenOrder={onOpenOrder}
         />
-        <Autocomplete<CustomerProductOption>
-          value={product}
-          options={productOptions}
-          loading={productLoading}
-          filterOptions={(options) => options}
-          isOptionEqualToValue={(option, value) => option.externalId === value.externalId}
-          getOptionLabel={(option) => (option.sku ? `${option.name} · ${option.sku}` : option.name)}
-          onInputChange={(_event, value, reason) => {
-            if (reason === 'input' || reason === 'clear') setProductSearch(value);
-          }}
-          onChange={(_event, value) => setProduct(value)}
-          renderInput={(params) => (
-            <TextField {...params} label={tr(locale, 'inline.admin.filterCustomersByProduct')} />
-          )}
-          className="customer-directory__product-filter"
-        />
-      </Box>
-      {detailsLoading && <LinearProgress aria-label={copy.loading} />}
-      <Paper variant="outlined">
-        <TableContainer>
-          <Table size="small" aria-label={tr(locale, 'inline.admin.woocommerceCustomers')}>
-            <TableHead>
-              <TableRow>
-                <TableCell>{tr(locale, 'inline.admin.customer')}</TableCell>
-                <TableCell>{tr(locale, 'inline.admin.contact')}</TableCell>
-                <TableCell>{tr(locale, 'inline.admin.orders')}</TableCell>
-                <TableCell>{tr(locale, 'inline.admin.totalSpend')}</TableCell>
-                <TableCell>{tr(locale, 'inline.admin.lastOrder')}</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {visible.map((item) => (
-                <TableRow
-                  key={item.key}
-                  hover
-                  tabIndex={0}
-                  role="button"
-                  onClick={() => void openCustomer(item)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') void openCustomer(item);
-                  }}
-                  className="admin-workspaces-l1621c17"
-                >
-                  <TableCell>{item.name ?? tr(locale, 'inline.admin.unnamedCustomer')}</TableCell>
-                  <TableCell>
-                    <Stack className="admin-workspaces-l1634c21">
-                      <span dir="ltr">{item.email ?? '—'}</span>
-                      <span dir="ltr">{item.phone ?? '—'}</span>
-                    </Stack>
-                  </TableCell>
-                  <TableCell>
-                    <span dir="ltr">{item.orderCount}</span>
-                  </TableCell>
-                  <TableCell>
-                    <Stack className="admin-workspaces-l1643c21">
-                      {item.currencies.map((entry) => (
-                        <span dir="ltr" key={entry.currency}>
-                          {money(entry.totalSpendMinor, entry.currency)}
+      ) : (
+        <>
+          {failed && <StateBlock copy={copy} loading={false} error onRetry={() => void load()} />}
+          <Box className="customer-directory__filters">
+            <TextField
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              label={tr(locale, 'inline.admin.searchNameEmailOrPhone')}
+              className="customer-directory__search"
+            />
+            <Autocomplete<CustomerProductOption>
+              value={product}
+              options={productOptions}
+              loading={productLoading}
+              filterOptions={(options) => options}
+              isOptionEqualToValue={(option, value) => option.externalId === value.externalId}
+              getOptionLabel={(option) =>
+                option.sku ? `${option.name} · ${option.sku}` : option.name
+              }
+              onInputChange={(_event, value, reason) => {
+                if (reason === 'input' || reason === 'clear') setProductSearch(value);
+              }}
+              onChange={(_event, value) => setProduct(value)}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label={tr(locale, 'inline.admin.filterCustomersByProduct')}
+                />
+              )}
+              className="customer-directory__product-filter"
+            />
+          </Box>
+          {detailsLoading && <LinearProgress aria-label={copy.loading} />}
+          <Paper variant="outlined">
+            <TableContainer>
+              <Table size="small" aria-label={tr(locale, 'inline.admin.woocommerceCustomers')}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>{tr(locale, 'inline.admin.customer')}</TableCell>
+                    <TableCell>{tr(locale, 'inline.admin.contact')}</TableCell>
+                    <TableCell>{tr(locale, 'inline.admin.orders')}</TableCell>
+                    <TableCell>{tr(locale, 'inline.admin.totalSpend')}</TableCell>
+                    <TableCell>{tr(locale, 'inline.admin.lastOrder')}</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {visible.map((item) => (
+                    <TableRow
+                      key={item.key}
+                      hover
+                      tabIndex={0}
+                      role="button"
+                      onClick={() => void openCustomer(item)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') void openCustomer(item);
+                      }}
+                      className="admin-workspaces-l1621c17"
+                    >
+                      <TableCell>
+                        {item.name ?? tr(locale, 'inline.admin.unnamedCustomer')}
+                      </TableCell>
+                      <TableCell>
+                        <Stack className="admin-workspaces-l1634c21">
+                          <span dir="ltr">{item.email ?? '—'}</span>
+                          <span dir="ltr">{item.phone ?? '—'}</span>
+                        </Stack>
+                      </TableCell>
+                      <TableCell>
+                        <span dir="ltr">{item.orderCount}</span>
+                      </TableCell>
+                      <TableCell>
+                        <Stack className="admin-workspaces-l1643c21">
+                          {item.currencies.map((entry) => (
+                            <span dir="ltr" key={entry.currency}>
+                              {money(entry.totalSpendMinor, entry.currency)}
+                            </span>
+                          ))}
+                        </Stack>
+                      </TableCell>
+                      <TableCell>
+                        <span dir="ltr">
+                          {item.lastOrderAt
+                            ? new Date(item.lastOrderAt).toLocaleDateString('en-CA')
+                            : '—'}
                         </span>
-                      ))}
-                    </Stack>
-                  </TableCell>
-                  <TableCell>
-                    <span dir="ltr">
-                      {item.lastOrderAt
-                        ? new Date(item.lastOrderAt).toLocaleDateString('en-CA')
-                        : '—'}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-        {visible.length === 0 && (
-          <Typography className="admin-workspaces-l1664c11">{copy.empty}</Typography>
-        )}
-      </Paper>
-      {nextCursor && (
-        <Button variant="outlined" onClick={() => void load(nextCursor)} disabled={loading}>
-          {tr(locale, 'inline.admin.loadMore')}
-        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            {visible.length === 0 && (
+              <Typography className="admin-workspaces-l1664c11">{copy.empty}</Typography>
+            )}
+          </Paper>
+          {nextCursor && (
+            <Button variant="outlined" onClick={() => void load(nextCursor)} disabled={loading}>
+              {tr(locale, 'inline.admin.loadMore')}
+            </Button>
+          )}
+        </>
       )}
       <Dialog
         open={selected !== null && !orderPreviewOpen}
@@ -2402,6 +2434,7 @@ function JobTable({
 
 export function AdminWorkspace({
   section,
+  canExport = false,
   locale,
   onSessionExpired,
   onLocaleChange,
@@ -2409,6 +2442,7 @@ export function AdminWorkspace({
   orderPreviewOpen,
 }: {
   section: AdminSection;
+  canExport?: boolean;
   locale: AdminLocale;
   onSessionExpired: () => void;
   onLocaleChange: (locale: AdminLocale) => void;
@@ -2435,6 +2469,7 @@ export function AdminWorkspace({
     return (
       <CompleteCustomersWorkspace
         locale={locale}
+        canExport={canExport}
         copy={copy}
         onSessionExpired={onSessionExpired}
         onOpenOrder={onOpenOrder}

@@ -1,5 +1,33 @@
 import { z } from 'zod';
 
+export const customerRecoveryFilterSchema = z
+  .object({
+    search: z.string().max(200).optional(),
+    productId: z.string().trim().max(100).optional(),
+    from: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/u)
+      .optional(),
+    to: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/u)
+      .optional(),
+  })
+  .strict();
+export const customerRecoveryQuerySchema = customerRecoveryFilterSchema
+  .extend({
+    cursor: z.string().max(2000).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+  })
+  .strict();
+export const customerRecoveryExportSchema = z
+  .object({
+    filter: customerRecoveryFilterSchema,
+    locale: z.enum(['ar', 'en']),
+    idempotencyKey: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/u),
+  })
+  .strict();
+
 export const healthResponseSchema = z.object({
   status: z.enum(['ok', 'degraded']),
   service: z.string(),

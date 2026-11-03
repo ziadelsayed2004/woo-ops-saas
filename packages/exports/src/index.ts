@@ -452,6 +452,7 @@ const worksheetName = (name: string): string => {
 export const generateXlsx = async (
   rows: readonly ExportOrder[],
   profile: ExportProfile,
+  layout: 'orders' | 'customer-report' = 'orders',
 ): Promise<Uint8Array> => {
   const normalized = normalizeExportProfile({ ...profile, format: 'xlsx' });
   assertRowCount(rows.length);
@@ -463,15 +464,21 @@ export const generateXlsx = async (
   workbook.calcProperties.fullCalcOnLoad = false;
   const arabic = normalized.columns.some((column) => /[\u0600-\u06ff]/u.test(column.label));
   const arabicSheetName = /shipping|شحن/iu.test(normalized.name) ? 'طلبات الشحن' : 'الطلبات';
-  const sheet = workbook.addWorksheet(worksheetName(arabic ? arabicSheetName : normalized.name));
+  const sheet = workbook.addWorksheet(
+    worksheetName(
+      layout === 'customer-report' ? normalized.name : arabic ? arabicSheetName : normalized.name,
+    ),
+  );
   sheet.views = [{ state: 'frozen', ySplit: 1, rightToLeft: arabic }];
   const headers = normalized.columns.map((column) => sanitizeSpreadsheetValue(column.label));
   sheet.addRow(headers);
   const headerRow = sheet.getRow(1);
-  headerRow.height = 24;
+  headerRow.height = layout === 'customer-report' ? 36 : 24;
   headerRow.font = { name: 'Arial', bold: true, color: { argb: 'FF263238' }, size: 11 };
   headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F3F5' } };
   headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+  if (layout === 'customer-report')
+    headerRow.alignment = { ...headerRow.alignment, wrapText: true };
   for (const [index, column] of normalized.columns.entries()) {
     const cell = headerRow.getCell(index + 1);
     cell.numFmt = '@';
@@ -483,6 +490,16 @@ export const generateXlsx = async (
       const cell = excelRow.getCell(index + 1);
       if (column.type === 'text' || /phone|sku|id|orderNumber/i.test(column.key)) cell.numFmt = '@';
       if (typeof cell.value === 'string') cell.value = sanitizeSpreadsheetValue(cell.value);
+      if (
+        layout === 'customer-report' &&
+        column.type === 'date' &&
+        typeof cell.value === 'string' &&
+        cell.value &&
+        Number.isFinite(Date.parse(cell.value))
+      ) {
+        cell.value = new Date(cell.value);
+        cell.numFmt = 'yyyy-mm-dd hh:mm';
+      }
     });
   }
   normalized.columns.forEach((column, index) => {
@@ -507,6 +524,31 @@ export const generateXlsx = async (
       wrapText: /address|(?:item|line)\.?(?:name)?|note|fullName/iu.test(column.key),
     };
   });
+  if (layout === 'customer-report') {
+    normalized.columns.forEach((column, index) => {
+      const key = column.key.split('.').at(-1);
+      const widths: Record<string, number> = {
+        name: 30,
+        phone: 20,
+        email: 34,
+        governorate: 20,
+        orderNumber: 24,
+        orderDate: 24,
+        status: 14,
+        amount: 18,
+        currency: 12,
+        products: 45,
+        failedCount: 25,
+        snapshotAt: 26,
+        lastSuccessAt: 26,
+        freshness: 42,
+      };
+      const col = sheet.getColumn(index + 1);
+      col.width = widths[key ?? ''] ?? 24;
+      col.alignment = { vertical: 'middle', horizontal: arabic ? 'right' : 'left', wrapText: true };
+    });
+    sheet.views = [{ state: 'frozen', ySplit: 1, rightToLeft: arabic, showGridLines: false }];
+  }
   sheet.autoFilter = {
     from: 'A1',
     to: `${columnName(normalized.columns.length)}${rows.length + 1}`,

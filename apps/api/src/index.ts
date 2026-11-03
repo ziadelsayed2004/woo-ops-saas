@@ -62,6 +62,8 @@ import {
   orderTagSchema,
   orderNoteSchema,
   catalogCategoryIdsSchema,
+  customerRecoveryQuerySchema,
+  customerRecoveryExportSchema,
 } from '@woo-ops/contracts';
 import { SqliteStore, ORDER_FILTER_CATALOG } from '@woo-ops/persistence';
 import type {
@@ -687,6 +689,69 @@ app.get('/api/v1/customers', (request, response) => {
         ...(limit === undefined ? {} : { limit }),
       }),
     );
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/customer-recovery', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  const parsed = customerRecoveryQuerySchema.safeParse(request.query);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'CUSTOMER_REPORT_INPUT_INVALID', 'Invalid report filter');
+    return;
+  }
+  try {
+    response.json(store.listCustomerRecovery(operationContext(user, response), parsed.data));
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.post('/api/v1/customer-recovery/reports', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  const parsed = customerRecoveryExportSchema.safeParse(request.body);
+  if (!parsed.success) {
+    sendApiError(response, 400, 'CUSTOMER_REPORT_INPUT_INVALID', 'Invalid report request');
+    return;
+  }
+  try {
+    response.status(202).json({
+      report: store.createCustomerRecoveryReport(operationContext(user, response), parsed.data),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/customer-recovery/reports', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({ items: store.listCustomerRecoveryReports(operationContext(user, response)) });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/customer-recovery/reports/:reportId/download', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    const file = store.customerRecoveryDownload(
+      operationContext(user, response),
+      request.params.reportId,
+    );
+    const bytes = readPrivateExport(exportStorageRoot, file.filePath, file.checksum);
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${file.filename.replace(/[^A-Za-z0-9._-]/gu, '_')}"`,
+    );
+    response.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.send(bytes);
   } catch (error) {
     sendOperationError(response, error);
   }

@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import ExcelJS from 'exceljs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -119,9 +120,9 @@ test('customer product filtering is authenticated, account-scoped and keeps life
           amounts: { grandTotalMinor: amount, collectedMinor: amount },
           createdAt: now,
           modifiedAt: now,
-          customer: { first_name: name, email: `${name}@example.test` },
+          customer: { first_name: name, email: `${name}@example.test`, phone: '01000000001' },
           billing: { first_name: name, email: `${name}@example.test` },
-          shipping: {},
+          shipping: { governorateNameAr: 'القاهرة' },
           lines: [{ productId, name: 'Item', quantity: 1, unitPriceMinor: amount }],
           refunds: [],
           sourceJson: JSON.stringify({ id }),
@@ -152,6 +153,138 @@ test('customer product filtering is authenticated, account-scoped and keeps life
       headers: first.headers,
     });
     assert.equal(invalid.response.status, 400);
+
+    // Follow-up reporting uses local snapshots only, not Woo credentials or network reads.
+    store.db
+      .prepare("UPDATE orders SET remote_status = 'failed' WHERE account_id = ?")
+      .run(first.user.accountId);
+    const reportList = await request('/api/v1/customer-recovery?productId=101', {
+      headers: first.headers,
+    });
+    assert.equal(reportList.response.status, 200);
+    assert.equal(reportList.body.items.length, 1);
+    assert.equal(reportList.body.items[0].failedCount, 2);
+    assert.equal(reportList.body.freshness.stale, true);
+    assert.equal((await request('/api/v1/customer-recovery')).response.status, 401);
+    assert.equal(
+      (await request('/api/v1/customer-recovery?accountId=spoof', { headers: first.headers }))
+        .response.status,
+      400,
+    );
+    assert.equal(
+      (await request('/api/v1/customer-recovery?from=2026-99-99', { headers: first.headers }))
+        .response.status,
+      400,
+    );
+    assert.equal(
+      (await request('/api/v1/customer-recovery', { headers: second.headers })).body.items.length,
+      0,
+    );
+    const exportBody = { filter: {}, locale: 'ar', idempotencyKey: randomUUID() };
+    assert.equal(
+      (
+        await request('/api/v1/customer-recovery/reports', {
+          method: 'POST',
+          headers: first.headers,
+          body: JSON.stringify(exportBody),
+        })
+      ).response.status,
+      403,
+    );
+    const csrf = first.headers.cookie.match(/woo_ops_csrf=([^;]+)/u)?.[1];
+    assert.ok(csrf);
+    const exportHeaders = { ...first.headers, 'x-csrf-token': csrf };
+    const created = await request('/api/v1/customer-recovery/reports', {
+      method: 'POST',
+      headers: exportHeaders,
+      body: JSON.stringify(exportBody),
+    });
+    assert.equal(created.response.status, 202, JSON.stringify(created.body));
+    const report = created.body.report;
+    const duplicate = await request('/api/v1/customer-recovery/reports', {
+      method: 'POST',
+      headers: exportHeaders,
+      body: JSON.stringify(exportBody),
+    });
+    assert.equal(duplicate.body.report.id, report.id);
+    const exportDeadline = Date.now() + 15_000;
+    let complete;
+    while (Date.now() < exportDeadline) {
+      const history = await request('/api/v1/customer-recovery/reports', {
+        headers: first.headers,
+      });
+      complete = history.body.items.find((r) => r.id === report.id);
+      if (complete?.status === 'completed') break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(complete?.status, 'completed', output.slice(-1000));
+    assert.equal(complete.rowCount, 1);
+    assert.equal(
+      (await request('/api/v1/customer-recovery/reports', { headers: second.headers })).body.items
+        .length,
+      0,
+    );
+    assert.equal(
+      (
+        await request(`/api/v1/customer-recovery/reports/${report.id}/download`, {
+          headers: second.headers,
+        })
+      ).response.status,
+      404,
+    );
+    const downloaded = await fetch(
+      `${baseUrl}/api/v1/customer-recovery/reports/${report.id}/download`,
+      { headers: first.headers },
+    );
+    assert.equal(downloaded.status, 200);
+    assert.equal(downloaded.headers.get('cache-control'), 'private, no-store');
+    const bytes = Buffer.from(await downloaded.arrayBuffer());
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(bytes);
+    const sheet = workbook.worksheets[0];
+    assert.equal(sheet.rowCount, 2);
+    assert.equal(sheet.getCell('A1').value, 'الاسم بالكامل');
+    assert.equal(sheet.getCell('H1').value, 'قيمة الطلب');
+    assert.equal(sheet.views[0].rightToLeft, true);
+    assert.equal(sheet.getCell('A1').fill.fgColor.argb, 'FFF1F3F5');
+    assert.equal(sheet.getCell('C2').value, 'first@example.test');
+    assert.equal(sheet.getCell('B2').value, '01000000001');
+    assert.equal(sheet.getCell('D2').value, 'القاهرة');
+    assert.equal(sheet.getCell('F2').value.toISOString(), '2026-09-29T10:00:00.000Z');
+    assert.equal(sheet.getCell('K2').value, 2);
+    assert.equal(
+      store.db
+        .prepare('SELECT COUNT(*) AS n FROM order_export_events WHERE account_id = ?')
+        .get(first.user.accountId).n,
+      0,
+    );
+    assert.equal(
+      store.db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM orders WHERE account_id = ? AND export_state <> 'never-exported'",
+        )
+        .get(first.user.accountId).n,
+      0,
+    );
+    if (process.env.WOO_OPS_RECOVERY_QA_DIR) {
+      mkdirSync(process.env.WOO_OPS_RECOVERY_QA_DIR, { recursive: true });
+      writeFileSync(join(process.env.WOO_OPS_RECOVERY_QA_DIR, 'customer-follow-up.xlsx'), bytes);
+    }
+    store.db
+      .prepare(
+        "UPDATE account_memberships SET role = 'viewer' WHERE account_id = ? AND user_id = ?",
+      )
+      .run(first.user.accountId, first.user.id);
+    assert.equal(
+      (
+        await request('/api/v1/customer-recovery/reports', {
+          method: 'POST',
+          headers: exportHeaders,
+          body: JSON.stringify({ ...exportBody, idempotencyKey: randomUUID() }),
+        })
+      ).response.status,
+      403,
+    );
   } finally {
     if (store?.db.open) store.db.close();
     if (child.exitCode === null && child.signalCode === null) {
