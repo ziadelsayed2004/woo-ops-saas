@@ -330,6 +330,140 @@ async function mockAdminApi(page: Page, session: 'authenticated' | 'expired' = '
   });
 }
 
+test('customer follow-up composes filters, pages locally and downloads a separate background report @admin', async ({
+  page,
+}, testInfo) => {
+  await mockAdminApi(page);
+  const requests: URL[] = [];
+  let exported: Record<string, unknown> | null = null;
+  const item = {
+    orderId: 'followup-order',
+    name: 'Follow-up One',
+    email: 'followup@example.test',
+    phone: '01000000001',
+    governorate: 'Cairo',
+    orderNumber: '0099',
+    orderDate: '2026-10-02T10:00:00.000Z',
+    status: 'failed',
+    totalMinor: '12550',
+    currency: 'EGP',
+    products: 'Notebook',
+    failedCount: 2,
+  };
+  await page.route('**/api/v1/customer-recovery?*', async (route) => {
+    const url = new URL(route.request().url());
+    requests.push(url);
+    const more = url.searchParams.has('cursor');
+    await route.fulfill({
+      json: {
+        items: [{ ...item, ...(more ? { orderId: 'second-order', name: 'Follow-up Two' } : {}) }],
+        nextCursor: more ? null : 'next',
+        freshness: { stale: true, lastSuccessAt: null },
+      },
+    });
+  });
+  await page.route('**/api/v1/customer-recovery/reports', async (route) => {
+    if (route.request().method() === 'POST')
+      exported = route.request().postDataJSON() as Record<string, unknown>;
+    const report = {
+      id: 'report-1',
+      status: 'completed',
+      rowCount: 2,
+      createdAt: '2026-10-03T10:00:00.000Z',
+      filename: 'follow-up.xlsx',
+    };
+    await route.fulfill({
+      status: route.request().method() === 'POST' ? 202 : 200,
+      json: route.request().method() === 'POST' ? { report } : { items: exported ? [report] : [] },
+    });
+  });
+  await page.route('**/api/v1/catalog?*', (route) =>
+    route.fulfill({ json: { items: [{ externalId: '101', name: 'Notebook', sku: null }] } }),
+  );
+  await page.goto('/members');
+  await page.getByRole('button', { name: 'English' }).click();
+  await page.getByRole('tab', { name: 'Customer follow-up' }).click();
+  const panel = page.getByTestId('customer-recovery');
+  await expect(panel.getByText('Follow-up One')).toBeVisible();
+  await expect(panel.getByText(/Synchronization is delayed/u)).toBeVisible();
+  await panel.getByRole('button', { name: 'Load more', exact: true }).click();
+  await expect(panel.getByText('Follow-up Two')).toBeVisible();
+  await panel.getByRole('combobox', { name: 'Product in failed/cancelled order' }).fill('Note');
+  await page.getByRole('option', { name: 'Notebook', exact: true }).click();
+  await panel.getByLabel('Order date from (UTC)').fill('2026-10-01');
+  await panel.getByLabel('Order date to (UTC)').fill('2026-10-05');
+  await expect.poll(() => requests.at(-1)?.searchParams.get('to')).toBe('2026-10-05');
+  await expect.poll(() => requests.at(-1)?.searchParams.get('productId')).toBe('101');
+  await panel.getByRole('button', { name: 'Export follow-up Excel' }).click();
+  await expect(panel.getByRole('link', { name: 'Download Excel' })).toHaveAttribute(
+    'href',
+    '/api/v1/customer-recovery/reports/report-1/download',
+  );
+  expect(exported).toMatchObject({
+    locale: 'en',
+    filter: { from: '2026-10-01', to: '2026-10-05', productId: '101' },
+  });
+  await page.screenshot({ path: testInfo.outputPath('customer-follow-up-en.png'), fullPage: true });
+  await page.getByRole('tab', { name: 'All customers' }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByText('customer@example.test')).toBeVisible();
+});
+
+test('Arabic customer follow-up fits mobile, shows errors and keeps Latin digits @admin', async ({
+  page,
+}, testInfo) => {
+  await mockAdminApi(page);
+  let fail = true;
+  await page.route('**/api/v1/customer-recovery?*', (route) =>
+    route.fulfill(
+      fail
+        ? { status: 500, json: {} }
+        : {
+            json: {
+              items: [
+                {
+                  orderId: 'r1',
+                  name: 'عميل للمتابعة',
+                  email: 'followup@example.test',
+                  phone: '01000000001',
+                  governorate: 'القاهرة',
+                  orderNumber: '0099',
+                  orderDate: '2026-10-02T10:00:00.000Z',
+                  status: 'cancelled',
+                  totalMinor: '12550',
+                  currency: 'EGP',
+                  products: 'كتاب',
+                  failedCount: 3,
+                },
+              ],
+              nextCursor: null,
+              freshness: { stale: false, lastSuccessAt: '2026-10-02T10:00:00.000Z' },
+            },
+          },
+    ),
+  );
+  await page.route('**/api/v1/customer-recovery/reports', (route) =>
+    route.fulfill({ json: { items: [] } }),
+  );
+  await page.route('**/api/v1/catalog?*', (route) => route.fulfill({ json: { items: [] } }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/members');
+  await page.getByRole('tab', { name: 'عملاء للمتابعة' }).click();
+  const panel = page.getByTestId('customer-recovery');
+  await expect(panel.getByText(/تعذر تحميل التقرير/u)).toBeVisible();
+  fail = false;
+  await panel.getByRole('button', { name: 'تحديث', exact: true }).click();
+  await expect(panel.getByText('عميل للمتابعة', { exact: true })).toBeVisible();
+  await expect(panel.getByText('125.50 EGP')).toBeVisible();
+  await expect(panel.getByText('ملغي', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  expect(await panel.innerText()).not.toMatch(/[٠-٩۰-۹]/u);
+  await page.screenshot({
+    path: testInfo.outputPath('customer-follow-up-ar-mobile.png'),
+    fullPage: true,
+  });
+});
+
 test('admin navigation exposes authenticated operational workspaces and route states @admin', async ({
   page,
 }, testInfo) => {

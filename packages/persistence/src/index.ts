@@ -1,5 +1,16 @@
 import { SqliteDatabase } from './sqlite.js';
 import {
+  listRecovery,
+  recoveryFilter,
+  recoveryQuery,
+  recoveryItem,
+  recoveryFreshness,
+  reportRecord,
+  RECOVERY_EXPORT_LIMIT,
+  type RecoveryFilter,
+} from './customer-recovery.js';
+export type { RecoveryFilter, RecoveryItem, RecoveryReport } from './customer-recovery.js';
+import {
   calculateStoreTaxes,
   taxAddress,
   validateStoreTaxPolicy,
@@ -1838,7 +1849,7 @@ const compileFilter = (
   };
 };
 
-export const schemaVersion = 23;
+export const schemaVersion = 24;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -2481,6 +2492,28 @@ const migrations: readonly Migration[] = [
       account_id TEXT NOT NULL REFERENCES accounts(id), connection_id TEXT NOT NULL REFERENCES connections(id),
       policy_json TEXT, policy_hash TEXT, synced_at TEXT NOT NULL, last_error TEXT,
       PRIMARY KEY(account_id, connection_id)
+    );`,
+  },
+  {
+    version: 24,
+    name: 'local-customer-recovery-reports',
+    sql: `CREATE INDEX orders_recovery_email_date ON orders (
+      account_id, connection_id, LOWER(TRIM(customer_email)),
+      COALESCE(remote_created_at, created_at), remote_status
+    ) WHERE origin = 'woo' AND remote_deleted_at IS NULL;
+    CREATE TABLE customer_recovery_reports (
+      id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id), job_id TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL, filter_json TEXT NOT NULL, locale TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued', row_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL, snapshot_at TEXT, sync_success_at TEXT, stale INTEGER NOT NULL DEFAULT 1,
+      filename TEXT, file_path TEXT, checksum TEXT, error TEXT,
+      UNIQUE(account_id, idempotency_key), UNIQUE(account_id, id)
+    );
+    CREATE INDEX customer_recovery_reports_account ON customer_recovery_reports(account_id, created_at, id);
+    CREATE TABLE customer_recovery_snapshots (
+      account_id TEXT NOT NULL, report_id TEXT NOT NULL, position INTEGER NOT NULL, snapshot_json TEXT NOT NULL,
+      PRIMARY KEY(account_id, report_id, position),
+      FOREIGN KEY(account_id, report_id) REFERENCES customer_recovery_reports(account_id, id)
     );`,
   },
 ];
@@ -3630,6 +3663,8 @@ export class SqliteStore {
       if (running.count > 0) throw new Error('ACCOUNT_RESET_BUSY');
       this.db.pragma('defer_foreign_keys = ON');
       const tables = [
+        'customer_recovery_snapshots',
+        'customer_recovery_reports',
         'document_artifacts',
         'document_batch_items',
         'document_batches',
@@ -8973,6 +9008,217 @@ export class SqliteStore {
     return this.bulkJobSummary(this.bulkJobRow(context, jobId));
   }
 
+  listCustomerRecovery(
+    context: AccountContext,
+    input: RecoveryFilter & { cursor?: string | undefined; limit?: number | undefined } = {},
+  ) {
+    this.assertMember(context);
+    return listRecovery(this.db, context.accountId, input);
+  }
+
+  createCustomerRecoveryReport(
+    context: AccountContext,
+    input: { filter: RecoveryFilter; locale: 'ar' | 'en'; idempotencyKey: string },
+  ) {
+    this.requireMutationActor(context);
+    const filter = recoveryFilter(input.filter);
+    if (
+      !['ar', 'en'].includes(input.locale) ||
+      !/^[A-Za-z0-9_-]{1,100}$/u.test(input.idempotencyKey)
+    )
+      throw new Error('CUSTOMER_REPORT_INPUT_INVALID');
+    return this.db.transaction(() => {
+      const existing = this.db
+        .prepare(
+          'SELECT * FROM customer_recovery_reports WHERE account_id = ? AND idempotency_key = ?',
+        )
+        .get(context.accountId, input.idempotencyKey) as Record<string, unknown> | undefined;
+      if (existing) {
+        if (existing.filter_json !== JSON.stringify(filter) || existing.locale !== input.locale)
+          throw new Error('JOB_IDEMPOTENCY_CONFLICT');
+        return reportRecord(existing);
+      }
+      const active = this.db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM customer_recovery_reports r
+           JOIN jobs j ON j.account_id = r.account_id AND j.id = r.job_id
+           WHERE r.account_id = ? AND r.status <> 'completed' AND j.status IN ('queued', 'running')`,
+        )
+        .get(context.accountId) as { n: number };
+      if (active.n >= 2) throw new Error('CUSTOMER_REPORT_BUSY');
+      const id = randomUUID();
+      const jobId = randomUUID();
+      this.db
+        .prepare(
+          `INSERT INTO customer_recovery_reports (id, account_id, job_id, idempotency_key, filter_json, locale, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          context.accountId,
+          jobId,
+          input.idempotencyKey,
+          JSON.stringify(filter),
+          input.locale,
+          new Date().toISOString(),
+        );
+      this.enqueueJob(context, {
+        id: jobId,
+        type: 'export.generate',
+        idempotencyKey: `customer-recovery:${id}`,
+        payload: { customerReportId: id },
+        maxAttempts: 3,
+      });
+      this.audit(context, 'customer-report.created', 'customer_report', id, {});
+      return reportRecord(this.customerRecoveryReportForWorker(context, id));
+    })();
+  }
+
+  listCustomerRecoveryReports(context: AccountContext) {
+    this.assertMember(context);
+    return (
+      this.db
+        .prepare(
+          `SELECT r.*, j.status AS job_status FROM customer_recovery_reports r
+           JOIN jobs j ON j.account_id = r.account_id AND j.id = r.job_id
+           WHERE r.account_id = ? ORDER BY r.created_at DESC, r.id DESC LIMIT 20`,
+        )
+        .all(context.accountId) as Record<string, unknown>[]
+    ).map((row) =>
+      reportRecord({
+        ...row,
+        status:
+          row.status === 'completed'
+            ? 'completed'
+            : ['queued', 'running'].includes(String(row.job_status))
+              ? row.job_status
+              : 'failed',
+      }),
+    );
+  }
+
+  customerRecoveryReportForWorker(context: AccountContext, id: string): Record<string, unknown> {
+    this.assertContext(context);
+    const row = this.db
+      .prepare('SELECT * FROM customer_recovery_reports WHERE account_id = ? AND id = ?')
+      .get(context.accountId, id) as Record<string, unknown> | undefined;
+    if (!row) throw new Error('CUSTOMER_REPORT_NOT_FOUND');
+    return row;
+  }
+
+  customerRecoveryDownload(context: AccountContext, id: string) {
+    this.assertMember(context);
+    const row = this.customerRecoveryReportForWorker(context, id);
+    if (row.status !== 'completed') throw new Error('EXPORT_FILE_NOT_READY');
+    return {
+      filename: String(row.filename),
+      filePath: String(row.file_path),
+      checksum: String(row.checksum),
+    };
+  }
+
+  snapshotCustomerRecoveryReport(context: AccountContext, id: string) {
+    this.assertContext(context);
+    return this.db.transaction(() => {
+      const row = this.customerRecoveryReportForWorker(context, id);
+      if (row.snapshot_at) return row;
+      const query = recoveryQuery(
+        context.accountId,
+        JSON.parse(String(row.filter_json)) as RecoveryFilter,
+      );
+      const rows = this.db
+        .prepare(`${query.sql} ORDER BY c.connection_id, c.email LIMIT ?`)
+        .all(...query.params, context.accountId, RECOVERY_EXPORT_LIMIT + 1) as Record<
+        string,
+        unknown
+      >[];
+      if (rows.length > RECOVERY_EXPORT_LIMIT) throw new Error('CUSTOMER_REPORT_LIMIT_EXCEEDED');
+      const insert = this.db.prepare(
+        'INSERT INTO customer_recovery_snapshots (account_id, report_id, position, snapshot_json) VALUES (?, ?, ?, ?)',
+      );
+      rows.forEach((item, index) =>
+        insert.run(context.accountId, id, index, JSON.stringify(recoveryItem(item))),
+      );
+      const freshness = recoveryFreshness(this.db, context.accountId);
+      this.db
+        .prepare(
+          "UPDATE customer_recovery_reports SET snapshot_at = ?, sync_success_at = ?, stale = ?, row_count = ?, status = 'running', error = NULL WHERE account_id = ? AND id = ?",
+        )
+        .run(
+          new Date().toISOString(),
+          freshness.lastSuccessAt,
+          freshness.stale ? 1 : 0,
+          rows.length,
+          context.accountId,
+          id,
+        );
+      this.audit(context, 'customer-report.snapshot', 'customer_report', id, {
+        rowCount: rows.length,
+      });
+      return this.customerRecoveryReportForWorker(context, id);
+    })();
+  }
+
+  customerRecoverySnapshotPage(context: AccountContext, id: string, offset = 0) {
+    this.assertContext(context);
+    this.customerRecoveryReportForWorker(context, id);
+    if (!Number.isInteger(offset) || offset < 0 || offset > RECOVERY_EXPORT_LIMIT)
+      throw new Error('CUSTOMER_REPORT_OFFSET_INVALID');
+    return (
+      this.db
+        .prepare(
+          'SELECT snapshot_json FROM customer_recovery_snapshots WHERE account_id = ? AND report_id = ? AND position >= ? ORDER BY position LIMIT 250',
+        )
+        .all(context.accountId, id, offset) as { snapshot_json: string }[]
+    ).map((r) => JSON.parse(r.snapshot_json) as Record<string, unknown>);
+  }
+
+  stageCustomerRecoveryFile(
+    context: AccountContext,
+    id: string,
+    file: { filename: string; filePath: string; checksum: string },
+  ) {
+    this.assertContext(context);
+    const row = this.customerRecoveryReportForWorker(context, id);
+    if (
+      !row.snapshot_at ||
+      !/^[a-f0-9]{64}$/u.test(file.checksum) ||
+      !/^[A-Za-z0-9._-]{1,180}$/u.test(file.filename)
+    )
+      throw new Error('CUSTOMER_REPORT_FILE_INVALID');
+    this.db
+      .prepare(
+        "UPDATE customer_recovery_reports SET filename = ?, file_path = ?, checksum = ? WHERE account_id = ? AND id = ? AND status <> 'completed'",
+      )
+      .run(file.filename, file.filePath, file.checksum, context.accountId, id);
+  }
+
+  completeCustomerRecoveryReport(
+    context: AccountContext,
+    id: string,
+    file: { filename: string; filePath: string; checksum: string },
+  ) {
+    this.assertContext(context);
+    this.customerRecoveryReportForWorker(context, id);
+    this.db
+      .prepare(
+        "UPDATE customer_recovery_reports SET status = 'completed', filename = ?, file_path = ?, checksum = ?, error = NULL WHERE account_id = ? AND id = ?",
+      )
+      .run(file.filename, file.filePath, file.checksum, context.accountId, id);
+    this.audit(context, 'customer-report.completed', 'customer_report', id, {});
+  }
+
+  failCustomerRecoveryReport(context: AccountContext, id: string) {
+    this.assertContext(context);
+    this.customerRecoveryReportForWorker(context, id);
+    this.db
+      .prepare(
+        "UPDATE customer_recovery_reports SET status = 'failed', error = 'CUSTOMER_REPORT_FAILED' WHERE account_id = ? AND id = ? AND status <> 'completed'",
+      )
+      .run(context.accountId, id);
+    this.audit(context, 'customer-report.failed', 'customer_report', id, {});
+  }
+
   listWooCustomers(
     context: AccountContext,
     input: { search?: string; productId?: string; cursor?: string | null; limit?: number } = {},
@@ -9604,7 +9850,7 @@ export class SqliteStore {
         (row) => row.version,
       ),
     );
-    let appliedAny = false;
+    let needsProjectionBackfill = false;
     this.db.transaction(() => {
       for (const migration of migrations) {
         if (applied.has(migration.version)) continue;
@@ -9612,10 +9858,12 @@ export class SqliteStore {
         this.db
           .prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
           .run(migration.version, migration.name, new Date().toISOString());
-        appliedAny = true;
+        // Reporting-only migration 24 must not scan or rewrite existing order projections.
+        // Keep the legacy migration/backfill behavior for all earlier upgrades.
+        if (migration.version < 24) needsProjectionBackfill = true;
       }
     })();
-    return appliedAny;
+    return needsProjectionBackfill;
   }
 
   private backfillCanonicalOrderProjections(): void {

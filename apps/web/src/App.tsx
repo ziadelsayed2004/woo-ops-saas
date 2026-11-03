@@ -4605,6 +4605,7 @@ export function App({
         {isAdminView ? (
           <AdminWorkspace
             section={view as AdminSection}
+            canExport={authUser.role !== 'viewer'}
             locale={locale}
             onLocaleChange={onLocaleChange}
             onSessionExpired={expireSession}

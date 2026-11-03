@@ -3,6 +3,7 @@ import { generateExport } from '@woo-ops/exports';
 import type { ExportProfile as EngineExportProfile } from '@woo-ops/exports';
 import type { AccountContext, ExportProfileVersion, SqliteStore } from '@woo-ops/persistence';
 import { readPrivateExport, writePrivateExport } from './export-files.js';
+import { createCustomerRecoveryExportEffect } from './customer-recovery-export.js';
 
 type ExportEffect = (job: DurableJob, context: JobExecutionContext) => void | Promise<void>;
 
@@ -50,6 +51,14 @@ const pageProgress = (
 export const createExportEffect =
   (store: SqliteStore, storageRoot: string): ExportEffect =>
   async (job, execution) => {
+    if (isRecord(job.payload) && typeof job.payload.customerReportId === 'string') {
+      await createCustomerRecoveryExportEffect(store, storageRoot)(
+        job,
+        execution,
+        job.payload.customerReportId,
+      );
+      return;
+    }
     const batchId = batchIdFrom(job.payload);
     const context = workerContext(job, execution);
     let batch = store.getExportBatchForWorker(context, batchId);

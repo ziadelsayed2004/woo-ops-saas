@@ -71,6 +71,38 @@ their own local accounts.
 
 ## Customer directory API
 
+The Customers workspace also has a **Customer follow-up** tab. It lists one latest matching
+failed/cancelled Woo order per trimmed, case-insensitive email within each connected store,
+provided no later-created local Woo order is currently Processing or Completed. Missing emails,
+manual orders and remotely deleted orders are excluded. This is a current-status comparison,
+not payment evidence or a historical status-transition report.
+
+`GET /api/v1/customer-recovery` accepts `search`, `productId`, `from`, `to`, `cursor` and `limit`
+(1–100). Dates are calendar dates in UTC with an inclusive end date. Date/product/search filters
+select failed/cancelled candidates only; the later-success check always uses all synchronized
+dates/products. Cursor tokens are tied to the account and filters. Normal customer-directory
+queries and synchronization behavior are unchanged.
+
+`POST /api/v1/customer-recovery/reports` requires operator/admin/owner permission and CSRF, with
+`{ "filter": {}, "locale": "ar", "idempotencyKey": "unique-request-id" }`. It queues a separate
+durable report on the existing export dispatcher. Eligibility and contact/product fields are
+snapshotted atomically when the worker starts, not at button-click time. XLSX rendering runs in
+a bounded worker thread. `GET /api/v1/customer-recovery/reports` returns the latest 20 reports;
+`GET /api/v1/customer-recovery/reports/:id/download` serves only account-owned completed private
+files with checksum validation. Neither reporting nor downloading creates order-export events
+or changes any order's workflow/export state. Standard order exports retain their prior behavior.
+
+Reports are limited to 10,000 customers per file and two pending reports per account. Oversized
+reports fail explicitly rather than truncate; narrow the filters and export again. Existing job
+retry/dead-letter/replay behavior applies. A persisted checksum allows an interrupted completion
+to reuse verified bytes. The existing account reset also clears report metadata, snapshots and
+their private exports through its existing export-directory cleanup.
+
+Results expose the last successful synchronization time. Missing/failed sync or a success more
+than five minutes old raises a warning. Even a recent sync cannot prove that all historical Woo
+orders were imported, so the screen and workbook identify the data as a local synchronized view.
+Schema migration 24 adds only report tables and a scoped email/date index, not order rewrites.
+
 The authenticated customer directory endpoint `GET /api/v1/customers` accepts `search`,
 `productId` (the WooCommerce product's external ID), `cursor`, and `limit` (1–100). Product
 filtering returns customers who bought that product in a synchronized Woo order; each returned

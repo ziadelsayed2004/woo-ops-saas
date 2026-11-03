@@ -277,7 +277,7 @@ test('migration 23 upgrades a schema-22 database without changing existing order
     database = new SqliteStore(path);
     assert.equal(
       database.db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get().version,
-      23,
+      24,
     );
     assert.ok(
       database.db
