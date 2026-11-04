@@ -44,7 +44,7 @@
     "test:a11y": "node tools/run-ui-tests.mjs a11y",
     "test:visual": "node tools/run-ui-tests.mjs visual",
     "security:scan": "node tools/scan-secrets.mjs",
-    "security:audit": "npm audit --omit=dev --audit-level=high",
+    "security:audit": "npm audit --audit-level=moderate",
     "db:migrate": "node tools/run-api-script.mjs db:migrate",
     "db:backup": "node tools/run-api-script.mjs db:backup",
     "db:restore": "node tools/run-api-script.mjs db:restore",
@@ -52,6 +52,7 @@
     "db:list": "node tools/run-api-script.mjs db:list"
   },
   "dependencies": {
+    "exceljs": "4.4.0",
     "typescript": "^5.9.2"
   },
   "devDependencies": {
@@ -60,7 +61,14 @@
     "prettier": "^3.6.2"
   },
   "overrides": {
-    "uuid": "11.1.1"
+    "uuid": "11.1.1",
+    "body-parser": "^2.4.0",
+    "source-map-js": "^1.2.2",
+    "minimatch": "^11.0.4",
+    "glob": "^14.0.3",
+    "exceljs": {
+      "unzipper": "^0.12.5"
+    }
   },
   "packageManager": "npm@10.9.3"
 }
