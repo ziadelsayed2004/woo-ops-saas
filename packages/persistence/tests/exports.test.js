@@ -62,7 +62,7 @@ const version = store.createExportProfileVersion(context, profile.id, {
 });
 
 test('versioned export metadata is migrated and scoped to the account', () => {
-  assert.equal(schemaVersion, 24);
+  assert.equal(schemaVersion, 25);
   assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 0);
   assert.deepEqual(profile.active, true);
   assert.equal(version.version, 1);
@@ -174,6 +174,112 @@ test('query export snapshots remain markable when current order fields no longer
     1,
   );
   assert.equal(store.getOrder(context, queryOrder.id).exportState, 'exported');
+});
+
+test('history pages reach older exports and deletion preserves export evidence and order state', () => {
+  const created = [];
+  for (let index = 0; index < 24; index++) {
+    const batch = store.createExportBatch(context, {
+      selectionId: selection.id,
+      profileVersionId: version.id,
+      idempotencyKey: `history-${index}`,
+    });
+    store.failExportBatch(context, batch.id, 'TEST_FAILURE');
+    created.push(batch.id);
+  }
+  const all = [];
+  let cursor;
+  do {
+    const page = store.listExportBatchPage(context, { limit: 7, ...(cursor ? { cursor } : {}) });
+    all.push(...page.items.map((item) => item.id));
+    cursor = page.nextCursor;
+  } while (cursor);
+  assert.equal(new Set(all).size, all.length);
+  for (const id of created) assert.ok(all.includes(id));
+  assert.deepEqual(store.listExportBatchPage(otherContext).items, []);
+  for (const input of [
+    { limit: 101 },
+    { limit: 0 },
+    { cursor: '' },
+    { cursor: 'broken' },
+    { cursor: 'x'.repeat(1025) },
+  ]) {
+    assert.throws(
+      () => store.listExportBatchPage(context, input),
+      /EXPORT_BATCH_(LIMIT|CURSOR)_INVALID/,
+    );
+  }
+  const completed = store.listExportBatches(context).find((item) => item.status === 'completed');
+  assert.ok(completed);
+  const beforeOrder = store.getOrder(context, order.id);
+  const beforeEvents = store.listOrderExportEvents(context, order.id);
+  const beforeSnapshots = store.db
+    .prepare('SELECT * FROM export_batch_snapshots WHERE batch_id = ?')
+    .all(completed.id);
+  assert.throws(() => store.deleteExportBatchHistory(otherContext, completed.id), /NOT_FOUND/);
+  store.db
+    .prepare("UPDATE account_memberships SET role = 'viewer' WHERE account_id = ? AND user_id = ?")
+    .run(accountId, actorId);
+  assert.throws(
+    () => store.deleteExportBatchHistory({ ...context, role: 'viewer' }, completed.id),
+    /PERMISSION/,
+  );
+  store.db
+    .prepare("UPDATE account_memberships SET role = 'admin' WHERE account_id = ? AND user_id = ?")
+    .run(accountId, actorId);
+  store.deleteExportBatchHistory(context, completed.id);
+  store.deleteExportBatchHistory(context, completed.id);
+  assert.equal(
+    store.listExportBatches(context).some((batch) => batch.id === completed.id),
+    false,
+  );
+  assert.deepEqual(store.getExportBatch(context, completed.id), completed);
+  assert.deepEqual(store.getOrder(context, order.id), beforeOrder);
+  assert.deepEqual(store.listOrderExportEvents(context, order.id), beforeEvents);
+  assert.deepEqual(
+    store.db.prepare('SELECT * FROM export_batch_snapshots WHERE batch_id = ?').all(completed.id),
+    beforeSnapshots,
+  );
+  const repeated = store.createExportBatch(context, {
+    selectionId: completed.selectionId,
+    profileVersionId: completed.profileVersionId,
+    idempotencyKey: completed.idempotencyKey,
+  });
+  assert.equal(repeated.id, completed.id);
+  const active = store.createExportBatch(context, {
+    selectionId: selection.id,
+    profileVersionId: version.id,
+    idempotencyKey: 'active-history',
+  });
+  assert.throws(() => store.deleteExportBatchHistory(context, active.id), /ACTIVE_CONFLICT/);
+  store.startExportBatch(context, active.id);
+  assert.throws(() => store.deleteExportBatchHistory(context, active.id), /ACTIVE_CONFLICT/);
+});
+
+test('schema 24 history upgrade retains existing rows and does not rewrite orders', () => {
+  const path = join(directory, 'legacy.sqlite');
+  let legacy = new SqliteStore(path);
+  try {
+    legacy.db
+      .prepare('INSERT INTO accounts (id,name,created_at,updated_at) VALUES (?,?,?,?)')
+      .run('legacy', 'Legacy', now, now);
+    legacy.db
+      .prepare(
+        `INSERT INTO orders (id,account_id,origin,order_number,currency,grand_total_minor,created_at,updated_at,search_text,normalized_json)
+      VALUES ('old-order','legacy','manual','MAN-1','EGP','100',?,?,'','{}')`,
+      )
+      .run(now, now);
+    const before = legacy.db.prepare('SELECT * FROM orders').all();
+    legacy.db.exec(
+      'DROP INDEX export_batches_visible_history; ALTER TABLE export_batches DROP COLUMN history_deleted_at; DELETE FROM schema_migrations WHERE version = 25;',
+    );
+    legacy.db.close();
+    legacy = new SqliteStore(path);
+    assert.equal(legacy.db.prepare('SELECT MAX(version) AS n FROM schema_migrations').get().n, 25);
+    assert.deepEqual(legacy.db.prepare('SELECT * FROM orders').all(), before);
+  } finally {
+    legacy.db.close();
+  }
 });
 
 test.after(() => {

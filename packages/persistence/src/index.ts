@@ -1849,7 +1849,7 @@ const compileFilter = (
   };
 };
 
-export const schemaVersion = 24;
+export const schemaVersion = 25;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -2515,6 +2515,13 @@ const migrations: readonly Migration[] = [
       PRIMARY KEY(account_id, report_id, position),
       FOREIGN KEY(account_id, report_id) REFERENCES customer_recovery_reports(account_id, id)
     );`,
+  },
+  {
+    version: 25,
+    name: 'spreadsheet-history-archiving',
+    sql: `ALTER TABLE export_batches ADD COLUMN history_deleted_at TEXT;
+      CREATE INDEX export_batches_visible_history ON export_batches(account_id, created_at DESC, id DESC)
+      WHERE history_deleted_at IS NULL;`,
   },
 ];
 
@@ -5258,15 +5265,66 @@ export class SqliteStore {
   }
 
   listExportBatches(context: AccountContext, limit = 100): ExportBatch[] {
+    return this.listExportBatchPage(context, { limit }).items;
+  }
+
+  listExportBatchPage(
+    context: AccountContext,
+    input: { limit?: number; cursor?: string } = {},
+  ): { items: ExportBatch[]; nextCursor: string | null; hasMore: boolean } {
     this.assertMember(context);
+    const limit = input.limit ?? 100;
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
       throw new Error('EXPORT_BATCH_LIMIT_INVALID');
+    let cursorSql = '';
+    const params: (string | number)[] = [context.accountId];
+    if (input.cursor !== undefined) {
+      if (input.cursor.length < 1 || input.cursor.length > 1024)
+        throw new Error('EXPORT_BATCH_CURSOR_INVALID');
+      let cursor;
+      try {
+        cursor = decodedCursor(input.cursor);
+      } catch {
+        throw new Error('EXPORT_BATCH_CURSOR_INVALID');
+      }
+      if (
+        !Number.isFinite(Date.parse(cursor.sortValue)) ||
+        cursor.id.length < 1 ||
+        cursor.id.length > 256
+      )
+        throw new Error('EXPORT_BATCH_CURSOR_INVALID');
+      cursorSql = ' AND (created_at < ? OR (created_at = ? AND id < ?))';
+      params.push(cursor.sortValue, cursor.sortValue, cursor.id);
+    }
     const rows = this.db
       .prepare(
-        `SELECT ${exportBatchColumns} FROM export_batches WHERE account_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`,
+        `SELECT ${exportBatchColumns} FROM export_batches WHERE account_id = ? AND history_deleted_at IS NULL
+        ${cursorSql} ORDER BY created_at DESC, id DESC LIMIT ?`,
       )
-      .all(context.accountId, limit) as ExportBatchRow[];
-    return rows.map(exportBatch);
+      .all(...params, limit + 1) as ExportBatchRow[];
+    const visible = rows.slice(0, limit);
+    const hasMore = rows.length > limit;
+    const last = visible.at(-1);
+    return {
+      items: visible.map(exportBatch),
+      hasMore,
+      nextCursor:
+        hasMore && last ? encodedCursor({ sortValue: last.created_at, id: last.id }) : null,
+    };
+  }
+
+  deleteExportBatchHistory(context: AccountContext, batchId: string): void {
+    this.requireMutationActor(context);
+    const batch = this.getExportBatch(context, batchId);
+    if (batch.status === 'queued' || batch.status === 'running')
+      throw new Error('EXPORT_BATCH_HISTORY_ACTIVE_CONFLICT');
+    const result = this.db
+      .prepare(
+        `UPDATE export_batches SET history_deleted_at = ? WHERE account_id = ? AND id = ? AND history_deleted_at IS NULL`,
+      )
+      .run(new Date().toISOString(), context.accountId, batchId);
+    if (result.changes > 0)
+      this.audit(context, 'export-batch.history-deleted', 'export_batch', batchId, {});
   }
 
   startExportBatch(context: AccountContext, batchId: string): ExportBatch {

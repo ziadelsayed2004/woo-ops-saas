@@ -279,6 +279,66 @@ try {
     headers: readHeaders,
   });
   assert.deepEqual(Buffer.from(oldDownload.body), Buffer.from(download.body));
+  const historyPage = await request('/api/v1/export-batches?limit=1', { headers: readHeaders });
+  assert.equal(historyPage.response.status, 200);
+  assert.equal(historyPage.body.items.length, 1);
+  assert.equal(historyPage.body.hasMore, true);
+  const older = await request(
+    `/api/v1/export-batches?limit=1&cursor=${encodeURIComponent(historyPage.body.nextCursor)}`,
+    { headers: readHeaders },
+  );
+  assert.equal(older.response.status, 200);
+  assert.notEqual(older.body.items[0].id, historyPage.body.items[0].id);
+  assert.equal(
+    (await request('/api/v1/export-batches?cursor=invalid', { headers: readHeaders })).response
+      .status,
+    400,
+  );
+  assert.equal(
+    (
+      await request(`/api/v1/export-batches/${created.body.batch.id}`, {
+        method: 'DELETE',
+        headers: readHeaders,
+      })
+    ).response.status,
+    403,
+  );
+  const otherCookies = cookiesFrom(otherRegister.response);
+  assert.equal(
+    (
+      await request(`/api/v1/export-batches/${created.body.batch.id}`, {
+        method: 'DELETE',
+        headers: {
+          cookie: otherCookies,
+          'x-csrf-token': cookieValue(otherCookies, 'woo_ops_csrf'),
+        },
+      })
+    ).response.status,
+    404,
+  );
+  assert.equal(
+    (
+      await request(`/api/v1/export-batches/${created.body.batch.id}`, {
+        method: 'DELETE',
+        headers: writeHeaders,
+      })
+    ).response.status,
+    204,
+  );
+  const afterRemoval = await request('/api/v1/export-batches', { headers: readHeaders });
+  assert.equal(
+    afterRemoval.body.items.some((batch) => batch.id === created.body.batch.id),
+    false,
+  );
+  const retainedEvidence = await request(`/api/v1/orders/${order.body.order.id}/export-history`, {
+    headers: readHeaders,
+  });
+  assert.ok(retainedEvidence.body.items.length > 0);
+  const reDownload = await request(
+    `/api/v1/export-batches/${fullNameBatch.body.batch.id}/download`,
+    { headers: readHeaders },
+  );
+  assert.deepEqual(Buffer.from(reDownload.body), Buffer.from(fullNameDownload.body));
 } finally {
   await stopChild();
   rmSync(directory, { recursive: true, force: true });

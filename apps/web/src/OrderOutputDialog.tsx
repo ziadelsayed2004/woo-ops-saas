@@ -22,10 +22,19 @@ type Props = {
   count: number;
   onClose: () => void;
   onExcel: (shipping: boolean) => void;
+  onHistory: () => void;
   onDocument: (action: DocumentAction, print: boolean) => void;
 };
 
-export function OrderOutputDialog({ open, locale, count, onClose, onExcel, onDocument }: Props) {
+export function OrderOutputDialog({
+  open,
+  locale,
+  count,
+  onClose,
+  onExcel,
+  onDocument,
+  onHistory,
+}: Props) {
   const [mode, setMode] = useState<'download' | 'print'>('download');
   const copy = getOutputDialogCopy(locale);
   const documents: Array<{ action: DocumentAction; title: string; description: string }> = [
@@ -110,6 +119,9 @@ export function OrderOutputDialog({ open, locale, count, onClose, onExcel, onDoc
                   }}
                 >
                   {copy.shippingSheet}
+                </Button>
+                <Button variant="text" onClick={onHistory}>
+                  {tr(locale, 'spreadsheetHistory.button')}
                 </Button>
               </Stack>
             </Paper>

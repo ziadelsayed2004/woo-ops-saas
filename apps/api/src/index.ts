@@ -2456,16 +2456,29 @@ app.get('/api/v1/export-batches', (request, response) => {
   const rawLimit = request.query.limit === undefined ? undefined : Number(request.query.limit);
   try {
     const context = operationContext(user, response);
-    const batches =
-      rawLimit === undefined
-        ? store.listExportBatches(context)
-        : store.listExportBatches(context, rawLimit);
+    if (request.query.cursor !== undefined && typeof request.query.cursor !== 'string')
+      throw new Error('EXPORT_BATCH_CURSOR_INVALID');
+    const page = store.listExportBatchPage(context, {
+      ...(rawLimit === undefined ? {} : { limit: rawLimit }),
+      ...(request.query.cursor === undefined ? {} : { cursor: request.query.cursor }),
+    });
     response.json({
-      items: batches.map((batch) => ({
+      ...page,
+      items: page.items.map((batch) => ({
         ...batch,
         job: batch.jobId === null ? null : store.getJob(context, batch.jobId),
       })),
     });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.delete('/api/v1/export-batches/:batchId', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  try {
+    store.deleteExportBatchHistory(operationContext(user, response), request.params.batchId);
+    response.status(204).end();
   } catch (error) {
     sendOperationError(response, error);
   }

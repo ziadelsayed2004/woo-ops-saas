@@ -46,6 +46,8 @@ import {
 } from './AdminWorkspaces';
 import { WorkspaceShell } from './WorkspaceShell';
 import { OrderOutputDialog } from './OrderOutputDialog';
+import { SpreadsheetHistoryDialog } from './SpreadsheetHistoryDialog';
+import { downloadWhenSpreadsheetReady } from './exportDownloads';
 import { getAppCopy, translate as tr, type TranslationKey } from './i18n';
 import { wooOrderExportColumns, wooShippingExportColumns } from './wooExportColumns';
 import {
@@ -2943,29 +2945,21 @@ const documentBatchErrorLabel = (error: string, direction: Direction): string =>
   return error;
 };
 
-const exportRowModeLabel = (rowMode: string, direction: Direction): string => {
-  const labels: Record<string, TranslationKey> = {
-    order: 'labels.exportRowMode.order',
-    line: 'labels.exportRowMode.line',
-  };
-  const key = labels[rowMode];
-  return key ? tr(direction === 'rtl' ? 'ar' : 'en', key) : rowMode;
-};
-
 function ExportsWorkspace({
   direction,
   t,
   savedViews,
   currentOrderQuery,
   historyOnly = false,
+  canDeleteHistory = false,
 }: {
   direction: Direction;
   t: (typeof copy)[Locale];
   savedViews: SavedOrderView[];
   currentOrderQuery: JsonRecord;
   historyOnly?: boolean;
+  canDeleteHistory?: boolean;
 }) {
-  const [batches, setBatches] = useState<ExportBatchSummary[]>([]);
   const [profileId, setProfileId] = useState('');
   const [versionId, setVersionId] = useState('');
   const [selectionSource, setSelectionSource] = useState('current');
@@ -2979,6 +2973,8 @@ function ExportsWorkspace({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [historyTab, setHistoryTab] = useState<ExportHistoryTab>(exportHistoryTabFromLocation);
+  const [spreadsheetHistoryOpen, setSpreadsheetHistoryOpen] = useState(false);
+  const spreadsheetLocale = direction === 'rtl' ? 'ar' : 'en';
   const visibleDocumentArtifacts = documentFilesBatchId
     ? (documentArtifacts[documentFilesBatchId] ?? [])
     : [];
@@ -3007,15 +3003,6 @@ function ExportsWorkspace({
       '',
       `${url.pathname}${url.search}${url.hash}`,
     );
-  };
-
-  const loadBatches = async (force = false) => {
-    const body = await cachedGetJson<{ items?: ExportBatchSummary[] }>(
-      '/api/v1/export-batches',
-      10_000,
-      force,
-    );
-    setBatches(body.items ?? []);
   };
 
   const loadDocumentBatches = async (force = false) => {
@@ -3105,11 +3092,7 @@ function ExportsWorkspace({
 
   useEffect(() => {
     setLoading(true);
-    void Promise.all([
-      ...(historyOnly ? [] : [loadProfiles()]),
-      loadBatches(true),
-      loadDocumentBatches(true),
-    ])
+    void Promise.all([...(historyOnly ? [] : [loadProfiles()]), loadDocumentBatches(true)])
       .catch(() => setMessage('EXPORT_LOAD_FAILED'))
       .finally(() => setLoading(false));
   }, []);
@@ -3117,14 +3100,6 @@ function ExportsWorkspace({
   useEffect(() => {
     void loadVersions(profileId).catch(() => setMessage('EXPORT_VERSIONS_LOAD_FAILED'));
   }, [profileId]);
-
-  useEffect(() => {
-    if (!batches.some((batch) => batch.status === 'queued' || batch.status === 'running')) return;
-    const timer = window.setInterval(() => {
-      void loadBatches(true).catch(() => setMessage('EXPORT_BATCHES_LOAD_FAILED'));
-    }, 1_000);
-    return () => window.clearInterval(timer);
-  }, [batches]);
 
   const createSelectionFromSource = async (): Promise<string> => {
     const saved = savedViews.find((item) => item.id === selectionSource.replace(/^saved:/u, ''));
@@ -3162,29 +3137,15 @@ function ExportsWorkspace({
       });
       if (!response.ok) throw new Error('EXPORT_CREATE_FAILED');
       const body = (await response.json()) as { batch: ExportBatchSummary };
-      setBatches((current) => [body.batch, ...current.filter((item) => item.id !== body.batch.id)]);
-      setMessage('EXPORT_QUEUED');
-      await loadBatches(true);
-    } catch {
-      setMessage('EXPORT_CREATE_FAILED');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const retryBatch = async (batchId: string) => {
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/v1/export-batches/${encodeURIComponent(batchId)}/retry`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken() },
-      });
-      if (!response.ok) throw new Error('EXPORT_RETRY_FAILED');
-      await loadBatches(true);
-      setMessage('EXPORT_RETRY_QUEUED');
-    } catch {
-      setMessage('EXPORT_RETRY_FAILED');
+      setMessage(tr(spreadsheetLocale, 'spreadsheetHistory.preparing'));
+      await downloadWhenSpreadsheetReady(body.batch.id);
+      setMessage(tr(spreadsheetLocale, 'spreadsheetHistory.ready'));
+    } catch (error) {
+      setMessage(
+        error instanceof Error && error.message === 'EXPORT_DOWNLOAD_TIMEOUT'
+          ? tr(spreadsheetLocale, 'spreadsheetHistory.timeout')
+          : 'EXPORT_CREATE_FAILED',
+      );
     } finally {
       setLoading(false);
     }
@@ -3210,9 +3171,6 @@ function ExportsWorkspace({
       setLoading(false);
     }
   };
-
-  const statusLabel = (status: ExportBatchSummary['status']): string =>
-    exportJobStatusLabel(status, direction);
 
   return (
     <Stack data-testid="exports-workspace" dir={direction} className="app-l3209c5">
@@ -3293,89 +3251,23 @@ function ExportsWorkspace({
                   tr(direction === 'rtl' ? 'ar' : 'en', 'inline.app.exportExcel')
                 )}
               </Button>
+              <Button
+                variant="outlined"
+                className="spreadsheet-history__trigger"
+                onClick={() => setSpreadsheetHistoryOpen(true)}
+              >
+                {tr(spreadsheetLocale, 'spreadsheetHistory.button')}
+              </Button>
             </Stack>
           </Stack>
         </Paper>
       )}
-      <Paper
-        variant="outlined"
-        hidden={historyTab !== 'spreadsheets'}
-        className="app-export-history-panel"
-      >
-        <Stack className="app-l3295c9">
-          <Typography variant="h6" component="h2" className="app-l3296c11">
-            {t.exportBatches}
-          </Typography>
-          <Button size="small" onClick={() => void loadBatches(true)} disabled={loading}>
-            {t.refresh}
-          </Button>
-        </Stack>
-        <TableContainer>
-          <Table size="small" aria-label={t.exportBatches}>
-            <TableHead>
-              <TableRow>
-                <TableCell>{t.status}</TableCell>
-                <TableCell>{t.format}</TableCell>
-                <TableCell>{t.total}</TableCell>
-                <TableCell>{t.actions}</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {batches.map((batch) => (
-                <TableRow key={batch.id}>
-                  <TableCell>
-                    <Stack className="app-l3317c21">
-                      <Chip size="small" label={statusLabel(batch.status)} />
-                      {batch.status === 'failed' && batch.error && (
-                        <Typography variant="caption" color="error">
-                          {batch.error}
-                        </Typography>
-                      )}
-                    </Stack>
-                  </TableCell>
-                  <TableCell>
-                    <Stack className="app-l3327c21">
-                      <Typography className="app-l3328c23">{batch.format.toUpperCase()}</Typography>
-                      <Typography variant="caption" className="app-l3329c23">
-                        {exportRowModeLabel(batch.rowMode, direction)}
-                      </Typography>
-                    </Stack>
-                  </TableCell>
-                  <TableCell>
-                    {batch.orderCount} / {batch.rowCount}
-                  </TableCell>
-                  <TableCell>
-                    <Stack className="app-l3338c21">
-                      {batch.job && (
-                        <LinearProgress
-                          variant="determinate"
-                          value={Math.min(batch.job.progress, 100)}
-                          aria-label={t.loading}
-                          className="app-l3340c25"
-                        />
-                      )}
-                      {batch.status === 'completed' && (
-                        <Button
-                          size="small"
-                          href={`/api/v1/export-batches/${encodeURIComponent(batch.id)}/download`}
-                        >
-                          {t.downloadExport}
-                        </Button>
-                      )}
-                      {batch.status === 'failed' && (
-                        <Button size="small" onClick={() => void retryBatch(batch.id)}>
-                          {t.retryExport}
-                        </Button>
-                      )}
-                    </Stack>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-        {batches.length === 0 && <Typography className="app-l3368c11">{t.noData}</Typography>}
-      </Paper>
+      <SpreadsheetHistoryDialog
+        open={spreadsheetHistoryOpen}
+        locale={spreadsheetLocale}
+        canDelete={canDeleteHistory}
+        onClose={() => setSpreadsheetHistoryOpen(false)}
+      />
       <Paper
         variant="outlined"
         hidden={historyTab !== 'documents'}
@@ -3655,6 +3547,7 @@ export function App({
   const [selectAllMatching, setSelectAllMatching] = useState(false);
   const [selectionMessage, setSelectionMessage] = useState('');
   const [outputDialogOpen, setOutputDialogOpen] = useState(false);
+  const [spreadsheetHistoryOpen, setSpreadsheetHistoryOpen] = useState(false);
   const [selectionError, setSelectionError] = useState(false);
   const [exportHistoryRevision, setExportHistoryRevision] = useState(0);
   const [viewName, setViewName] = useState('');
@@ -4141,25 +4034,7 @@ export function App({
   };
 
   const downloadCompletedExport = async (batchId: string): Promise<void> => {
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      const response = await fetch('/api/v1/export-batches', { credentials: 'include' });
-      if (response.ok) {
-        const items = ((await response.json()) as { items?: ExportBatchSummary[] }).items ?? [];
-        const batch = items.find((item) => item.id === batchId);
-        if (batch?.status === 'completed') {
-          const anchor = document.createElement('a');
-          anchor.href = `/api/v1/export-batches/${encodeURIComponent(batchId)}/download`;
-          anchor.download = batch.filename ?? '';
-          document.body.append(anchor);
-          anchor.click();
-          anchor.remove();
-          return;
-        }
-        if (batch?.status === 'failed') throw new Error(batch.error ?? 'EXPORT_CREATE_FAILED');
-      }
-      await new Promise((resolve) => window.setTimeout(resolve, 1_000));
-    }
-    throw new Error('EXPORT_DOWNLOAD_TIMEOUT');
+    await downloadWhenSpreadsheetReady(batchId);
   };
 
   const createSelectionExport = async (
@@ -4619,6 +4494,7 @@ export function App({
             t={t}
             savedViews={savedViews}
             currentOrderQuery={currentOrderQuery}
+            canDeleteHistory={authUser.role !== 'viewer'}
           />
         ) : view === 'analytics' ? (
           <AnalyticsWorkspace locale={locale} t={t} />
@@ -4658,6 +4534,9 @@ export function App({
                 )}
                 <Button variant="outlined" onClick={() => void loadOrders()} disabled={loading}>
                   {loading ? <CircularProgress size={18} aria-label={t.loading} /> : t.refresh}
+                </Button>
+                <Button variant="outlined" onClick={() => setSpreadsheetHistoryOpen(true)}>
+                  {tr(locale, 'spreadsheetHistory.button')}
                 </Button>
                 <FormControl size="small" className="app-l4540c17">
                   <InputLabel id="orders-columns-label">{t.columns}</InputLabel>
@@ -4934,6 +4813,16 @@ export function App({
                 void createSelectionExport('xlsx', shipping ? 'shipping' : 'orders')
               }
               onDocument={(action, print) => void createSelectionDocuments(action, print)}
+              onHistory={() => {
+                setOutputDialogOpen(false);
+                setSpreadsheetHistoryOpen(true);
+              }}
+            />
+            <SpreadsheetHistoryDialog
+              open={spreadsheetHistoryOpen}
+              locale={locale}
+              canDelete={authUser.role !== 'viewer'}
+              onClose={() => setSpreadsheetHistoryOpen(false)}
             />
             {selectionMessage && (
               <Alert

@@ -329,6 +329,17 @@ test('manual selections download Woo-layout Excel, shipping sheets and all PDF t
       },
     });
   });
+  await page.route('**/api/v1/export-batches/manual-batch-*', (route) =>
+    route.fulfill({
+      json: {
+        batch: {
+          id: `manual-batch-${batchId}`,
+          status: 'completed',
+          filename: 'manual-orders.xlsx',
+        },
+      },
+    }),
+  );
   await page.route('**/api/v1/export-batches/*/download', (route) =>
     route.fulfill({
       body: 'workbook fixture',
@@ -518,6 +529,13 @@ test('creates the Woo-layout XLSX and offers repeat download in orders @orders @
   await page.route('**/api/v1/selections', async (route: Route) => {
     await route.fulfill({ json: { selection: { id: 'selection-woo', estimatedCount: 1 } } });
   });
+  await page.route('**/api/v1/export-batches/batch-woo', (route) =>
+    route.fulfill({
+      json: {
+        batch: { id: 'batch-woo', status: 'completed', filename: 'orders-export-xlsx.xlsx' },
+      },
+    }),
+  );
   await page.route('**/api/v1/export-batches/batch-woo/download', async (route: Route) => {
     await route.fulfill({
       body: 'mock workbook',
@@ -557,11 +575,29 @@ test('creates the Woo-layout XLSX and offers repeat download in orders @orders @
     'تاريخ الطلب',
   ]);
   expect(columns.map((column) => column.label)).toContain('المحافظة');
-  await page.locator('[data-testid="navigation-exports"]:visible').click();
-  await expect(page.getByRole('link', { name: 'Download' })).toHaveAttribute(
-    'href',
-    '/api/v1/export-batches/batch-woo/download',
+  await page.route('**/api/v1/export-batches?*', (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            id: 'batch-woo',
+            status: 'completed',
+            format: 'xlsx',
+            orderCount: 1,
+            rowCount: 1,
+            filename: 'orders-export-xlsx.xlsx',
+          },
+        ],
+        hasMore: false,
+        nextCursor: null,
+      },
+    }),
   );
+  await page.locator('[data-testid="navigation-exports"]:visible').click();
+  await page.getByRole('button', { name: 'Previous files', exact: true }).click();
+  const repeatDownload = page.waitForEvent('download');
+  await page.getByRole('dialog').getByRole('button', { name: 'Download', exact: true }).click();
+  expect((await repeatDownload).suggestedFilename()).toBe('orders-export-xlsx.xlsx');
   const historyBox = await page.getByTestId('exports-workspace').boundingBox();
   expect(historyBox).not.toBeNull();
 });
@@ -641,6 +677,11 @@ for (const source of ['woo', 'manual'] as const) {
           },
         });
       });
+      await page.route('**/api/v1/export-batches/name-batch', (route) =>
+        route.fulfill({
+          json: { batch: { id: 'name-batch', status: 'completed', filename: artifact?.filename } },
+        }),
+      );
       await page.context().route('**/api/v1/export-batches/name-batch/download', (route) =>
         route.fulfill({
           body: Buffer.from(artifact!.bytes),
@@ -735,6 +776,13 @@ test('shows an export job failure with retry instead of claiming a download @ord
         },
       });
   });
+  await page.route('**/api/v1/export-batches/batch-failed', (route) =>
+    route.fulfill({
+      json: {
+        batch: { id: 'batch-failed', status: 'failed', error: 'EXPORT_REQUIRED_FIELD_MISSING' },
+      },
+    }),
+  );
   await page.route('**/api/v1/selections', async (route: Route) => {
     await route.fulfill({ json: { selection: { id: 'selection-failed', estimatedCount: 1 } } });
   });
@@ -744,7 +792,28 @@ test('shows an export job failure with retry instead of claiming a download @ord
   await page.getByRole('button', { name: 'Export & print', exact: true }).click();
   await page.getByRole('button', { name: 'Export Excel' }).click();
   await expect.poll(() => created).toBe(true);
+  await expect(page.getByText('EXPORT_REQUIRED_FIELD_MISSING')).toBeVisible();
+  await page.route('**/api/v1/export-batches?*', (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            id: 'batch-failed',
+            status: 'failed',
+            format: 'xlsx',
+            orderCount: 1,
+            rowCount: 0,
+            filename: null,
+            error: 'EXPORT_REQUIRED_FIELD_MISSING',
+          },
+        ],
+        hasMore: false,
+        nextCursor: null,
+      },
+    }),
+  );
   await page.locator('[data-testid="navigation-exports"]:visible').click();
+  await page.getByRole('button', { name: 'Previous files', exact: true }).click();
   await expect(page.getByText('EXPORT_REQUIRED_FIELD_MISSING')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible();
   expect(downloads).toBe(0);

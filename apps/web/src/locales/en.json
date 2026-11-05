@@ -1,4 +1,27 @@
 {
+  "spreadsheetHistory": {
+    "title": "Previous Excel files",
+    "button": "Previous files",
+    "description": "Your saved spreadsheet exports. Download any file again or remove an entry from history.",
+    "refresh": "Refresh",
+    "loading": "Loading previous files",
+    "error": "Could not complete the history request. Try again.",
+    "delete": "Remove from history",
+    "confirmDelete": "Remove this entry from history? Order export status and the stored export evidence will be preserved.",
+    "deleteFile": "Remove {{name}} from history",
+    "cancel": "Cancel",
+    "download": "Download",
+    "pendingFile": "Preparing Excel file…",
+    "counts": "{{orders}} orders · {{rows}} rows",
+    "empty": "No previous files.",
+    "previous": "Previous",
+    "next": "Next",
+    "page": "Page {{page}}",
+    "close": "Close",
+    "preparing": "Preparing your Excel file. It will download automatically and remain in Previous files.",
+    "ready": "Download started. The file is saved in Previous files.",
+    "timeout": "The export is taking longer than expected. It is still saved in Previous files; download it there when ready."
+  },
   "recovery": {
     "title": "Customer follow-up",
     "allCustomers": "All customers",

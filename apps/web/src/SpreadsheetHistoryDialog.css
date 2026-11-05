@@ -1,0 +1,92 @@
+#root .spreadsheet-history__trigger {
+  flex-shrink: 0;
+}
+
+.spreadsheet-history .spreadsheet-history__paper {
+  border-radius: 12px;
+  max-height: calc(100dvh - 48px);
+  max-width: 900px;
+}
+
+.spreadsheet-history .spreadsheet-history__content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px 24px 20px;
+}
+
+.spreadsheet-history .spreadsheet-history__toolbar,
+.spreadsheet-history .spreadsheet-history__item,
+.spreadsheet-history .spreadsheet-history__pagination {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.spreadsheet-history .spreadsheet-history__list {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.spreadsheet-history .spreadsheet-history__item {
+  padding: 16px;
+}
+
+.spreadsheet-history .spreadsheet-history__item + .spreadsheet-history__item {
+  border-block-start: 1px solid #e2e8f0;
+}
+
+.spreadsheet-history .spreadsheet-history__details {
+  min-width: 0;
+  flex: 1;
+}
+
+.spreadsheet-history .spreadsheet-history__filename {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+  margin-block-end: 8px;
+}
+
+.spreadsheet-history .spreadsheet-history__error {
+  overflow-wrap: anywhere;
+}
+
+.spreadsheet-history .spreadsheet-history__metadata,
+.spreadsheet-history .spreadsheet-history__actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.spreadsheet-history .spreadsheet-history__metadata {
+  color: #64748b;
+}
+
+.spreadsheet-history .spreadsheet-history__empty {
+  padding: 32px 16px;
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .spreadsheet-history .spreadsheet-history__paper {
+    margin: 12px;
+    width: calc(100% - 24px);
+  }
+
+  .spreadsheet-history .spreadsheet-history__content {
+    padding-inline: 16px;
+  }
+
+  .spreadsheet-history .spreadsheet-history__item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .spreadsheet-history .spreadsheet-history__actions > button {
+    flex: 1;
+  }
+}

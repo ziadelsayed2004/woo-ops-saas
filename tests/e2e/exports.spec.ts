@@ -71,7 +71,7 @@ test('shows export history in a dedicated export navigation destination @exports
   await page.getByRole('button', { name: 'English' }).click();
   await page.locator('[data-testid="navigation-exports"]:visible').click();
   await expect(page.getByTestId('exports-workspace')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Export batches' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Previous files' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Exports', exact: true })).toBeVisible();
   await expect(page.getByLabel('Orders to export')).toBeVisible();
   await expect(page.getByLabel('Saved profiles')).toHaveCount(0);
@@ -91,6 +91,147 @@ test('does not load profiles merely to show order export history @exports', asyn
   await page.getByRole('button', { name: 'English' }).click();
   await expect(page.getByTestId('exports-workspace')).toHaveCount(0);
   expect(profileReads).toBe(0);
+});
+
+test('Excel click downloads automatically, keeps the file in history and supports repeat download and removal @exports', async ({
+  page,
+}, testInfo) => {
+  await mockExports(page);
+  let created = false;
+  let deleted = false;
+  let reads = 0;
+  let historyReads = 0;
+  let deleteAttempts = 0;
+  const batch = {
+    id: 'saved-excel',
+    format: 'xlsx',
+    rowMode: 'order',
+    status: 'completed',
+    filename: 'orders-2026-11-05.xlsx',
+    createdAt: '2026-11-05T09:00:00.000Z',
+    orderCount: 2,
+    rowCount: 2,
+    error: null,
+  };
+  await page.route('**/api/v1/export-batches', (route) => {
+    expect(route.request().method()).toBe('POST');
+    created = true;
+    return route.fulfill({ status: 202, json: { batch: { ...batch, status: 'queued' } } });
+  });
+  await page.route('**/api/v1/export-batches?*', (route) => {
+    historyReads++;
+    return route.fulfill({
+      json: { items: created && !deleted ? [batch] : [], hasMore: false, nextCursor: null },
+    });
+  });
+  await page.route('**/api/v1/export-batches/saved-excel', (route) => {
+    if (route.request().method() === 'DELETE') {
+      expect(route.request().headers()['x-csrf-token']).toBe('excel-history-csrf');
+      if (++deleteAttempts === 1) return route.fulfill({ status: 503, json: {} });
+      deleted = true;
+      return route.fulfill({ status: 204 });
+    }
+    reads++;
+    return route.fulfill({
+      json: { batch: { ...batch, status: reads < 3 ? 'running' : 'completed' } },
+    });
+  });
+  await page.route('**/api/v1/export-batches/saved-excel/download', (route) =>
+    route.fulfill({
+      body: 'saved Excel bytes',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      headers: { 'content-disposition': `attachment; filename="${batch.filename}"` },
+    }),
+  );
+  await page.goto('/exports');
+  await page.getByRole('button', { name: 'English' }).click();
+  await page
+    .context()
+    .addCookies([{ name: 'woo_ops_csrf', value: 'excel-history-csrf', url: page.url() }]);
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export Excel', exact: true }).click();
+  await expect(page.getByText('Preparing your Excel file.', { exact: false })).toBeVisible();
+  expect((await download).suggestedFilename()).toBe(batch.filename);
+  expect(historyReads).toBe(0);
+  await expect(page.getByText('Download started.', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Previous files', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Previous Excel files' });
+  await expect(dialog.getByText(batch.filename)).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath('spreadsheet-history-desktop.png'),
+    animations: 'disabled',
+  });
+  const secondDownload = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: 'Download', exact: true }).click();
+  expect((await secondDownload).suggestedFilename()).toBe(batch.filename);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.reload();
+  await page.getByRole('button', { name: 'Previous files', exact: true }).click();
+  await expect(dialog.getByText(batch.filename)).toBeVisible();
+  await dialog
+    .getByRole('button', { name: `Remove ${batch.filename} from history`, exact: true })
+    .click();
+  await expect(dialog.getByText('Remove this entry from history?', { exact: false })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Remove from history', exact: true }).click();
+  await expect(
+    dialog.getByText('Could not complete the history request. Try again.'),
+  ).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Download', exact: true })).toBeVisible();
+  expect(deleted).toBe(false);
+  await dialog.getByRole('button', { name: 'Remove from history', exact: true }).click();
+  await expect(dialog.getByText('No previous files.', { exact: true })).toBeVisible();
+  expect(deleted).toBe(true);
+});
+
+test('previous files paginate, recover from load errors and fit Arabic mobile @exports', async ({
+  page,
+}, testInfo) => {
+  await mockExports(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  let fail = true;
+  await page.route('**/api/v1/export-batches?*', (route) => {
+    if (fail) return route.fulfill({ status: 503, json: {} });
+    const older = new URL(route.request().url()).searchParams.has('cursor');
+    return route.fulfill({
+      json: {
+        items: [
+          {
+            id: older ? 'old-batch' : 'new-batch',
+            status: 'completed',
+            format: 'xlsx',
+            rowMode: 'order',
+            filename: older
+              ? 'old-orders.xlsx'
+              : 'shipping-orders-with-a-very-long-filename-2026-11-05.xlsx',
+            createdAt: '2026-11-05T09:00:00Z',
+            orderCount: 2,
+            rowCount: 2,
+          },
+        ],
+        hasMore: !older,
+        nextCursor: older ? null : 'older-page',
+      },
+    });
+  });
+  await page.goto('/exports');
+  await page.getByRole('button', { name: 'الملفات السابقة', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'ملفات Excel السابقة' });
+  await expect(dialog.getByRole('alert')).toBeVisible();
+  fail = false;
+  await dialog.getByRole('button', { name: 'تحديث', exact: true }).click();
+  await expect(dialog.getByText('2 طلب · 2 صف')).toBeVisible();
+  await dialog.getByRole('button', { name: 'التالي', exact: true }).click();
+  await expect(dialog.getByText('old-orders.xlsx')).toBeVisible();
+  await expect(dialog.getByText('صفحة 2', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'السابق', exact: true }).click();
+  await expect(dialog.getByText('صفحة 1', { exact: true })).toBeVisible();
+  expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath('spreadsheet-history-mobile-ar.png'),
+    animations: 'disabled',
+  });
+  const results = await new AxeBuilder({ page }).include('[role="dialog"]').analyze();
+  expect(results.violations).toEqual([]);
 });
 
 test('organizes printable outputs and exposes useful downloads without the manifest @exports', async ({

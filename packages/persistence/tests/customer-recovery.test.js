@@ -265,7 +265,7 @@ test('report migration from schema 23 does not backfill or rewrite existing orde
     database = new SqliteStore(path);
     assert.equal(
       database.db.prepare('SELECT MAX(version) AS n FROM schema_migrations').get().n,
-      24,
+      25,
     );
     assert.deepEqual(database.db.prepare('SELECT * FROM orders').all(), before);
   } finally {
