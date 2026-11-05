@@ -19,6 +19,8 @@ import {
 } from '@mui/material';
 import { translate as tr } from './i18n';
 import './CustomerRecovery.css';
+import { SpreadsheetHistoryDialog } from './SpreadsheetHistoryDialog';
+import { downloadWhenSpreadsheetReady } from './exportDownloads';
 
 type Item = {
   orderId: string;
@@ -65,7 +67,8 @@ export function CustomerRecovery({
     stale: boolean;
     lastSuccessAt: string | null;
   } | null>(null);
-  const [reports, setReports] = useState<Report[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [exportMessage, setExportMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -142,40 +145,30 @@ export function CustomerRecovery({
       window.clearTimeout(timer);
     };
   }, [productSearch]);
-  useEffect(() => {
-    let active = true;
-    let timer: number | undefined;
-    const poll = async () => {
-      try {
-        const result = await request<{ items: Report[] }>('/api/v1/customer-recovery/reports');
-        if (!active) return;
-        setReports(result.items);
-        if (result.items.some((r) => ['queued', 'running'].includes(r.status)))
-          timer = window.setTimeout(() => void poll(), 3000);
-      } catch {
-        if (active) setFailed(true);
-      }
-    };
-    void poll();
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [exporting]);
   const exportReport = async () => {
     setExporting(true);
     setFailed(false);
+    setExportMessage(tr(locale, 'spreadsheetHistory.preparing'));
     try {
       const csrf = document.cookie.match(/(?:^|;\s*)woo_ops_csrf=([^;]+)/u)?.[1] ?? '';
-      await request('/api/v1/customer-recovery/reports', {
+      const { report } = await request<{ report: Report }>('/api/v1/customer-recovery/reports', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-csrf-token': csrf },
         body: JSON.stringify({ filter: filters(), locale, idempotencyKey: crypto.randomUUID() }),
       });
-    } catch {
-      setFailed(true);
+      await downloadWhenSpreadsheetReady(report.id, 'customer-recovery');
+      if (mounted.current) setExportMessage(tr(locale, 'spreadsheetHistory.ready'));
+    } catch (error) {
+      if (mounted.current) {
+        if (error instanceof Error && error.message === 'EXPORT_DOWNLOAD_TIMEOUT') {
+          setExportMessage(tr(locale, 'spreadsheetHistory.timeout'));
+        } else {
+          setExportMessage('');
+          setFailed(true);
+        }
+      }
     } finally {
-      setExporting(false);
+      if (mounted.current) setExporting(false);
     }
   };
   const amount = (minor: string) => {
@@ -230,16 +223,29 @@ export function CustomerRecovery({
         <Button variant="outlined" onClick={() => void load()} disabled={loading}>
           {t('refresh')}
         </Button>
-        {canExport && (
-          <Button
-            variant="contained"
-            onClick={() => void exportReport()}
-            disabled={exporting || loading || items.length === 0}
-          >
-            {exporting ? t('preparing') : t('export')}
+        <Box className="customer-recovery__export-actions">
+          {canExport && (
+            <Button
+              variant="contained"
+              onClick={() => void exportReport()}
+              disabled={exporting || loading || items.length === 0}
+            >
+              {exporting ? t('preparing') : t('export')}
+            </Button>
+          )}
+          <Button variant="outlined" onClick={() => setHistoryOpen(true)}>
+            {tr(locale, 'spreadsheetHistory.button')}
           </Button>
-        )}
+        </Box>
       </Box>
+      <SpreadsheetHistoryDialog
+        open={historyOpen}
+        locale={locale}
+        source="customer-recovery"
+        canDelete={canExport}
+        onClose={() => setHistoryOpen(false)}
+      />
+      {exportMessage && <Alert severity="info">{exportMessage}</Alert>}
       {failed && <Alert severity="error">{t('error')}</Alert>}
       {loading && <LinearProgress aria-label={t('loading')} />}
       <TableContainer component={Paper} variant="outlined">
@@ -315,30 +321,6 @@ export function CustomerRecovery({
       <Typography variant="body2" color="text.secondary">
         {t('exportNote')}
       </Typography>
-      {reports.length > 0 && (
-        <Paper variant="outlined" className="customer-recovery__history">
-          <Typography component="h2" variant="h6">
-            {t('history')}
-          </Typography>
-          {reports.map((report) => (
-            <Box key={report.id} className="customer-recovery__report">
-              <Typography>
-                <bdi>{new Date(report.createdAt).toLocaleString('en-GB')}</bdi> ·{' '}
-                <bdi>{report.rowCount}</bdi> {t('customers')}
-              </Typography>
-              {report.status === 'completed' ? (
-                <Button href={`/api/v1/customer-recovery/reports/${report.id}/download`}>
-                  {t('download')}
-                </Button>
-              ) : (
-                <Typography color={report.status === 'failed' ? 'error' : 'text.secondary'}>
-                  {report.status === 'failed' ? t('exportError') : t('preparing')}
-                </Typography>
-              )}
-            </Box>
-          ))}
-        </Paper>
-      )}
     </Stack>
   );
 }

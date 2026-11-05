@@ -9,9 +9,16 @@ export type SpreadsheetBatch = {
   error: string | null;
 };
 
-export function downloadSpreadsheet(batch: Pick<SpreadsheetBatch, 'id' | 'filename'>): void {
+export type SpreadsheetSource = 'orders' | 'customer-recovery';
+export const spreadsheetApiPath = (source: SpreadsheetSource): string =>
+  source === 'customer-recovery' ? '/api/v1/customer-recovery/reports' : '/api/v1/export-batches';
+
+export function downloadSpreadsheet(
+  batch: Pick<SpreadsheetBatch, 'id' | 'filename'>,
+  source: SpreadsheetSource = 'orders',
+): void {
   const anchor = document.createElement('a');
-  anchor.href = `/api/v1/export-batches/${encodeURIComponent(batch.id)}/download`;
+  anchor.href = `${spreadsheetApiPath(source)}/${encodeURIComponent(batch.id)}/download`;
   anchor.download = batch.filename ?? '';
   document.body.append(anchor);
   anchor.click();
@@ -20,17 +27,22 @@ export function downloadSpreadsheet(batch: Pick<SpreadsheetBatch, 'id' | 'filena
 
 // Poll one durable job rather than repeatedly loading the entire export history.
 // Keep longer jobs downloadable without forcing the operator to find them below the form.
-export async function downloadWhenSpreadsheetReady(batchId: string): Promise<void> {
+export async function downloadWhenSpreadsheetReady(
+  batchId: string,
+  source: SpreadsheetSource = 'orders',
+): Promise<void> {
   const deadline = Date.now() + 10 * 60_000;
   let delay = 750;
   while (Date.now() < deadline) {
-    const response = await fetch(`/api/v1/export-batches/${encodeURIComponent(batchId)}`, {
+    const response = await fetch(`${spreadsheetApiPath(source)}/${encodeURIComponent(batchId)}`, {
       credentials: 'include',
     });
     if (!response.ok) throw new Error(`EXPORT_DOWNLOAD_HTTP_${response.status}`);
-    const { batch } = (await response.json()) as { batch: SpreadsheetBatch };
+    const body = (await response.json()) as { batch?: SpreadsheetBatch; report?: SpreadsheetBatch };
+    const batch = source === 'customer-recovery' ? body.report : body.batch;
+    if (!batch) throw new Error('EXPORT_STATUS_INVALID');
     if (batch.status === 'completed') {
-      downloadSpreadsheet(batch);
+      downloadSpreadsheet(batch, source);
       return;
     }
     if (batch.status === 'failed') throw new Error(batch.error ?? 'EXPORT_CREATE_FAILED');

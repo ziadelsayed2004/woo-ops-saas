@@ -394,11 +394,71 @@ test('customer follow-up composes filters, pages locally and downloads a separat
   await panel.getByLabel('Order date to (UTC)').fill('2026-10-05');
   await expect.poll(() => requests.at(-1)?.searchParams.get('to')).toBe('2026-10-05');
   await expect.poll(() => requests.at(-1)?.searchParams.get('productId')).toBe('101');
-  await panel.getByRole('button', { name: 'Export follow-up Excel' }).click();
-  await expect(panel.getByRole('link', { name: 'Download Excel' })).toHaveAttribute(
-    'href',
-    '/api/v1/customer-recovery/reports/report-1/download',
+  let statusReads = 0;
+  let removed = false;
+  let historyReads = 0;
+  await page.route('**/api/v1/customer-recovery/reports/report-1', (route) => {
+    if (route.request().method() === 'DELETE') {
+      removed = true;
+      return route.fulfill({ status: 204 });
+    }
+    statusReads++;
+    return route.fulfill({
+      json: {
+        report: {
+          id: 'report-1',
+          status: statusReads < 2 ? 'running' : 'completed',
+          filename: 'follow-up.xlsx',
+          rowCount: 2,
+        },
+      },
+    });
+  });
+  await page.route('**/api/v1/customer-recovery/reports?*', (route) => {
+    historyReads++;
+    return route.fulfill({
+      json: {
+        items: removed
+          ? []
+          : [
+              {
+                id: 'report-1',
+                status: 'completed',
+                filename: 'follow-up.xlsx',
+                rowCount: 2,
+                createdAt: '2026-11-05T10:00:00Z',
+              },
+            ],
+        hasMore: false,
+        nextCursor: null,
+      },
+    });
+  });
+  await page.route('**/api/v1/customer-recovery/reports/report-1/download', (route) =>
+    route.fulfill({
+      body: 'customer report fixture',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      headers: { 'content-disposition': 'attachment; filename="follow-up.xlsx"' },
+    }),
   );
+  const automatic = page.waitForEvent('download');
+  await panel.getByRole('button', { name: 'Export follow-up Excel' }).click();
+  expect((await automatic).suggestedFilename()).toBe('follow-up.xlsx');
+  expect(historyReads).toBe(0);
+  await panel.getByRole('button', { name: 'Previous files', exact: true }).click();
+  const historyDialog = page.getByRole('dialog', { name: 'Previous customer follow-up files' });
+  await expect(historyDialog.getByText('2 customers', { exact: true })).toBeVisible();
+  const again = page.waitForEvent('download');
+  await historyDialog.getByRole('button', { name: 'Download', exact: true }).click();
+  expect((await again).suggestedFilename()).toBe('follow-up.xlsx');
+  await page.screenshot({
+    path: testInfo.outputPath('customer-follow-up-history.png'),
+    animations: 'disabled',
+  });
+  await historyDialog.getByRole('button', { name: 'Remove follow-up.xlsx from history' }).click();
+  await historyDialog.getByRole('button', { name: 'Remove from history', exact: true }).click();
+  await expect(historyDialog.getByText('No previous files.')).toBeVisible();
+  await historyDialog.getByRole('button', { name: 'Close', exact: true }).click();
   expect(exported).toMatchObject({
     locale: 'en',
     filter: { from: '2026-10-01', to: '2026-10-05', productId: '101' },
@@ -442,8 +502,22 @@ test('Arabic customer follow-up fits mobile, shows errors and keeps Latin digits
           },
     ),
   );
-  await page.route('**/api/v1/customer-recovery/reports', (route) =>
-    route.fulfill({ json: { items: [] } }),
+  await page.route('**/api/v1/customer-recovery/reports?*', (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            id: 'old-report',
+            status: 'completed',
+            rowCount: 3,
+            filename: 'customer-follow-up-2026-11-05.xlsx',
+            createdAt: '2026-11-05T10:00:00Z',
+          },
+        ],
+        hasMore: false,
+        nextCursor: null,
+      },
+    }),
   );
   await page.route('**/api/v1/catalog?*', (route) => route.fulfill({ json: { items: [] } }));
   await page.setViewportSize({ width: 390, height: 844 });
@@ -458,6 +532,17 @@ test('Arabic customer follow-up fits mobile, shows errors and keeps Latin digits
   await expect(panel.getByText('ملغي', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   expect(await panel.innerText()).not.toMatch(/[٠-٩۰-۹]/u);
+  await panel.getByRole('button', { name: 'الملفات السابقة', exact: true }).click();
+  const files = page.getByRole('dialog', { name: 'ملفات متابعة العملاء السابقة' });
+  await expect(files.getByText('3 عميل', { exact: true })).toBeVisible();
+  await expect(files.getByText('customer-follow-up-2026-11-05.xlsx')).toBeVisible();
+  expect(await files.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await files.innerText()).not.toMatch(/[٠-٩۰-۹]/u);
+  await page.screenshot({
+    path: testInfo.outputPath('customer-follow-up-files-mobile.png'),
+    animations: 'disabled',
+  });
+  await files.getByRole('button', { name: 'إغلاق', exact: true }).click();
   await page.screenshot({
     path: testInfo.outputPath('customer-follow-up-ar-mobile.png'),
     fullPage: true,

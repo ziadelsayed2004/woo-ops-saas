@@ -727,7 +727,41 @@ app.get('/api/v1/customer-recovery/reports', (request, response) => {
   const user = authenticatedUser(request, response);
   if (!user) return;
   try {
-    response.json({ items: store.listCustomerRecoveryReports(operationContext(user, response)) });
+    if (request.query.cursor !== undefined && typeof request.query.cursor !== 'string')
+      throw new Error('CUSTOMER_REPORT_CURSOR_INVALID');
+    response.json(
+      store.listCustomerRecoveryReportPage(operationContext(user, response), {
+        ...(request.query.limit === undefined ? {} : { limit: Number(request.query.limit) }),
+        ...(request.query.cursor === undefined ? {} : { cursor: request.query.cursor }),
+      }),
+    );
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.get('/api/v1/customer-recovery/reports/:reportId', (request, response) => {
+  const user = authenticatedUser(request, response);
+  if (!user) return;
+  try {
+    response.json({
+      report: store.getCustomerRecoveryReport(
+        operationContext(user, response),
+        request.params.reportId,
+      ),
+    });
+  } catch (error) {
+    sendOperationError(response, error);
+  }
+});
+app.delete('/api/v1/customer-recovery/reports/:reportId', (request, response) => {
+  const user = requireOperationWrite(request, response);
+  if (!user) return;
+  try {
+    store.deleteCustomerRecoveryReportHistory(
+      operationContext(user, response),
+      request.params.reportId,
+    );
+    response.status(204).end();
   } catch (error) {
     sendOperationError(response, error);
   }

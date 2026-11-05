@@ -18,6 +18,8 @@ import {
   downloadSpreadsheet,
   downloadWhenSpreadsheetReady,
   type SpreadsheetBatch,
+  type SpreadsheetSource,
+  spreadsheetApiPath,
 } from './exportDownloads';
 
 type Page = { items: SpreadsheetBatch[]; nextCursor?: string | null; hasMore?: boolean };
@@ -28,12 +30,14 @@ export function SpreadsheetHistoryDialog({
   canDelete = false,
   onClose,
   onChanged,
+  source = 'orders',
 }: {
   open: boolean;
   locale: AppLocale;
   canDelete?: boolean;
   onClose: () => void;
   onChanged?: () => void;
+  source?: SpreadsheetSource;
 }) {
   const [page, setPage] = useState<Page>({ items: [] });
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
@@ -44,6 +48,8 @@ export function SpreadsheetHistoryDialog({
   const [retrying, setRetrying] = useState<string | null>(null);
   const requestId = useRef(0);
   const cursor = cursors.at(-1) ?? null;
+  const basePath = spreadsheetApiPath(source);
+  const isCustomerReport = source === 'customer-recovery';
   const load = useCallback(
     async (showLoading = true) => {
       const id = ++requestId.current;
@@ -52,19 +58,31 @@ export function SpreadsheetHistoryDialog({
       try {
         const params = new URLSearchParams({ limit: '20' });
         if (cursor) params.set('cursor', cursor);
-        const response = await fetch(`/api/v1/export-batches?${params}`, {
+        const response = await fetch(`${basePath}?${params}`, {
           credentials: 'include',
         });
         if (!response.ok) throw new Error('HISTORY_LOAD_FAILED');
         const result = (await response.json()) as Page;
-        if (id === requestId.current) setPage(result);
+        if (id === requestId.current)
+          setPage(
+            isCustomerReport
+              ? {
+                  ...result,
+                  items: result.items.map((report) => ({
+                    ...report,
+                    format: 'xlsx',
+                    orderCount: report.rowCount,
+                  })),
+                }
+              : result,
+          );
       } catch {
         if (id === requestId.current) setError(true);
       } finally {
         if (id === requestId.current) setLoading(false);
       }
     },
-    [cursor],
+    [cursor, basePath, isCustomerReport],
   );
 
   useEffect(() => {
@@ -100,7 +118,7 @@ export function SpreadsheetHistoryDialog({
           ?.split('=')
           .slice(1)
           .join('=') ?? '';
-      const response = await fetch(`/api/v1/export-batches/${encodeURIComponent(confirm.id)}`, {
+      const response = await fetch(`${basePath}/${encodeURIComponent(confirm.id)}`, {
         method: 'DELETE',
         credentials: 'include',
         headers: { 'x-csrf-token': decodeURIComponent(csrf) },
@@ -154,12 +172,20 @@ export function SpreadsheetHistoryDialog({
       PaperProps={{ dir: locale === 'ar' ? 'rtl' : 'ltr', className: 'spreadsheet-history__paper' }}
     >
       <DialogTitle id="spreadsheet-history-title">
-        {tr(locale, 'spreadsheetHistory.title')}
+        {tr(
+          locale,
+          isCustomerReport ? 'spreadsheetHistory.customerTitle' : 'spreadsheetHistory.title',
+        )}
       </DialogTitle>
       <DialogContent className="spreadsheet-history__content">
         <Stack className="spreadsheet-history__toolbar">
           <Typography variant="body2" color="text.secondary">
-            {tr(locale, 'spreadsheetHistory.description')}
+            {tr(
+              locale,
+              isCustomerReport
+                ? 'spreadsheetHistory.customerDescription'
+                : 'spreadsheetHistory.description',
+            )}
           </Typography>
           <Button onClick={() => void load()} disabled={loading || deleting}>
             {tr(locale, 'spreadsheetHistory.refresh')}
@@ -168,7 +194,14 @@ export function SpreadsheetHistoryDialog({
         {error && <Alert severity="error">{tr(locale, 'spreadsheetHistory.error')}</Alert>}
         {confirm && (
           <Alert severity="warning" className="spreadsheet-history__confirmation">
-            <Typography>{tr(locale, 'spreadsheetHistory.confirmDelete')}</Typography>
+            <Typography>
+              {tr(
+                locale,
+                isCustomerReport
+                  ? 'spreadsheetHistory.customerConfirmDelete'
+                  : 'spreadsheetHistory.confirmDelete',
+              )}
+            </Typography>
             <Typography dir="auto" className="spreadsheet-history__filename">
               {confirm.filename ?? confirm.id}
             </Typography>
@@ -212,10 +245,16 @@ export function SpreadsheetHistoryDialog({
                       label={tr(locale, `labels.exportStatus.${batch.status}`)}
                     />
                     <Typography variant="caption">
-                      {tr(locale, 'spreadsheetHistory.counts', {
-                        orders: batch.orderCount,
-                        rows: batch.rowCount,
-                      })}
+                      {tr(
+                        locale,
+                        isCustomerReport
+                          ? 'spreadsheetHistory.customerCounts'
+                          : 'spreadsheetHistory.counts',
+                        {
+                          orders: batch.orderCount,
+                          rows: batch.rowCount,
+                        },
+                      )}
                     </Typography>
                     {batch.createdAt && (
                       <Typography
@@ -243,11 +282,11 @@ export function SpreadsheetHistoryDialog({
                 </Box>
                 <Stack className="spreadsheet-history__actions">
                   {batch.status === 'completed' && (
-                    <Button variant="outlined" onClick={() => downloadSpreadsheet(batch)}>
+                    <Button variant="outlined" onClick={() => downloadSpreadsheet(batch, source)}>
                       {tr(locale, 'spreadsheetHistory.download')}
                     </Button>
                   )}
-                  {canDelete && batch.status === 'failed' && (
+                  {canDelete && !isCustomerReport && batch.status === 'failed' && (
                     <Button onClick={() => void retry(batch)} disabled={retrying !== null}>
                       {tr(locale, 'app.retryExport')}
                     </Button>

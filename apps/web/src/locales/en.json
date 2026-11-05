@@ -1,5 +1,9 @@
 {
   "spreadsheetHistory": {
+    "customerTitle": "Previous customer follow-up files",
+    "customerDescription": "Saved customer follow-up Excel reports. Download an earlier file again or remove it from history.",
+    "customerConfirmDelete": "Remove this report from history? Customer and order data will stay unchanged.",
+    "customerCounts": "{{rows}} customers",
     "title": "Previous Excel files",
     "button": "Previous files",
     "description": "Your saved spreadsheet exports. Download any file again or remove an entry from history.",

@@ -1849,7 +1849,7 @@ const compileFilter = (
   };
 };
 
-export const schemaVersion = 25;
+export const schemaVersion = 26;
 
 type Migration = { version: number; name: string; sql: string };
 const migrations: readonly Migration[] = [
@@ -2521,6 +2521,13 @@ const migrations: readonly Migration[] = [
     name: 'spreadsheet-history-archiving',
     sql: `ALTER TABLE export_batches ADD COLUMN history_deleted_at TEXT;
       CREATE INDEX export_batches_visible_history ON export_batches(account_id, created_at DESC, id DESC)
+      WHERE history_deleted_at IS NULL;`,
+  },
+  {
+    version: 26,
+    name: 'customer-followup-history-archiving',
+    sql: `ALTER TABLE customer_recovery_reports ADD COLUMN history_deleted_at TEXT;
+      CREATE INDEX customer_reports_visible_history ON customer_recovery_reports(account_id, created_at DESC, id DESC)
       WHERE history_deleted_at IS NULL;`,
   },
 ];
@@ -9133,26 +9140,98 @@ export class SqliteStore {
   }
 
   listCustomerRecoveryReports(context: AccountContext) {
+    return this.listCustomerRecoveryReportPage(context).items;
+  }
+
+  listCustomerRecoveryReportPage(
+    context: AccountContext,
+    input: { limit?: number; cursor?: string } = {},
+  ) {
     this.assertMember(context);
-    return (
-      this.db
-        .prepare(
-          `SELECT r.*, j.status AS job_status FROM customer_recovery_reports r
+    const limit = input.limit ?? 20;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      throw new Error('CUSTOMER_REPORT_LIMIT_INVALID');
+    let cursorSql = '';
+    const params: (string | number)[] = [context.accountId];
+    if (input.cursor !== undefined) {
+      if (input.cursor.length < 1 || input.cursor.length > 1024)
+        throw new Error('CUSTOMER_REPORT_CURSOR_INVALID');
+      let cursor;
+      try {
+        cursor = decodedCursor(input.cursor);
+      } catch {
+        throw new Error('CUSTOMER_REPORT_CURSOR_INVALID');
+      }
+      if (
+        !Number.isFinite(Date.parse(cursor.sortValue)) ||
+        cursor.id.length < 1 ||
+        cursor.id.length > 256
+      )
+        throw new Error('CUSTOMER_REPORT_CURSOR_INVALID');
+      cursorSql = ' AND (r.created_at < ? OR (r.created_at = ? AND r.id < ?))';
+      params.push(cursor.sortValue, cursor.sortValue, cursor.id);
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT r.*, j.status AS job_status FROM customer_recovery_reports r
            JOIN jobs j ON j.account_id = r.account_id AND j.id = r.job_id
-           WHERE r.account_id = ? ORDER BY r.created_at DESC, r.id DESC LIMIT 20`,
+           WHERE r.account_id = ? AND r.history_deleted_at IS NULL ${cursorSql}
+           ORDER BY r.created_at DESC, r.id DESC LIMIT ?`,
+      )
+      .all(...params, limit + 1) as Record<string, unknown>[];
+    const visible = rows.slice(0, limit);
+    const last = visible.at(-1);
+    const hasMore = rows.length > limit;
+    return {
+      items: visible.map((row) => this.customerRecoveryPublicRecord(row)),
+      hasMore,
+      nextCursor:
+        hasMore && last
+          ? encodedCursor({ sortValue: String(last.created_at), id: String(last.id) })
+          : null,
+    };
+  }
+
+  private customerRecoveryPublicRecord(row: Record<string, unknown>) {
+    return reportRecord({
+      ...row,
+      status:
+        row.status === 'completed'
+          ? 'completed'
+          : ['queued', 'running'].includes(String(row.job_status))
+            ? row.job_status
+            : 'failed',
+    });
+  }
+
+  getCustomerRecoveryReport(context: AccountContext, id: string) {
+    this.assertMember(context);
+    const row = this.db
+      .prepare(
+        `SELECT r.*, j.status AS job_status FROM customer_recovery_reports r
+      JOIN jobs j ON j.account_id = r.account_id AND j.id = r.job_id
+      WHERE r.account_id = ? AND r.id = ?`,
+      )
+      .get(context.accountId, id) as Record<string, unknown> | undefined;
+    if (!row) throw new Error('CUSTOMER_REPORT_NOT_FOUND');
+    return this.customerRecoveryPublicRecord(row);
+  }
+
+  deleteCustomerRecoveryReportHistory(context: AccountContext, id: string): void {
+    this.requireMutationActor(context);
+    const report = this.getCustomerRecoveryReport(context, id);
+    if (report.status === 'queued' || report.status === 'running')
+      throw new Error('CUSTOMER_REPORT_ACTIVE_CONFLICT');
+    this.db.transaction(() => {
+      const result = this.db
+        .prepare(
+          `UPDATE customer_recovery_reports SET history_deleted_at = ?
+        WHERE account_id = ? AND id = ? AND history_deleted_at IS NULL`,
         )
-        .all(context.accountId) as Record<string, unknown>[]
-    ).map((row) =>
-      reportRecord({
-        ...row,
-        status:
-          row.status === 'completed'
-            ? 'completed'
-            : ['queued', 'running'].includes(String(row.job_status))
-              ? row.job_status
-              : 'failed',
-      }),
-    );
+        .run(new Date().toISOString(), context.accountId, id);
+      if (result.changes > 0)
+        this.audit(context, 'customer-report.history-deleted', 'customer_report', id, {});
+    })();
   }
 
   customerRecoveryReportForWorker(context: AccountContext, id: string): Record<string, unknown> {

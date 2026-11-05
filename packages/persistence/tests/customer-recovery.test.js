@@ -259,17 +259,174 @@ test('report migration from schema 23 does not backfill or rewrite existing orde
       .run(now, now);
     const before = database.db.prepare('SELECT * FROM orders').all();
     database.db.exec(
-      'DROP TABLE customer_recovery_snapshots; DROP TABLE customer_recovery_reports; DROP INDEX orders_recovery_email_date; DELETE FROM schema_migrations WHERE version = 24;',
+      'DROP TABLE customer_recovery_snapshots; DROP TABLE customer_recovery_reports; DROP INDEX orders_recovery_email_date; DELETE FROM schema_migrations WHERE version IN (24, 26);',
     );
     database.db.close();
     database = new SqliteStore(path);
     assert.equal(
       database.db.prepare('SELECT MAX(version) AS n FROM schema_migrations').get().n,
-      25,
+      26,
     );
     assert.deepEqual(database.db.prepare('SELECT * FROM orders').all(), before);
+    assert.ok(
+      database.db
+        .prepare('PRAGMA table_info(customer_recovery_reports)')
+        .all()
+        .some((column) => column.name === 'history_deleted_at'),
+    );
   } finally {
     database.db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('follow-up file history pages older reports and removal preserves data, snapshots and idempotency', () => {
+  const owner = setup();
+  add(owner, 'history@example.test', 'failed', '07');
+  const before = store.db.prepare('SELECT * FROM orders ORDER BY id').all();
+  const created = [];
+  for (let index = 0; index < 25; index++) {
+    const input = { filter: {}, locale: 'en', idempotencyKey: `history-${index}` };
+    const report = store.createCustomerRecoveryReport(owner.context, input);
+    store.snapshotCustomerRecoveryReport(owner.context, report.id);
+    store.db
+      .prepare(
+        "UPDATE customer_recovery_reports SET status = 'completed', filename = 'history.xlsx', file_path = 'fixture.xlsx', checksum = ? WHERE id = ?",
+      )
+      .run('a'.repeat(64), report.id);
+    store.db.prepare("UPDATE jobs SET status = 'succeeded' WHERE id = ?").run(report.jobId);
+    created.push({ report, input });
+  }
+  const ids = [];
+  let cursor;
+  do {
+    const page = store.listCustomerRecoveryReportPage(owner.context, {
+      limit: 7,
+      ...(cursor ? { cursor } : {}),
+    });
+    ids.push(...page.items.map((report) => report.id));
+    cursor = page.nextCursor;
+  } while (cursor);
+  assert.equal(ids.length, 25);
+  assert.equal(new Set(ids).size, 25);
+  assert.equal(store.listCustomerRecoveryReports(owner.context).length, 20);
+  for (const input of [
+    { limit: 0 },
+    { limit: 101 },
+    { cursor: '' },
+    { cursor: 'invalid' },
+    { cursor: 'x'.repeat(1025) },
+  ])
+    assert.throws(() => store.listCustomerRecoveryReportPage(owner.context, input), /INVALID/);
+  const { report, input } = created[0];
+  const file = store.customerRecoveryDownload(owner.context, report.id);
+  const snapshots = store.customerRecoverySnapshotPage(owner.context, report.id);
+  assert.equal(snapshots.length, 1);
+  assert.throws(() => store.getCustomerRecoveryReport(b.context, report.id), /NOT_FOUND/);
+  assert.throws(() => store.deleteCustomerRecoveryReportHistory(b.context, report.id), /NOT_FOUND/);
+  store.db
+    .prepare("UPDATE account_memberships SET role = 'viewer' WHERE account_id = ?")
+    .run(owner.context.accountId);
+  assert.throws(
+    () =>
+      store.deleteCustomerRecoveryReportHistory({ ...owner.context, role: 'viewer' }, report.id),
+    /PERMISSION/,
+  );
+  store.db
+    .prepare("UPDATE account_memberships SET role = 'admin' WHERE account_id = ?")
+    .run(owner.context.accountId);
+  store.deleteCustomerRecoveryReportHistory(owner.context, report.id);
+  store.deleteCustomerRecoveryReportHistory(owner.context, report.id);
+  assert.equal(
+    store
+      .listCustomerRecoveryReportPage(owner.context, { limit: 100 })
+      .items.some((entry) => entry.id === report.id),
+    false,
+  );
+  assert.deepEqual(store.customerRecoveryDownload(owner.context, report.id), file);
+  assert.deepEqual(store.customerRecoverySnapshotPage(owner.context, report.id), snapshots);
+  assert.equal(store.createCustomerRecoveryReport(owner.context, input).id, report.id);
+  assert.deepEqual(store.db.prepare('SELECT * FROM orders ORDER BY id').all(), before);
+  const pending = store.createCustomerRecoveryReport(owner.context, {
+    filter: {},
+    locale: 'ar',
+    idempotencyKey: 'active-history',
+  });
+  assert.equal(store.getCustomerRecoveryReport(owner.context, pending.id).status, 'queued');
+  assert.throws(
+    () => store.deleteCustomerRecoveryReportHistory(owner.context, pending.id),
+    /ACTIVE_CONFLICT/,
+  );
+  store.db.prepare("UPDATE jobs SET status = 'running' WHERE id = ?").run(pending.jobId);
+  assert.equal(store.getCustomerRecoveryReport(owner.context, pending.id).status, 'running');
+  assert.throws(
+    () => store.deleteCustomerRecoveryReportHistory(owner.context, pending.id),
+    /ACTIVE_CONFLICT/,
+  );
+  store.db.prepare("UPDATE jobs SET status = 'dead-lettered' WHERE id = ?").run(pending.jobId);
+  assert.equal(store.getCustomerRecoveryReport(owner.context, pending.id).status, 'failed');
+  store.deleteCustomerRecoveryReportHistory(owner.context, pending.id);
+});
+
+test('schema 25 upgrade preserves old follow-up files and order data', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'followup-history-migration-'));
+  const path = join(directory, 'legacy.sqlite');
+  let legacy = new SqliteStore(path);
+  try {
+    const context = {
+      accountId: 'legacy-history-account',
+      actorId: 'legacy-history-actor',
+      role: 'admin',
+      correlationId: randomUUID(),
+    };
+    legacy.db
+      .prepare('INSERT INTO accounts (id,name,created_at,updated_at) VALUES (?,?,?,?)')
+      .run(context.accountId, 'Legacy history', now, now);
+    legacy.db
+      .prepare(
+        'INSERT INTO users (id,email,password_hash,created_at,updated_at) VALUES (?,?,?,?,?)',
+      )
+      .run(context.actorId, 'legacy-history@example.test', 'fixture', now, now);
+    legacy.db
+      .prepare(
+        "INSERT INTO account_memberships (account_id,user_id,role,created_at) VALUES (?,?,'admin',?)",
+      )
+      .run(context.accountId, context.actorId, now);
+    legacy.createManualOrder(context, {
+      currency: 'EGP',
+      customer: { name: 'Historical customer' },
+      lines: [{ name: 'Existing item', quantity: 1, unitPriceMinor: '100' }],
+    });
+    const report = legacy.createCustomerRecoveryReport(context, {
+      filter: {},
+      locale: 'en',
+      idempotencyKey: 'pre-migration-report',
+    });
+    legacy.db
+      .prepare(
+        "UPDATE customer_recovery_reports SET status = 'completed', filename = 'old-follow-up.xlsx', file_path = 'legacy/file.xlsx', checksum = ? WHERE id = ?",
+      )
+      .run('b'.repeat(64), report.id);
+    legacy.db.prepare("UPDATE jobs SET status = 'succeeded' WHERE id = ?").run(report.jobId);
+    const file = legacy.customerRecoveryDownload(context, report.id);
+    const rows = legacy.db.prepare('SELECT * FROM orders').all();
+    legacy.db.exec(
+      'DROP INDEX customer_reports_visible_history; ALTER TABLE customer_recovery_reports DROP COLUMN history_deleted_at; DELETE FROM schema_migrations WHERE version = 26;',
+    );
+    legacy.db.close();
+    legacy = new SqliteStore(path);
+    assert.equal(legacy.db.prepare('SELECT MAX(version) AS n FROM schema_migrations').get().n, 26);
+    assert.deepEqual(legacy.db.prepare('SELECT * FROM orders').all(), rows);
+    assert.deepEqual(legacy.customerRecoveryDownload(context, report.id), file);
+    assert.equal(legacy.listCustomerRecoveryReports(context)[0].id, report.id);
+    assert.ok(
+      legacy.db
+        .prepare('PRAGMA table_info(customer_recovery_reports)')
+        .all()
+        .some((column) => column.name === 'history_deleted_at'),
+    );
+  } finally {
+    legacy.db.close();
     rmSync(directory, { recursive: true, force: true });
   }
 });

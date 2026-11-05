@@ -62,7 +62,7 @@ const version = store.createExportProfileVersion(context, profile.id, {
 });
 
 test('versioned export metadata is migrated and scoped to the account', () => {
-  assert.equal(schemaVersion, 25);
+  assert.equal(schemaVersion, 26);
   assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 0);
   assert.deepEqual(profile.active, true);
   assert.equal(version.version, 1);
@@ -275,7 +275,7 @@ test('schema 24 history upgrade retains existing rows and does not rewrite order
     );
     legacy.db.close();
     legacy = new SqliteStore(path);
-    assert.equal(legacy.db.prepare('SELECT MAX(version) AS n FROM schema_migrations').get().n, 25);
+    assert.equal(legacy.db.prepare('SELECT MAX(version) AS n FROM schema_migrations').get().n, 26);
     assert.deepEqual(legacy.db.prepare('SELECT * FROM orders').all(), before);
   } finally {
     legacy.db.close();

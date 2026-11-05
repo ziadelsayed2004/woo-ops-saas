@@ -46,7 +46,7 @@ test('customer product filtering is authenticated, account-scoped and keeps life
       ...options,
       headers: { 'content-type': 'application/json', ...(options.headers ?? {}) },
     });
-    return { response, body: await response.json() };
+    return { response, body: response.status === 204 ? null : await response.json() };
   };
   try {
     const deadline = Date.now() + 15_000;
@@ -201,6 +201,11 @@ test('customer product filtering is authenticated, account-scoped and keeps life
     });
     assert.equal(created.response.status, 202, JSON.stringify(created.body));
     const report = created.body.report;
+    assert.equal(
+      (await request(`/api/v1/customer-recovery/reports/${report.id}`, { headers: second.headers }))
+        .response.status,
+      404,
+    );
     const duplicate = await request('/api/v1/customer-recovery/reports', {
       method: 'POST',
       headers: exportHeaders,
@@ -270,11 +275,91 @@ test('customer product filtering is authenticated, account-scoped and keeps life
       mkdirSync(process.env.WOO_OPS_RECOVERY_QA_DIR, { recursive: true });
       writeFileSync(join(process.env.WOO_OPS_RECOVERY_QA_DIR, 'customer-follow-up.xlsx'), bytes);
     }
+    const status = await request(`/api/v1/customer-recovery/reports/${report.id}`, {
+      headers: first.headers,
+    });
+    assert.equal(status.body.report.status, 'completed');
+    assert.equal('filePath' in status.body.report, false);
+    assert.equal(
+      (await request('/api/v1/customer-recovery/reports?limit=0', { headers: first.headers }))
+        .response.status,
+      400,
+    );
+    assert.equal(
+      (
+        await request('/api/v1/customer-recovery/reports?cursor=invalid', {
+          headers: first.headers,
+        })
+      ).response.status,
+      400,
+    );
+    assert.equal(
+      (
+        await request(`/api/v1/customer-recovery/reports/${report.id}`, {
+          method: 'DELETE',
+          headers: first.headers,
+        })
+      ).response.status,
+      403,
+    );
+    const otherCsrf = second.headers.cookie.match(/woo_ops_csrf=([^;]+)/u)?.[1];
+    assert.equal(
+      (
+        await request(`/api/v1/customer-recovery/reports/${report.id}`, {
+          method: 'DELETE',
+          headers: { ...second.headers, 'x-csrf-token': otherCsrf },
+        })
+      ).response.status,
+      404,
+    );
+    assert.equal(
+      (
+        await request(`/api/v1/customer-recovery/reports/${report.id}`, {
+          method: 'DELETE',
+          headers: exportHeaders,
+        })
+      ).response.status,
+      204,
+    );
+    assert.equal(
+      (
+        await request(`/api/v1/customer-recovery/reports/${report.id}`, {
+          method: 'DELETE',
+          headers: exportHeaders,
+        })
+      ).response.status,
+      204,
+    );
+    assert.equal(
+      (
+        await request('/api/v1/customer-recovery/reports', { headers: first.headers })
+      ).body.items.some((item) => item.id === report.id),
+      false,
+    );
+    const saved = await fetch(`${baseUrl}/api/v1/customer-recovery/reports/${report.id}/download`, {
+      headers: first.headers,
+    });
+    assert.deepEqual(Buffer.from(await saved.arrayBuffer()), bytes);
+    assert.equal(
+      store.db
+        .prepare('SELECT COUNT(*) AS n FROM order_export_events WHERE account_id = ?')
+        .get(first.user.accountId).n,
+      0,
+    );
     store.db
       .prepare(
         "UPDATE account_memberships SET role = 'viewer' WHERE account_id = ? AND user_id = ?",
       )
       .run(first.user.accountId, first.user.id);
+    assert.equal(
+      (
+        await request(`/api/v1/customer-recovery/reports/${report.id}`, {
+          method: 'DELETE',
+          headers: exportHeaders,
+        })
+      ).response.status,
+      403,
+    );
     assert.equal(
       (
         await request('/api/v1/customer-recovery/reports', {
