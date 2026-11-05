@@ -1054,7 +1054,11 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
             </Paper>
           </Stack>
 
-          <Paper variant="outlined" data-testid="analytics-breakdown" className="app-l1037c11">
+          <Paper
+            variant="outlined"
+            data-testid="analytics-breakdown"
+            className="app-l1037c11 analytics-breakdown"
+          >
             <Stack className="app-l1038c13">
               <Typography variant="h6" component="h2" className="app-l1045c15">
                 {t.breakdown}
@@ -1077,60 +1081,65 @@ function AnalyticsWorkspace({ locale, t }: { locale: Locale; t: (typeof copy)[Lo
               <Tab value="shippingMethod" label={t.dimensionShipping} />
               <Tab value="paymentMethod" label={t.payment} />
             </Tabs>
-            <Table size="small" aria-label={t.breakdown}>
-              <TableHead>
-                <TableRow>
-                  <TableCell>{t.breakdownDimension}</TableCell>
-                  <TableCell>{t.currency}</TableCell>
-                  <TableCell>
-                    {dimension === 'product' || dimension === 'category'
-                      ? tr(locale, 'inline.app.itemSalesAfterDiscountsBeforeReturns')
-                      : t.revenue}
-                  </TableCell>
-                  <TableCell>
-                    {dimension === 'product' || dimension === 'category'
-                      ? tr(locale, 'inline.app.itemsSold')
-                      : t.profit}
-                  </TableCell>
-                  <TableCell>{t.ordersCount}</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {data.breakdown.map((item) => (
-                  <TableRow key={`${item.key}-${item.currency}`}>
+            <TableContainer
+              className="analytics-breakdown__scroll"
+              data-testid="analytics-breakdown-scroll"
+            >
+              <Table size="small" aria-label={t.breakdown}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>{t.breakdownDimension}</TableCell>
+                    <TableCell>{t.currency}</TableCell>
                     <TableCell>
-                      {dimension === 'governorate'
-                        ? `${egyptianGovernorateName(item.key, locale)} (${item.key})`
-                        : (item.label ?? item.key)}
-                    </TableCell>
-                    <TableCell>{item.currency}</TableCell>
-                    <TableCell>
-                      <MoneyValue
-                        value={
-                          dimension === 'product' || dimension === 'category'
-                            ? item.totals.netMerchandiseMinor
-                            : item.totals.collectedRevenueMinor
-                        }
-                        currency={item.currency}
-                        locale={locale}
-                      />
+                      {dimension === 'product' || dimension === 'category'
+                        ? tr(locale, 'inline.app.itemSalesAfterDiscountsBeforeReturns')
+                        : t.revenue}
                     </TableCell>
                     <TableCell>
-                      {dimension === 'product' || dimension === 'category' ? (
-                        item.lineCount
-                      ) : (
+                      {dimension === 'product' || dimension === 'category'
+                        ? tr(locale, 'inline.app.itemsSold')
+                        : t.profit}
+                    </TableCell>
+                    <TableCell>{t.ordersCount}</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {data.breakdown.map((item) => (
+                    <TableRow key={`${item.key}-${item.currency}`}>
+                      <TableCell>
+                        {dimension === 'governorate'
+                          ? `${egyptianGovernorateName(item.key, locale)} (${item.key})`
+                          : (item.label ?? item.key)}
+                      </TableCell>
+                      <TableCell>{item.currency}</TableCell>
+                      <TableCell>
                         <MoneyValue
-                          value={item.totals.contributionProfitMinor}
+                          value={
+                            dimension === 'product' || dimension === 'category'
+                              ? item.totals.netMerchandiseMinor
+                              : item.totals.collectedRevenueMinor
+                          }
                           currency={item.currency}
                           locale={locale}
                         />
-                      )}
-                    </TableCell>
-                    <TableCell>{item.orderCount}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                      </TableCell>
+                      <TableCell>
+                        {dimension === 'product' || dimension === 'category' ? (
+                          item.lineCount
+                        ) : (
+                          <MoneyValue
+                            value={item.totals.contributionProfitMinor}
+                            currency={item.currency}
+                            locale={locale}
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell>{item.orderCount}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
           </Paper>
 
           <Paper component="details" variant="outlined" className="app-l1122c11">

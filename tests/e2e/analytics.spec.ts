@@ -179,6 +179,57 @@ test('shows an explicit empty state when filters have no facts @analytics', asyn
   await expect(page.getByText('No analytics facts match these filters')).toBeVisible();
 });
 
+test('mobile breakdown scrolls inside its card without widening Arabic or English pages @analytics', async ({
+  page,
+}, testInfo) => {
+  await mockAnalyticsApi(page);
+  await page.route('**/api/v1/analytics/breakdown', (route) =>
+    route.fulfill({
+      json: {
+        breakdown: {
+          dimension: 'product',
+          items: [
+            {
+              key: 'long-product',
+              label:
+                'اسم منتج طويل لاختبار التمرير الأفقي على الهاتف — Product with a long descriptive name',
+              currency: 'EGP',
+              orderCount: 4,
+              lineCount: 8,
+              totals,
+            },
+          ],
+        },
+      },
+    }),
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/analytics');
+  const scroll = page.getByTestId('analytics-breakdown-scroll');
+  await expect(scroll.getByText('اسم منتج طويل', { exact: false })).toBeVisible();
+  for (const locale of ['ar', 'en'] as const) {
+    if (locale === 'en') await page.getByRole('button', { name: 'English', exact: true }).click();
+    await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
+    const widths = await scroll.evaluate((element) => ({
+      client: element.clientWidth,
+      content: element.scrollWidth,
+    }));
+    expect(widths.content).toBeGreaterThan(widths.client);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      390,
+    );
+    await scroll.evaluate((element) => {
+      element.scrollLeft = getComputedStyle(element).direction === 'rtl' ? -200 : 200;
+    });
+    expect(await scroll.evaluate((element) => Math.abs(element.scrollLeft))).toBeGreaterThan(0);
+    await scroll.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: testInfo.outputPath(`breakdown-mobile-${locale}.png`),
+      animations: 'disabled',
+    });
+  }
+});
+
 test('analytics workspace has no automated accessibility violations @a11y @analytics', async ({
   page,
 }) => {
