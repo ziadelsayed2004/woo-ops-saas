@@ -563,7 +563,7 @@ test('creates the Woo-layout XLSX and offers repeat download in orders @orders @
   const columns = (createdVersion?.columns ?? []) as Array<{ key: string; label: string }>;
   expect(createdVersion?.filenameTemplate).toBe('orders-{date}-{format}');
   expect(createdVersion?.rowMode).toBe('line');
-  expect(columns).toHaveLength(14);
+  expect(columns).toHaveLength(15);
   expect(columns).toContainEqual({
     key: 'woo.billingFullName',
     label: 'الاسم بالكامل',
@@ -729,20 +729,18 @@ for (const source of ['woo', 'manual'] as const) {
           preset === 'shipping' ? 'مريم حسن' : 'أحمد محمد علي',
         );
         expect(sheet.views[0]?.rightToLeft).toBe(true);
-        if (preset === 'shipping') {
-          const skuColumn = headers.indexOf('كود المنتج (SKU)');
-          const productColumn = headers.indexOf('المنتج');
-          expect(skuColumn).toBe(productColumn + 1);
-          expect(sheet.rowCount).toBe(4);
-          for (const [index, [name, sku]] of [
-            ['Product A', '00123'],
-            ['Product B', 'VAR-B-02'],
-            ['Product without SKU', ''],
-          ].entries()) {
-            expect(sheet.getCell(index + 2, productColumn).value).toBe(name);
-            expect(sheet.getCell(index + 2, skuColumn).value ?? '').toBe(sku);
-            expect(sheet.getCell(index + 2, skuColumn).numFmt).toBe('@');
-          }
+        const skuColumn = headers.indexOf('كود المنتج (SKU)');
+        const productColumn = headers.indexOf('المنتج');
+        expect(skuColumn).toBe(productColumn + 1);
+        expect(sheet.rowCount).toBe(4);
+        for (const [index, [name, sku]] of [
+          ['Product A', '00123'],
+          ['Product B', 'VAR-B-02'],
+          ['Product without SKU', ''],
+        ].entries()) {
+          expect(sheet.getCell(index + 2, productColumn).value).toBe(name);
+          expect(sheet.getCell(index + 2, skuColumn).value ?? '').toBe(sku);
+          expect(sheet.getCell(index + 2, skuColumn).numFmt).toBe('@');
         }
         await expect(checkbox).toBeChecked();
       }

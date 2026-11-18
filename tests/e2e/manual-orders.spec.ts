@@ -17,6 +17,7 @@ test('catalog shows only products shared by every selected category and clears b
     externalId: id,
     parentExternalId: null,
     name,
+    sku: id === '12' ? null : `00${id}`,
     price: '100.00',
     stockStatus: 'instock',
     stockQuantity: 5,
@@ -62,6 +63,20 @@ test('catalog shows only products shared by every selected category and clears b
   await page.goto('/');
   await page.getByRole('button', { name: 'English' }).click();
   await page.getByRole('button', { name: 'Products & stock' }).click();
+  const catalog = page.getByRole('table', { name: 'Product catalog' });
+  await expect(catalog.getByRole('columnheader', { name: 'SKU', exact: true })).toBeVisible();
+  await expect(
+    catalog
+      .getByRole('row')
+      .filter({ hasText: 'Shared product' })
+      .getByRole('cell', { name: '0010', exact: true }),
+  ).toBeVisible();
+  await expect(
+    catalog
+      .getByRole('row')
+      .filter({ hasText: 'Second only' })
+      .getByRole('cell', { name: '—', exact: true }),
+  ).toBeVisible();
   const categories = page.getByRole('combobox', { name: 'Categories (match all)' });
   await categories.click();
   await page.getByRole('option', { name: 'Category 4' }).click();
@@ -89,6 +104,10 @@ test('catalog shows only products shared by every selected category and clears b
   await page.getByRole('button', { name: 'العربية' }).click();
   await expect(page.getByRole('combobox', { name: 'التصنيفات (مشتركة بينها)' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.getByRole('columnheader', { name: 'SKU', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('cell', { name: '0010', exact: true }).locator('bdi'),
+  ).toHaveAttribute('dir', 'ltr');
   await expect(page.locator('main')).toHaveCSS('margin-left', '0px');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1280);
   await page.screenshot({

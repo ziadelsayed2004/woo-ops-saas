@@ -13,6 +13,7 @@ export const wooOrderColumns = [
   ['shippingAmount', 'تكلفة الشحن'],
   ['orderTotal', 'إجمالي الطلب'],
   ['itemName', 'المنتج'],
+  ['sku', 'كود المنتج (SKU)'],
   ['quantity', 'الكمية'],
 ] as const;
 

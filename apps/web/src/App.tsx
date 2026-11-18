@@ -1776,6 +1776,7 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
             <TableHead>
               <TableRow>
                 <TableCell>{tr(locale, 'inline.app.product')}</TableCell>
+                <TableCell>{tr(locale, 'app.sku')}</TableCell>
                 <TableCell>{tr(locale, 'inline.app.categories')}</TableCell>
                 <TableCell>{tr(locale, 'inline.app.price')}</TableCell>
                 <TableCell>{tr(locale, 'inline.app.stock')}</TableCell>
@@ -1787,6 +1788,9 @@ function CatalogWorkspace({ locale, onSync }: { locale: Locale; onSync: () => vo
               {items.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>{item.name}</TableCell>
+                  <TableCell>
+                    <bdi dir="ltr">{item.sku || '—'}</bdi>
+                  </TableCell>
                   <TableCell>
                     {item.categories.map((entry) => entry.name).join(', ') || '—'}
                   </TableCell>
