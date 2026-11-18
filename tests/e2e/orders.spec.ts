@@ -604,7 +604,7 @@ test('creates the Woo-layout XLSX and offers repeat download in orders @orders @
 
 for (const source of ['woo', 'manual'] as const) {
   for (const preset of ['orders', 'shipping'] as const) {
-    test(`${source} ${preset} upgrades a split-name preset and downloads using the full-name version @exports`, async ({
+    test(`${source} ${preset} upgrades a legacy preset and downloads using the current columns @exports`, async ({
       page,
     }, testInfo) => {
       await mockOrderApi(page);
@@ -618,14 +618,16 @@ for (const source of ['woo', 'manual'] as const) {
           : preset === 'shipping'
             ? 'Shipping orders XLSX v2'
             : 'Woo orders XLSX v4';
-      const oldColumns = columns.flatMap((column) =>
-        column.key === `woo.${nameKey}FullName`
-          ? [
-              { key: `woo.${nameKey}FirstName`, label: 'الاسم الأول', type: 'text' },
-              { key: `woo.${nameKey}LastName`, label: 'اسم العائلة', type: 'text' },
-            ]
-          : [column],
-      );
+      const oldColumns = columns
+        .filter((column) => column.key !== 'woo.sku')
+        .flatMap((column) =>
+          preset === 'orders' && column.key === `woo.${nameKey}FullName`
+            ? [
+                { key: `woo.${nameKey}FirstName`, label: 'الاسم الأول', type: 'text' },
+                { key: `woo.${nameKey}LastName`, label: 'اسم العائلة', type: 'text' },
+              ]
+            : [column],
+        );
       const versions: Record<string, unknown>[] = [
         { id: 'old-version', format: 'xlsx', rowMode: 'line', columns: oldColumns },
       ];
@@ -653,6 +655,11 @@ for (const source of ['woo', 'manual'] as const) {
               ...(source === 'manual' ? manualOrder : order),
               billing: { ...order.billing, first_name: ' أحمد  محمد ', last_name: ' علي ' },
               shipping: { ...order.shipping, first_name: ' مريم ', last_name: 'حسن' },
+              lines: [
+                { ...order.lines[0], name: 'Product A', sku: '00123', quantity: 2 },
+                { ...order.lines[0], name: 'Product B', sku: 'VAR-B-02', quantity: 1 },
+                { ...order.lines[0], name: 'Product without SKU', sku: '', quantity: 1 },
+              ],
             },
           ],
         });
@@ -722,6 +729,21 @@ for (const source of ['woo', 'manual'] as const) {
           preset === 'shipping' ? 'مريم حسن' : 'أحمد محمد علي',
         );
         expect(sheet.views[0]?.rightToLeft).toBe(true);
+        if (preset === 'shipping') {
+          const skuColumn = headers.indexOf('كود المنتج (SKU)');
+          const productColumn = headers.indexOf('المنتج');
+          expect(skuColumn).toBe(productColumn + 1);
+          expect(sheet.rowCount).toBe(4);
+          for (const [index, [name, sku]] of [
+            ['Product A', '00123'],
+            ['Product B', 'VAR-B-02'],
+            ['Product without SKU', ''],
+          ].entries()) {
+            expect(sheet.getCell(index + 2, productColumn).value).toBe(name);
+            expect(sheet.getCell(index + 2, skuColumn).value ?? '').toBe(sku);
+            expect(sheet.getCell(index + 2, skuColumn).numFmt).toBe('@');
+          }
+        }
         await expect(checkbox).toBeChecked();
       }
       expect(versionsCreated).toBe(1);

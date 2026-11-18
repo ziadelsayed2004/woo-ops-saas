@@ -35,5 +35,6 @@ export const wooShippingExportColumns = [
   ['paymentTitle', 'طريقة الدفع'],
   ['orderTotal', 'المبلغ المطلوب تحصيله'],
   ['itemName', 'المنتج'],
+  ['sku', 'كود المنتج (SKU)'],
   ['quantity', 'الكمية'],
 ].map(([key, label]) => ({ key: `woo.${key}`, label, type: 'text' as const }));
